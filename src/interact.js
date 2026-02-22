@@ -131,3 +131,78 @@ export async function scroll(session, deltaY, x = 400, y = 300) {
     type: 'mouseWheel', x, y, deltaX: 0, deltaY,
   });
 }
+
+/**
+ * Hover over an element by its backendDOMNodeId.
+ * Scrolls into view, then dispatches mouseMoved at center.
+ *
+ * @param {object} session - Session-scoped CDP handle
+ * @param {number} backendNodeId - Backend DOM node ID
+ */
+export async function hover(session, backendNodeId) {
+  const { x, y } = await getCenter(session, backendNodeId);
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mouseMoved', x, y,
+  });
+}
+
+/**
+ * Select a value in a <select> element or custom dropdown.
+ *
+ * Strategy 1: Native <select> — set .value + dispatch 'change' event.
+ * Strategy 2: Custom dropdown — click to open, find matching option, click it.
+ *
+ * @param {object} session - Session-scoped CDP handle
+ * @param {number} backendNodeId - Backend DOM node ID of the select/combobox
+ * @param {string} value - Value or visible text to select
+ */
+export async function select(session, backendNodeId, value) {
+  // Resolve to a JS object so we can check tagName and set value
+  const { object } = await session.send('DOM.resolveNode', { backendNodeId });
+
+  // Try native <select> first
+  const { result: tagResult } = await session.send('Runtime.callFunctionOn', {
+    objectId: object.objectId,
+    functionDeclaration: 'function() { return this.tagName; }',
+    returnByValue: true,
+  });
+
+  if (tagResult.value === 'SELECT') {
+    // Native select: set value + dispatch change
+    await session.send('Runtime.callFunctionOn', {
+      objectId: object.objectId,
+      functionDeclaration: `function(v) {
+        // Try by value first, then by visible text
+        const opt = Array.from(this.options).find(o => o.value === v || o.textContent.trim() === v);
+        if (opt) {
+          this.value = opt.value;
+          this.dispatchEvent(new Event('change', { bubbles: true }));
+          return true;
+        }
+        return false;
+      }`,
+      arguments: [{ value }],
+      returnByValue: true,
+    });
+    return;
+  }
+
+  // Custom dropdown: click to open, then find and click the matching option
+  await click(session, backendNodeId);
+  await new Promise((r) => setTimeout(r, 300)); // wait for dropdown to open
+
+  // Search for a matching option in the ARIA tree
+  const { result: found } = await session.send('Runtime.evaluate', {
+    expression: `(() => {
+      const options = document.querySelectorAll('[role="option"], [role="menuitem"], li[role="option"]');
+      for (const opt of options) {
+        if (opt.textContent.trim() === ${JSON.stringify(value)}) {
+          opt.click();
+          return true;
+        }
+      }
+      return false;
+    })()`,
+    returnByValue: true,
+  });
+}

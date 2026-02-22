@@ -13,8 +13,9 @@ import { createCDP } from './cdp.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
-import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress } from './interact.js';
+import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect } from './interact.js';
 import { dismissConsent } from './consent.js';
+import { applyStealth } from './stealth.js';
 
 /**
  * Browse a URL and return an ARIA snapshot.
@@ -43,13 +44,13 @@ export async function browse(url, opts = {}) {
       const wsUrl = await getDebugUrl(port);
       cdp = await createCDP(wsUrl);
     } else {
-      // headless (hybrid fallback logic comes in Phase 4)
+      // headless or hybrid (start headless)
       browser = await launch();
       cdp = await createCDP(browser.wsUrl);
     }
 
     // Step 2: Create a new page target and attach
-    const page = await createPage(cdp);
+    let page = await createPage(cdp, mode !== 'headed');
 
     // Step 2.5: Suppress permission prompts
     await suppressPermissions(cdp);
@@ -72,7 +73,26 @@ export async function browse(url, opts = {}) {
     }
 
     // Step 5: Get ARIA tree
-    const { tree } = await ariaTree(page);
+    let { tree } = await ariaTree(page);
+
+    // Step 5.5: Hybrid fallback — if headless was bot-blocked, retry headed
+    if (mode === 'hybrid' && isChallengePage(tree)) {
+      await cdp.send('Target.closeTarget', { targetId: page.targetId });
+      cdp.close();
+      if (browser) { browser.process.kill(); browser = null; }
+
+      const port = opts.port || 9222;
+      const wsUrl = await getDebugUrl(port);
+      cdp = await createCDP(wsUrl);
+      page = await createPage(cdp, false);
+      await suppressPermissions(cdp);
+      if (opts.cookies !== false) {
+        try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
+      }
+      await navigate(page, url, timeout);
+      if (opts.consent !== false) await dismissConsent(page.session);
+      ({ tree } = await ariaTree(page));
+    }
 
     // Step 6: Prune for agent consumption
     let snapshot;
@@ -115,16 +135,11 @@ export async function connect(opts = {}) {
     cdp = await createCDP(browser.wsUrl);
   }
 
-  const page = await createPage(cdp);
+  const page = await createPage(cdp, mode !== 'headed');
   let refMap = new Map();
 
   // Suppress permission prompts for all modes
   await suppressPermissions(cdp);
-
-  // Cookie injection if requested
-  if (opts.cookies !== false) {
-    // Auto-inject won't have a URL yet, so expose method below
-  }
 
   return {
     async goto(url, timeout = 30000) {
@@ -152,10 +167,10 @@ export async function connect(opts = {}) {
       await cdpClick(page.session, backendNodeId);
     },
 
-    async type(ref, text, opts) {
+    async type(ref, text, typeOpts) {
       const backendNodeId = refMap.get(ref);
       if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
-      await cdpType(page.session, backendNodeId, text, opts);
+      await cdpType(page.session, backendNodeId, text, typeOpts);
     },
 
     async scroll(deltaY) {
@@ -166,8 +181,42 @@ export async function connect(opts = {}) {
       await cdpPress(page.session, key);
     },
 
-    waitForNavigation(timeout = 30000) {
-      return page.session.once('Page.loadEventFired', timeout);
+    async hover(ref) {
+      const backendNodeId = refMap.get(ref);
+      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
+      await cdpHover(page.session, backendNodeId);
+    },
+
+    async select(ref, value) {
+      const backendNodeId = refMap.get(ref);
+      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
+      await cdpSelect(page.session, backendNodeId, value);
+    },
+
+    async screenshot(screenshotOpts = {}) {
+      const format = screenshotOpts.format || 'png';
+      const params = { format };
+      if (format === 'jpeg' || format === 'webp') {
+        params.quality = screenshotOpts.quality || 80;
+      }
+      const { data } = await page.session.send('Page.captureScreenshot', params);
+      return data;
+    },
+
+    async waitForNavigation(timeout = 30000) {
+      // Wait for loadEventFired (full page load). If it doesn't fire within
+      // timeout, fall back to frameNavigated (SPA pushState/replaceState).
+      try {
+        await page.session.once('Page.loadEventFired', timeout);
+      } catch {
+        // Timeout — likely SPA nav with no load event. frameNavigated may
+        // have already fired. Give a settle delay for DOM updates.
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    },
+
+    waitForNetworkIdle(idleOpts = {}) {
+      return waitForNetworkIdle(page.session, idleOpts);
     },
 
     /** Raw CDP session for escape hatch */
@@ -208,8 +257,10 @@ async function suppressPermissions(cdp) {
 
 /**
  * Create a new page target and return a session-scoped handle.
+ * @param {object} cdp - CDP client
+ * @param {boolean} [stealth=false] - Apply stealth patches (headless only)
  */
-async function createPage(cdp) {
+async function createPage(cdp, stealth = false) {
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await cdp.send('Target.attachToTarget', {
     targetId,
@@ -222,6 +273,11 @@ async function createPage(cdp) {
   await session.send('Page.enable');
   await session.send('Network.enable');
   await session.send('DOM.enable');
+
+  // Apply stealth patches before any navigation (headless only)
+  if (stealth) {
+    await applyStealth(session);
+  }
 
   return { session, targetId, sessionId };
 }
@@ -302,4 +358,77 @@ function extractProps(props) {
   const result = {};
   for (const p of props) result[p.name] = p.value?.value;
   return result;
+}
+
+/**
+ * Wait until no network requests are pending for `idle` ms.
+ * @param {object} session - Session-scoped CDP handle
+ * @param {object} [opts]
+ * @param {number} [opts.timeout=30000] - Max wait time
+ * @param {number} [opts.idle=500] - Idle threshold in ms
+ */
+function waitForNetworkIdle(session, opts = {}) {
+  const timeout = opts.timeout || 30000;
+  const idle = opts.idle || 500;
+
+  return new Promise((resolve, reject) => {
+    let pending = 0;
+    let timer = null;
+    const unsubs = [];
+
+    const done = () => {
+      clearTimeout(timer);
+      clearTimeout(deadlineTimer);
+      for (const unsub of unsubs) unsub();
+      resolve();
+    };
+
+    const check = () => {
+      clearTimeout(timer);
+      if (pending <= 0) {
+        pending = 0;
+        timer = setTimeout(done, idle);
+      }
+    };
+
+    unsubs.push(session.on('Network.requestWillBeSent', () => { pending++; clearTimeout(timer); }));
+    unsubs.push(session.on('Network.loadingFinished', () => { pending--; check(); }));
+    unsubs.push(session.on('Network.loadingFailed', () => { pending--; check(); }));
+
+    const deadlineTimer = setTimeout(() => {
+      for (const unsub of unsubs) unsub();
+      reject(new Error(`waitForNetworkIdle timed out after ${timeout}ms`));
+    }, timeout);
+
+    // Start check immediately (might already be idle)
+    check();
+  });
+}
+
+/**
+ * Detect if a page is a bot-challenge page (Cloudflare, etc.).
+ * Heuristic: very short ARIA tree + known challenge phrases.
+ */
+function isChallengePage(tree) {
+  if (!tree) return true;
+  const text = flattenTreeText(tree);
+  const challengePhrases = [
+    'just a moment',
+    'checking if the site connection is secure',
+    'checking your browser',
+    'please wait',
+    'verify you are human',
+    'attention required',
+  ];
+  const lower = text.toLowerCase();
+  return challengePhrases.some((p) => lower.includes(p));
+}
+
+function flattenTreeText(node) {
+  if (!node) return '';
+  let text = node.name || '';
+  for (const child of node.children || []) {
+    text += ' ' + flattenTreeText(child);
+  }
+  return text;
 }

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "barebrowse": {
+      "command": "node",
+      "args": ["mcp-server.js"]
+    }
+  }
+}

@@ -1,15 +1,32 @@
 {
   "name": "barebrowse",
   "version": "0.1.0",
-  "description": "Authenticated web browsing for autonomous agents via CDP",
+  "description": "Authenticated web browsing for autonomous agents via CDP. URL in, pruned ARIA snapshot out.",
   "type": "module",
   "main": "src/index.js",
-  "exports": "./src/index.js",
+  "exports": {
+    ".": "./src/index.js",
+    "./bareagent": "./src/bareagent.js"
+  },
+  "bin": {
+    "barebrowse": "./cli.js"
+  },
   "engines": {
     "node": ">=22"
   },
   "scripts": {
-    "test": "node --test test/**/*.test.js"
+    "test": "node --test test/unit/*.test.js test/integration/*.test.js"
   },
+  "keywords": [
+    "browser",
+    "cdp",
+    "chromium",
+    "aria",
+    "accessibility",
+    "web-scraping",
+    "agent",
+    "mcp",
+    "headless"
+  ],
   "license": "MIT"
 }
