@@ -1,0 +1,6 @@
+.claude/
+.git/
+test/
+examples/
+docs/prd.md
+docs/poc-plan.md
