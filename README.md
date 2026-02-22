@@ -89,31 +89,14 @@ await page.close();
 
 For Claude Desktop, Cursor, Windsurf, or any MCP client.
 
-**Install globally** (available everywhere):
 ```bash
 npm install -g barebrowse
+npx barebrowse install
 ```
 
-**Or per-project** (in your repo):
-```bash
-npm install barebrowse
-```
+That's it. `install` auto-detects Claude Desktop, Cursor, and Claude Code, and writes the MCP config for you. No manual JSON editing.
 
-Then add to your MCP config:
-
-Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `~/.config/Claude/claude_desktop_config.json` on Linux):
-```json
-{
-  "mcpServers": {
-    "barebrowse": {
-      "command": "npx",
-      "args": ["barebrowse", "mcp"]
-    }
-  }
-}
-```
-
-Cursor / Windsurf / Claude Code (`.mcp.json` in project root):
+If you prefer manual setup, add this to your MCP config:
 ```json
 {
   "mcpServers": {
