@@ -17,7 +17,8 @@ barebrowse/
 │   ├── auth.js            # Cookie extraction + CDP Network.setCookie injection
 │   ├── prune.js           # ARIA tree pruning (ported from mcprune)
 │   ├── interact.js        # Click, type, scroll via CDP Input domain
-│   └── stealth.js         # Anti-detection patches via Runtime.evaluate
+│   ├── consent.js         # Auto-dismiss cookie consent dialogs
+│   └── stealth.js         # Anti-detection patches via Runtime.evaluate (Phase 4)
 ├── test/
 │   ├── integration/
 │   │   ├── browse.test.js     # End-to-end: URL → pruned snapshot
@@ -115,9 +116,12 @@ node -e "
 - [x] `scrollIntoView` before click ensures off-screen elements are reachable
 - [x] `type({ clear: true })` replaces pre-filled input content
 - [x] `waitForNavigation()` waits for page load after link clicks
-- [x] Interactions tested against real sites: Wikipedia, GitHub, Google, Hacker News, DuckDuckGo
-- [ ] Browser stays open after barebrowse disconnects (untested — needs headed mode manual test)
-- [ ] No cookies need to be extracted — the browser already has them (untested — needs headed mode manual test)
+- [x] Interactions tested against real sites: Wikipedia, GitHub, Google, Hacker News, DuckDuckGo, YouTube
+- [x] Browser stays open after barebrowse disconnects
+- [x] Cookie injection via `page.injectCookies()` for headed mode (Firefox → Chromium)
+- [x] Permission prompts suppressed via launch flags + CDP `Browser.setPermission`
+- [x] Cookie consent dialogs auto-dismissed across 16+ sites in 7 languages
+- [x] YouTube end-to-end: Firefox cookies → search → click → video playback in headed mode
 
 ### Phase 4 — Hybrid + bareagent Integration
 
@@ -176,23 +180,24 @@ The POC is complete when ALL of these are true:
 ## Running Tests
 
 ```bash
-# All tests (49+ tests)
+# All tests (47+ tests)
 node --test test/unit/*.test.js test/integration/*.test.js
 
 # Unit tests only (fast, no network)
 node --test test/unit/prune.test.js    # 16 tests — pruning logic
-node --test test/unit/auth.test.js     # 7 tests — cookie extraction
+node --test test/unit/auth.test.js     # 7 tests — cookie extraction (2 fail when Chromium locked)
 node --test test/unit/cdp.test.js      # 5 tests — CDP client + browser launch
 
 # Integration tests (needs network + Chromium)
 node --test test/integration/browse.test.js    # 11 tests — end-to-end pipeline
-node --test test/integration/interact.test.js  # 10+ tests — interactions on real sites
+node --test test/integration/interact.test.js  # 15 tests — interactions on real sites
 
 # Quick smoke test
 node -e "import { browse } from './src/index.js'; console.log(await browse('https://example.com'))"
 
-# Headed mode demo (requires: chromium-browser --remote-debugging-port=9222)
-node examples/headed-demo.js
+# Headed mode demos (requires: chromium-browser --remote-debugging-port=9222)
+node examples/headed-demo.js    # Wikipedia → DuckDuckGo search
+node examples/yt-demo.js        # YouTube: Firefox cookies → search → play video
 ```
 
 ---

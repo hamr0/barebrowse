@@ -14,6 +14,7 @@ import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress } from './interact.js';
+import { dismissConsent } from './consent.js';
 
 /**
  * Browse a URL and return an ARIA snapshot.
@@ -50,6 +51,9 @@ export async function browse(url, opts = {}) {
     // Step 2: Create a new page target and attach
     const page = await createPage(cdp);
 
+    // Step 2.5: Suppress permission prompts
+    await suppressPermissions(cdp);
+
     // Step 3: Cookie injection — extract from user's browser, inject via CDP
     if (opts.cookies !== false) {
       try {
@@ -61,6 +65,11 @@ export async function browse(url, opts = {}) {
 
     // Step 4: Navigate and wait for load
     await navigate(page, url, timeout);
+
+    // Step 4.5: Auto-dismiss cookie consent dialogs
+    if (opts.consent !== false) {
+      await dismissConsent(page.session);
+    }
 
     // Step 5: Get ARIA tree
     const { tree } = await ariaTree(page);
@@ -109,9 +118,24 @@ export async function connect(opts = {}) {
   const page = await createPage(cdp);
   let refMap = new Map();
 
+  // Suppress permission prompts for all modes
+  await suppressPermissions(cdp);
+
+  // Cookie injection if requested
+  if (opts.cookies !== false) {
+    // Auto-inject won't have a URL yet, so expose method below
+  }
+
   return {
     async goto(url, timeout = 30000) {
       await navigate(page, url, timeout);
+      if (opts.consent !== false) {
+        await dismissConsent(page.session);
+      }
+    },
+
+    async injectCookies(url, cookieOpts) {
+      await authenticate(page.session, url, { browser: cookieOpts?.browser });
     },
 
     async snapshot(pruneOpts) {
@@ -158,6 +182,29 @@ export async function connect(opts = {}) {
 }
 
 // --- Internal helpers ---
+
+/**
+ * Suppress permission prompts (notifications, geolocation, camera, mic, etc.)
+ * via CDP Browser.setPermission. Works for both headless and headed modes.
+ */
+const DENY_PERMISSIONS = [
+  'geolocation', 'notifications', 'midi', 'midiSysex',
+  'durableStorage', 'audioCapture', 'videoCapture',
+  'backgroundSync', 'sensors', 'idleDetection',
+];
+
+async function suppressPermissions(cdp) {
+  for (const name of DENY_PERMISSIONS) {
+    try {
+      await cdp.send('Browser.setPermission', {
+        permission: { name },
+        setting: 'denied',
+      });
+    } catch {
+      // Permission type not supported in this Chrome version — skip
+    }
+  }
+}
 
 /**
  * Create a new page target and return a session-scoped handle.

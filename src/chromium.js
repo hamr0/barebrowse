@@ -76,6 +76,12 @@ export async function launch(opts = {}) {
     '--disable-translate',
     '--mute-audio',
     '--hide-scrollbars',
+    // Suppress permission prompts (location, notifications, camera, mic, etc.)
+    '--disable-notifications',
+    '--autoplay-policy=no-user-gesture-required',
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+    '--disable-features=MediaRouter',
   ];
 
   if (opts.userDataDir) {
