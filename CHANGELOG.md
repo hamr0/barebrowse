@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.1
+
+- README rewritten: no code blocks, full obstacle course table with mode column, two usage paths (MCP vs framework), mcprune credited, measured token savings, context.md as code reference
+- MCP auto-installer: `npx barebrowse install` detects Claude Desktop, Cursor, Claude Code and writes config
+- MCP config uses `npx barebrowse mcp` instead of local file paths (works for npm consumers)
+- CLI help updated with install command
+
 ## 0.2.0
 
 Agent integration release. MCP server, bareagent adapter, and interaction features that make barebrowse usable as a standalone tool or embedded browsing layer.
