@@ -108,11 +108,16 @@ node -e "
 ```
 
 **DoD:**
-- [ ] `connect()` attaches to a running Chromium browser via CDP
-- [ ] Same ARIA + prune pipeline works on headed browser
-- [ ] `click()` and `type()` send real input events via CDP
-- [ ] Browser stays open after barebrowse disconnects
-- [ ] No cookies need to be extracted — the browser already has them
+- [x] `connect()` attaches to a running Chromium browser via CDP
+- [x] Same ARIA + prune pipeline works on headed browser
+- [x] `click()` and `type()` send real input events via CDP
+- [x] `press()` sends special keys (Enter, Tab, Escape, arrows) — triggers form submit
+- [x] `scrollIntoView` before click ensures off-screen elements are reachable
+- [x] `type({ clear: true })` replaces pre-filled input content
+- [x] `waitForNavigation()` waits for page load after link clicks
+- [x] Interactions tested against real sites: Wikipedia, GitHub, Google, Hacker News, DuckDuckGo
+- [ ] Browser stays open after barebrowse disconnects (untested — needs headed mode manual test)
+- [ ] No cookies need to be extracted — the browser already has them (untested — needs headed mode manual test)
 
 ### Phase 4 — Hybrid + bareagent Integration
 
@@ -171,7 +176,7 @@ The POC is complete when ALL of these are true:
 ## Running Tests
 
 ```bash
-# All tests (39 tests)
+# All tests (49+ tests)
 node --test test/unit/*.test.js test/integration/*.test.js
 
 # Unit tests only (fast, no network)
@@ -180,10 +185,14 @@ node --test test/unit/auth.test.js     # 7 tests — cookie extraction
 node --test test/unit/cdp.test.js      # 5 tests — CDP client + browser launch
 
 # Integration tests (needs network + Chromium)
-node --test test/integration/browse.test.js  # 11 tests — end-to-end pipeline
+node --test test/integration/browse.test.js    # 11 tests — end-to-end pipeline
+node --test test/integration/interact.test.js  # 10+ tests — interactions on real sites
 
 # Quick smoke test
 node -e "import { browse } from './src/index.js'; console.log(await browse('https://example.com'))"
+
+# Headed mode demo (requires: chromium-browser --remote-debugging-port=9222)
+node examples/headed-demo.js
 ```
 
 ---

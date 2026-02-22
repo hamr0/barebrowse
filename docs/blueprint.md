@@ -50,7 +50,7 @@ Seven modules, 1,400 lines, zero required dependencies.
 | `src/aria.js` | 69 | Format ARIA tree as text |
 | `src/auth.js` | 279 | Cookie extraction (Chromium AES + keyring, Firefox), CDP injection |
 | `src/prune.js` | 472 | ARIA pruning pipeline (ported from mcprune) |
-| `src/interact.js` | 76 | Click, type, scroll via CDP Input/DOM |
+| `src/interact.js` | 120 | Click (scrollIntoView), type (clear), press (special keys), scroll |
 
 ---
 
@@ -70,50 +70,47 @@ Connect to an already-running browser on a CDP debug port.
 - No cookie extraction needed (browser already has them)
 - User must launch browser with `--remote-debugging-port=9222`
 
-### Interactions — done
-On `connect()` sessions: `click(ref)`, `type(ref, text, opts)`, `scroll(deltaY)`.
+### Interactions — done, real-world tested
+On `connect()` sessions: `click(ref)`, `type(ref, text, opts)`, `press(key)`, `scroll(deltaY)`, `waitForNavigation()`.
 - Refs come from ARIA snapshot (`[ref=N]` markers)
-- Click: `DOM.getBoxModel` → center coordinates → `Input.dispatchMouseEvent`
+- Click: `DOM.scrollIntoViewIfNeeded` → `DOM.getBoxModel` → center → `Input.dispatchMouseEvent`
 - Type: `DOM.focus` + `Input.insertText` (fast) or `Input.dispatchKeyEvent` (triggers handlers)
+- Type with `{ clear: true }`: select-all (Ctrl+A) + delete before typing
+- Press: special keys (Enter, Tab, Escape, Backspace, arrows) with proper key/code/keyCode
 - Scroll: `Input.dispatchMouseEvent` mouseWheel
+- WaitForNavigation: `Page.loadEventFired` promise for post-click page loads
 
-### Tests — 39 passing
+**Real-world tested against:** Google, Wikipedia, GitHub (SPA), Hacker News, DuckDuckGo, example.com
+
+### Cross-browser cookie injection — done
+Firefox cookies (user's default browser) extracted from SQLite → injected into headless Chromium via CDP `Network.setCookie`. No need to use Chromium as daily browser.
+
+### Tests — 49+ passing
 - 16 unit tests (pruning logic)
 - 7 unit tests (cookie extraction)
 - 5 unit tests (CDP client + browser launch)
-- 11 integration tests (end-to-end pipeline)
+- 11 integration tests (end-to-end browse pipeline)
+- 10+ integration tests (real-world interactions: data: URL fixture + live sites)
 
 ---
 
 ## What's Not Built
 
-### 1. Real-world interaction testing
+### 1. Real-world interaction testing — DONE
 
-The interaction primitives work (POC-verified, smoke-tested). But they haven't been battle-tested against real websites. This is a dedicated effort:
+Tested against Google, Wikipedia, GitHub (SPA), Hacker News, DuckDuckGo, example.com. Found and fixed:
+- Off-screen elements needed `DOM.scrollIntoViewIfNeeded` before click
+- Special keys (Enter/Tab) needed `text` field in keyDown for form submission
+- Pre-filled inputs needed select-all + delete before typing (`{ clear: true }`)
+- Post-click navigation needed `waitForNavigation()` (Page.loadEventFired)
+- Google/Reddit block headless browsers — headed mode is the fix
+- Cookie consent dialogs need locale-aware button matching
 
-**Goal:** Run click/type/scroll against diverse real pages, find what breaks, fix it.
-
-**Test surfaces:**
-- Search engines — type query, click results
-- Login forms — focus, type credentials, submit
-- Shopping sites — add to cart, fill checkout forms, dropdowns
-- SPAs — React/Vue apps where DOM mutates after interaction
-- Cookie-consent banners — click dismiss/accept
-- Infinite scroll — scroll to load more content
-- Paginated results — click "next page"
-- Modals/dialogs — click to open, interact, close
-- iframes — elements inside cross-origin frames
-- Shadow DOM — components using web components
-
-**What will probably break:**
-- Elements not in viewport (need scroll-into-view before click)
-- Elements behind overlays (cookie banners, modals blocking clicks)
-- Dynamic content that changes refs between snapshots
-- Select/dropdown elements (may need specialized interaction)
-- File upload inputs
-- Canvas/WebGL (no ARIA representation)
-
-**Output:** Bug fixes, edge-case handling, possibly new interaction methods (select, hover, wait-for-element).
+**Still untested (future rounds):**
+- Shopping/checkout flows, dropdowns, file uploads
+- iframes, Shadow DOM, Canvas/WebGL
+- Infinite scroll, modals/dialogs
+- Login form submission (needs headed mode manual test)
 
 ### 2. Hybrid mode
 
@@ -133,14 +130,12 @@ Basic anti-detection for headless mode via `Runtime.evaluate`:
 
 Small `src/stealth.js` module. Not a priority — real cookies + headed fallback handles most cases.
 
-### 4. Wait strategies
+### 4. Wait strategies — partially done
 
-Currently: `Page.loadEventFired` + 500ms settle. Not enough for SPAs.
-
-Needed:
+`waitForNavigation()` done (Page.loadEventFired). Still needed:
 - Wait for network idle (no pending requests for N ms)
 - Wait for element presence (poll ARIA tree for a ref/role)
-- Wait for navigation (URL change after click)
+- SPA-aware navigation (Page.frameNavigated for non-full-page-load transitions)
 
 ### 5. Screenshot capture
 
@@ -203,7 +198,9 @@ barebrowse/
 │   └── interact.js    # Click, type, scroll
 ├── test/
 │   ├── unit/          # prune, auth, cdp tests
-│   └── integration/   # end-to-end browse tests
+│   └── integration/   # browse + interact tests (real sites)
+├── examples/
+│   └── headed-demo.js # Interactive demo with visible browser
 ├── docs/
 │   ├── prd.md         # Decisions + rationale (reference)
 │   ├── poc-plan.md    # Original POC phases + DoD

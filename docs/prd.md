@@ -212,7 +212,7 @@ This section exists so we don't re-debate settled decisions.
 | Browser protocol | CDP direct | Uses user's browser, ~100 lines, all 3 modes | Playwright | 200MB download, bundles its own Chromium, abstracts what we need raw |
 | Page representation | ARIA tree | Semantic, token-efficient, what agents need | DOM/HTML | Bloated, noisy, needs heavy parsing |
 | Pruning | Built-in | Agents always need pruned output | Optional/separate | Two deps for one job, pruning isn't optional |
-| Cookie auth | sweet-cookie + CDP inject | User's existing sessions, zero new auth flows | OAuth/credential storage | Complex, security liability, reinventing what the browser already solved |
+| Cookie auth | Own auth.js + CDP inject | User's existing sessions (Firefox or Chromium), cross-browser injection into headless Chromium | OAuth/credential storage | Complex, security liability, reinventing what the browser already solved |
 | Three modes | One flag | Same CDP code, ~20 lines difference | Separate packages | Same code, artificial separation |
 | Chromium only | CDP constraint | ~80% browser share, user's real browser | Cross-browser (Playwright) | Requires Playwright, loses "use your own browser" benefit |
 | Anti-detection | Runtime.evaluate patches | Minimal stealth for headless mode | Full stealth framework | Over-engineering; headless + real cookies handles 90% |
@@ -230,7 +230,7 @@ This section exists so we don't re-debate settled decisions.
 ### Near-term
 - **Screenshot capture** — `Page.captureScreenshot` via CDP. Useful for visual verification and multimodal agents.
 - **Network interception** — `Network.requestWillBeSent` / `Network.responseReceived` for monitoring page loads. Detect redirects, blocked resources, API calls.
-- **Wait strategies** — Wait for navigation, network idle, element presence. CDP provides `Page.loadEventFired` and `Page.frameStoppedLoading`.
+- **Wait strategies** — `waitForNavigation()` done (Page.loadEventFired). Still needed: network idle, element presence polling.
 - **Tab management** — Multiple pages in one browser session. CDP `Target.createTarget` / `Target.attachToTarget`.
 - **MCP server wrapper** — Expose browse/click/type as MCP tools. Replaces Playwright MCP + mcprune combo.
 

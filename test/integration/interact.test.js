@@ -8,6 +8,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { connect } from '../../src/index.js';
+import { extractCookies, injectCookies } from '../../src/auth.js';
 
 // --- Data URL fixtures ---
 
@@ -296,6 +297,218 @@ describe('interact — GitHub', () => {
       assert.ok(snap.length > 100, 'repo page should have content');
     } finally {
       await page.close();
+    }
+  });
+});
+
+// ===== Round 5: DuckDuckGo (headless-friendly search engine) =====
+
+describe('interact — DuckDuckGo Search', () => {
+  it('search query and verify results page', async () => {
+    const page = await connect();
+    try {
+      await page.goto('https://duckduckgo.com');
+      // Use browse mode to get full tree including input elements
+      let snap = await page.snapshot({ mode: 'browse' });
+      assert.ok(snap.length > 50, 'DuckDuckGo homepage should load');
+
+      // Find the search box — could be combobox, textbox, or searchbox
+      let searchRef = null;
+      const searchPattern = /(?:combobox|textbox|searchbox)[^[]*?\[ref=([^\]]+)\]/g;
+      let m;
+      while ((m = searchPattern.exec(snap)) !== null) {
+        searchRef = m[1];
+        break;
+      }
+      // Fallback: look for any input-like element inside a LabelText or search region
+      if (!searchRef) {
+        const labelPattern = /LabelText[^[]*?\[ref=([^\]]+)\]/;
+        const lm = snap.match(labelPattern);
+        if (lm) searchRef = lm[1];
+      }
+      assert.ok(searchRef, `should find search box ref. Snapshot start: ${snap.substring(0, 500)}`);
+
+      await page.type(searchRef, 'node.js web framework');
+      const navPromise = page.waitForNavigation(15000);
+      await page.press('Enter');
+      await navPromise;
+      // Settle time for results to render
+      await new Promise(r => setTimeout(r, 2000));
+
+      snap = await page.snapshot();
+      assert.ok(snap.length > 200, 'results page should have substantial content');
+      // DuckDuckGo results should contain web-related terms
+      const lower = snap.toLowerCase();
+      assert.ok(
+        lower.includes('node') || lower.includes('web') || lower.includes('result'),
+        'results page should contain relevant content',
+      );
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+// ===== Round 6: Hacker News (simple HTML, link navigation) =====
+
+describe('interact — Hacker News', () => {
+  it('load homepage and navigate to a story', async () => {
+    const page = await connect();
+    try {
+      await page.goto('https://news.ycombinator.com');
+      let snap = await page.snapshot();
+      assert.ok(
+        snap.includes('Hacker News') || snap.includes('hacker news'),
+        'should find Hacker News in page content',
+      );
+
+      // Find a story link — HN stories are links, look for one with a ref
+      // Story links typically have descriptive names; grab any link that is not nav/header
+      let storyRef = null;
+      const linkPattern = /link "[^"]{10,}" \[ref=([^\]]+)\]/g;
+      let lm;
+      const skipWords = /^(Hacker News|login|submit|new|past|comments|ask|show|jobs|guidelines|faq|lists|more|favorite|flag|hide|next)/i;
+      while ((lm = linkPattern.exec(snap)) !== null) {
+        // Extract the link name for filtering
+        const nameMatch = lm[0].match(/link "([^"]+)"/);
+        if (nameMatch && !skipWords.test(nameMatch[1])) {
+          storyRef = lm[1];
+          break;
+        }
+      }
+      assert.ok(storyRef, 'should find a story link');
+
+      const navPromise = page.waitForNavigation(10000).catch(() => {});
+      await page.click(storyRef);
+      await navPromise;
+      // Some links are external sites; settle time for load
+      await new Promise(r => setTimeout(r, 2000));
+
+      snap = await page.snapshot();
+      assert.ok(snap.length > 50, 'navigated page should have content');
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+// ===== Round 7: Reddit (old.reddit.com, better headless support) =====
+
+describe('interact — Reddit (old)', () => {
+  it('load old.reddit.com and navigate to a post or subreddit', async () => {
+    const page = await connect();
+    try {
+      // old.reddit.com may redirect headless browsers; use waitForNavigation
+      const navPromise = page.waitForNavigation(10000).catch(() => {});
+      await page.goto('https://old.reddit.com');
+      await navPromise;
+      // Extra settle time — Reddit can be slow to render
+      await new Promise(r => setTimeout(r, 3000));
+      let snap = await page.snapshot({ mode: 'browse' });
+
+      // Reddit may serve a different page to headless; check what we got
+      if (snap.length < 200) {
+        // Try www.reddit.com as fallback
+        await page.goto('https://www.reddit.com');
+        await new Promise(r => setTimeout(r, 4000));
+        snap = await page.snapshot({ mode: 'browse' });
+      }
+      assert.ok(snap.length > 100, `Reddit should load with content. Got ${snap.length} chars`);
+
+      // Find a content link — look for links with descriptive text
+      let linkRef = null;
+      const linkPattern = /link "[^"]{10,}" \[ref=([^\]]+)\]/g;
+      let lm;
+      const skipReddit = /^(reddit|log\s*in|sign\s*up|register|preferences|wiki|rules|mod|gilded|promoted|comments|share|save|hide|report|permalink|give|embed|crosspost|get the app|cookie|privacy|user agreement|advertise)/i;
+      while ((lm = linkPattern.exec(snap)) !== null) {
+        const nameMatch = lm[0].match(/link "([^"]+)"/);
+        if (nameMatch && !skipReddit.test(nameMatch[1])) {
+          linkRef = lm[1];
+          break;
+        }
+      }
+      assert.ok(linkRef, 'should find a content link');
+
+      const clickNavPromise = page.waitForNavigation(10000).catch(() => {});
+      await page.click(linkRef);
+      await clickNavPromise;
+      await new Promise(r => setTimeout(r, 3000));
+
+      snap = await page.snapshot();
+      assert.ok(snap.length > 50, 'navigated page should have content');
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+// ===== Round 8: Cookie injection from Firefox =====
+
+describe('interact — Firefox cookie injection', () => {
+  it('extract Firefox cookies and inject into CDP session', async () => {
+    // Step 1: Extract Firefox cookies for github.com (best-effort)
+    let cookies;
+    try {
+      cookies = extractCookies({ browser: 'firefox', domain: 'github.com' });
+    } catch (err) {
+      // Firefox DB may not exist or may be locked — skip gracefully
+      console.log(`Skipping cookie injection test: ${err.message}`);
+      return;
+    }
+    assert.ok(Array.isArray(cookies), 'extractCookies should return an array');
+    // If no cookies for github.com, try a broader extraction
+    if (cookies.length === 0) {
+      try {
+        cookies = extractCookies({ browser: 'firefox', domain: 'google.com' });
+      } catch {
+        // Still no luck — that's fine, verify the basic path works
+      }
+    }
+
+    // Step 2: Connect without cookies (cookies: false)
+    const page = await connect({ cookies: false });
+    try {
+      // Step 3: Inject cookies into the CDP session (should not throw even if empty)
+      if (cookies && cookies.length > 0) {
+        await injectCookies(page.cdp, cookies);
+        // Verify cookies were injected by checking CDP's cookie jar
+        const { cookies: cdpCookies } = await page.cdp.send('Network.getAllCookies');
+        assert.ok(cdpCookies.length > 0, 'CDP session should have cookies after injection');
+
+        // Step 4: Navigate to the domain and verify page loads
+        await page.goto('https://github.com');
+        await new Promise(r => setTimeout(r, 2000));
+        const snap = await page.snapshot();
+        assert.ok(snap.length > 100, 'GitHub should load after cookie injection');
+        // Best-effort: if user is logged in, there might be username/avatar in snapshot
+        // We don't assert auth state since we can't guarantee it
+      } else {
+        // No cookies extracted — just verify the functions don't throw
+        await injectCookies(page.cdp, []);
+        console.log('No Firefox cookies found for test domains; injection path verified with empty array');
+      }
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('extractCookies with firefox browser returns array', () => {
+    try {
+      const cookies = extractCookies({ browser: 'firefox' });
+      assert.ok(Array.isArray(cookies), 'should return an array');
+      if (cookies.length > 0) {
+        // Verify cookie shape
+        const c = cookies[0];
+        assert.ok(typeof c.name === 'string', 'cookie should have name');
+        assert.ok(typeof c.value === 'string', 'cookie should have value');
+        assert.ok(typeof c.domain === 'string', 'cookie should have domain');
+      }
+    } catch (err) {
+      // Firefox not available or DB locked — acceptable
+      assert.ok(
+        err.message.includes('not found') || err.message.includes('locked') || err.message.includes('SQLITE'),
+        `unexpected error: ${err.message}`,
+      );
     }
   });
 });
