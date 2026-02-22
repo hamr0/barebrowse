@@ -14,17 +14,13 @@
 
 ---
 
-barebrowse gives autonomous agents eyes and hands on the web. It launches your installed Chromium, navigates to any page, and returns a pruned ARIA snapshot -- a compact, semantic representation of what's on screen. The agent reads the snapshot, picks an element by ref, acts, and reads the next snapshot. Observe, think, act.
+## What this is
 
-No Playwright. No bundled browser. No 200MB download. Just CDP over a WebSocket to whatever Chromium you already have.
+barebrowse is agentic browsing stripped to the bone. It gives your AI agent eyes and hands on the web -- navigate any page, see what's there, click buttons, fill forms, scroll, and move on. It uses your installed Chromium browser (Chrome, Brave, Edge -- whatever you have), reuses your existing login sessions, and handles all the friction automatically: cookie consent walls, permission prompts, bot detection, GDPR dialogs.
 
-## The idea
+Instead of dumping raw DOM or taking screenshots, barebrowse returns a **pruned ARIA snapshot** -- a compact semantic view of what's on the page and what the agent can interact with. Buttons, links, inputs, headings -- labeled with `[ref=N]` markers the agent uses to act. The pruning pipeline is ported from [mcprune](https://github.com/nickvdyck/mcprune) and cuts 40-90% of tokens compared to raw page output. Every token your agent reads is meaningful.
 
-LLMs don't need DOM. They need to know what's on the page and what they can interact with. That's exactly what the browser's accessibility tree provides — every heading, button, link, input, and landmark, structured semantically.
-
-But raw ARIA trees are noisy. A typical page produces 50-100KB of ARIA data. Most of it is decorative wrappers, hidden elements, and structural noise. barebrowse includes a 9-step pruning pipeline (ported from [mcprune](https://github.com/nickvdyck/mcprune)) that strips 40-90% of tokens while keeping every interactive element and meaningful label. A page that costs $0.15 in tokens raw costs $0.02-0.08 pruned.
-
-The snapshot format uses `[ref=N]` markers on interactive elements. The agent says "click ref 8" and barebrowse scrolls the element into view, calculates coordinates, and dispatches real mouse events. No CSS selectors. No XPath. Just semantic refs from the ARIA tree.
+No Playwright. No bundled browser. No 200MB download. No broken dependencies. Zero deps. Just CDP over a WebSocket to whatever Chromium you already have.
 
 ## Install
 
@@ -32,203 +28,116 @@ The snapshot format uses `[ref=N]` markers on interactive elements. The agent sa
 npm install barebrowse
 ```
 
-Requires Node.js >= 22 and any installed Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi).
-
-## Quick start
-
-```javascript
-import { browse } from 'barebrowse';
-
-// One line. That's it.
-const snapshot = await browse('https://news.ycombinator.com');
-console.log(snapshot);
-```
-
-Output (pruned, ~50% smaller than raw):
-```
-- WebArea "Hacker News" [ref=1]
-  - link "Hacker News" [ref=4]
-  - link "new" [ref=7]
-  - link "past" [ref=9]
-  - link "comments" [ref=11]
-  ...
-  - link "Show HN: I built a thing" [ref=42]
-  - link "197 comments" [ref=45]
-```
+Requires Node.js >= 22 and any installed Chromium-based browser.
 
 ## Two ways to use it
 
-### 1. As a library (framework mode)
+### 1. MCP server -- for Claude Desktop, Cursor, Claude Code
 
-Import and call directly. You control the loop.
-
-**One-shot** — read a page and get the snapshot:
-
-```javascript
-import { browse } from 'barebrowse';
-
-const snapshot = await browse('https://example.com', {
-  mode: 'headless',      // 'headless' | 'headed' | 'hybrid'
-  cookies: true,         // inject cookies from your browser
-  prune: true,           // ARIA pruning (40-90% token reduction)
-  consent: true,         // auto-dismiss cookie consent dialogs
-});
 ```
-
-**Session** — navigate and interact across multiple pages:
-
-```javascript
-import { connect } from 'barebrowse';
-
-const page = await connect();
-await page.goto('https://duckduckgo.com');
-
-let snap = await page.snapshot();
-// Agent sees: combobox "Search" [ref=5]
-
-await page.type('5', 'barebrowse github');
-await page.press('Enter');
-await page.waitForNavigation();
-
-snap = await page.snapshot();
-// Agent sees search results with clickable refs
-
-await page.click('12');  // click first result
-await page.close();
-```
-
-### 2. As an MCP server
-
-For Claude Desktop, Cursor, Windsurf, or any MCP client.
-
-```bash
 npm install -g barebrowse
 npx barebrowse install
 ```
 
-That's it. `install` auto-detects Claude Desktop, Cursor, and Claude Code, and writes the MCP config for you. No manual JSON editing.
+That's it. `install` auto-detects your MCP client and writes the config. No manual JSON editing. Restart your client and you have 7 browsing tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`.
 
-If you prefer manual setup, add this to your MCP config:
-```json
-{
-  "mcpServers": {
-    "barebrowse": {
-      "command": "npx",
-      "args": ["barebrowse", "mcp"]
-    }
-  }
-}
-```
+### 2. Framework -- for agentic automation
 
-This exposes 7 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`. The LLM calls `goto` to navigate, `snapshot` to observe, and action tools to interact. Action tools return `'ok'` -- the LLM calls `snapshot` explicitly to see what changed.
+Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (9 tools, auto-snapshot after every action).
 
-**Same package, two entry points.** `npm install barebrowse` gives you both the library (`import { browse } from 'barebrowse'`) and the MCP server (`npx barebrowse mcp`). Pick whichever fits your setup.
+For code examples, API reference, and wiring instructions, see **[barebrowse.context.md](barebrowse.context.md)** -- the full integration guide.
 
 ## Three modes
 
-| Mode | Flag | What happens | Use for |
-|------|------|-------------|---------|
-| **Headless** | `mode: 'headless'` (default) | Launches a fresh Chromium, no UI | Scraping, reading, fast automation |
-| **Headed** | `mode: 'headed'` | Connects to your running browser via CDP port | Bot-detected sites, visual debugging |
-| **Hybrid** | `mode: 'hybrid'` | Tries headless first, falls back to headed if bot-blocked | General-purpose agent browsing |
-
-Headed mode requires your browser running with `--remote-debugging-port=9222`.
+| Mode | What happens | Best for |
+|------|-------------|----------|
+| **Headless** (default) | Launches a fresh Chromium, no UI | Fast automation, scraping, reading pages |
+| **Headed** | Connects to your running browser on CDP port | Bot-detected sites, visual debugging, CAPTCHAs |
+| **Hybrid** | Tries headless first, falls back to headed if blocked | General-purpose agent browsing |
 
 ## What it handles automatically
 
-You don't need to write code for any of this:
+This is the obstacle course your agent doesn't have to think about:
 
-- **Cookie consent dialogs** — ARIA scan + jsClick across 7 languages (EN, NL, DE, FR, ES, IT, PT). Tested on 16+ sites.
-- **Permission prompts** — notifications, geolocation, camera, mic all auto-denied via CDP
-- **Login walls** — cookies extracted from your Firefox or Chromium profile, injected via CDP
-- **Off-screen elements** — scrolled into view before every click
-- **Bot detection** — stealth patches in headless (navigator.webdriver, plugins, chrome object)
-- **Profile locking** — unique temp dir per headless instance
-- **ARIA noise** — 9-step pruning pipeline strips decorative wrappers, hidden nodes, structural noise
+| Obstacle | How it's handled | Mode |
+|----------|-----------------|------|
+| **Cookie consent walls** (GDPR) | ARIA tree scan + jsClick accept button, 7 languages (EN, NL, DE, FR, ES, IT, PT) | Both |
+| **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
+| **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
+| **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues | Both |
+| **Permission prompts** (location, camera, mic) | Launch flags + CDP Browser.setPermission auto-deny | Both |
+| **Media autoplay blocked** | Autoplay policy flag on launch | Both |
+| **Login walls** | Cookie extraction from Firefox/Chromium, injected via CDP | Both |
+| **Pre-filled form inputs** | Select-all + delete before typing | Both |
+| **Off-screen elements** | Scrolled into view before every click | Both |
+| **Form submission** | Enter key triggers onsubmit | Both |
+| **Tab between fields** | Tab key moves focus correctly | Both |
+| **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
+| **Bot detection** (Google, Reddit) | Stealth patches (headless) + headed fallback with real cookies | Both |
+| **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
+| **Profile locking** | Unique temp dir per headless instance | Headless |
+| **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
 
-## connect() API reference
+## What the agent sees
 
-| Method | Description |
-|--------|-------------|
-| `goto(url)` | Navigate + wait for load + dismiss consent |
-| `snapshot()` | Pruned ARIA tree with `[ref=N]` markers |
-| `click(ref)` | Scroll into view + mouse click at element center |
-| `type(ref, text, opts?)` | Focus + insert text. `{ clear: true }` replaces existing. |
-| `press(key)` | Special key: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
-| `scroll(deltaY)` | Mouse wheel. Positive = down, negative = up. |
-| `hover(ref)` | Move mouse to element center |
-| `select(ref, value)` | Set `<select>` value or click custom dropdown option |
-| `screenshot(opts?)` | Returns base64 PNG/JPEG/WebP |
-| `waitForNavigation()` | Wait for page load (SPA-aware) |
-| `waitForNetworkIdle()` | Wait until no pending requests for 500ms |
-| `injectCookies(url)` | Extract + inject cookies from your browser |
-| `cdp` | Raw CDP session escape hatch |
-| `close()` | Clean up everything |
+Raw ARIA output from a page is noisy -- decorative wrappers, hidden elements, structural junk. The pruning pipeline (ported from [mcprune](https://github.com/nickvdyck/mcprune)) strips it down to what matters.
 
-## bareagent integration
-
-barebrowse ships a tool adapter for [bareagent](https://github.com/nickvdyck/bareagent):
-
-```javascript
-import { Loop } from 'bare-agent';
-import { Anthropic } from 'bare-agent/providers';
-import { createBrowseTools } from 'barebrowse/bareagent';
-
-const provider = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const loop = new Loop({ provider });
-
-const { tools, close } = createBrowseTools();
-try {
-  const result = await loop.run(
-    [{ role: 'user', content: 'Find the top story on Hacker News' }],
-    tools
-  );
-  console.log(result.text);
-} finally {
-  await close();
-}
-```
-
-`createBrowseTools(opts)` returns 9 tools: browse, goto, snapshot, click, type, press, scroll, select, screenshot. Action tools auto-return a fresh snapshot after each action so the LLM always sees the result.
-
-You can pass any `connect()` options to `createBrowseTools()` — mode, port, cookies, consent.
-
-## How it works
-
-```
-URL -> chromium.js     find/launch browser, permission-suppressing flags
-    -> cdp.js          WebSocket CDP client, flattened sessions
-    -> stealth.js      navigator.webdriver patches (headless only)
-    -> Browser.setPermission    suppress all prompts
-    -> auth.js         extract cookies from Firefox/Chromium -> inject via CDP
-    -> Page.navigate   go to URL, wait for load
-    -> consent.js      detect + dismiss cookie consent dialogs
-    -> aria.js         Accessibility.getFullAXTree -> nested tree
-    -> prune.js        9-step pruning: wrappers, noise, landmarks
-    -> interact.js     click/type/scroll/hover/select via CDP Input domain
-    -> snapshot        agent-ready ARIA text with [ref=N] markers
-```
-
-11 modules, 2,400 lines, zero dependencies.
-
-## Token savings
-
-Real-world measurements on the pruning pipeline:
-
-| Page | Raw ARIA | Pruned (act) | Reduction |
-|------|----------|-------------|-----------|
+| Page | Raw | Pruned | Reduction |
+|------|-----|--------|-----------|
 | example.com | 377 chars | 45 chars | 88% |
 | Hacker News | 51,726 chars | 27,197 chars | 47% |
 | Wikipedia (article) | 109,479 chars | 40,566 chars | 63% |
 | DuckDuckGo | 42,254 chars | 5,407 chars | 87% |
 
-Two pruning modes:
-- **act** (default) — keeps interactive elements + visible labels. For clicking, typing, navigating.
-- **read** — keeps all text content. For reading articles, extracting information.
+Two pruning modes: **act** (default) keeps interactive elements and visible labels -- for clicking, typing, navigating. **read** keeps all text content -- for reading articles and extracting information.
+
+## Actions
+
+Everything the agent can do through barebrowse:
+
+| Action | What it does |
+|--------|-------------|
+| **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
+| **Snapshot** | Pruned ARIA tree with `[ref=N]` markers (40-90% token reduction) |
+| **Click** | Scroll into view + mouse click at element center |
+| **Type** | Focus + insert text, with option to clear existing content first |
+| **Press** | Special keys: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
+| **Scroll** | Mouse wheel up or down |
+| **Hover** | Move mouse to element center (triggers tooltips, hover states) |
+| **Select** | Set dropdown value (native select or custom dropdown) |
+| **Screenshot** | Page capture as base64 PNG/JPEG/WebP |
+| **Wait for navigation** | SPA-aware: works for full page loads and pushState |
+| **Wait for network idle** | Resolve when no pending requests for 500ms |
+| **Inject cookies** | Extract from Firefox/Chromium and inject via CDP |
+| **Raw CDP** | Escape hatch for any Chrome DevTools Protocol command |
+
+## Tested against
+
+16+ sites across 8 countries, all consent dialogs dismissed, all interactions working:
+
+Google, YouTube, BBC, Wikipedia, GitHub, DuckDuckGo, Hacker News, Amazon DE, The Guardian, Spiegel, Le Monde, El Pais, Corriere, NOS, Bild, Nu.nl, Booking, NYT, Stack Overflow, CNN, Reddit
 
 ## Context file
 
-`barebrowse.context.md` in the repo root is an LLM-consumable integration guide. Feed it to an AI assistant that needs to wire barebrowse into a project — it covers the full API, snapshot format, interaction loop, auth options, and gotchas.
+**[barebrowse.context.md](barebrowse.context.md)** is the full integration guide. Feed it to an AI assistant or read it yourself -- it covers the complete API, snapshot format, interaction loop, auth options, bareagent wiring, MCP setup, and gotchas. Everything you need to wire barebrowse into a project.
+
+## How it works
+
+```
+URL -> find/launch browser (chromium.js)
+    -> WebSocket CDP connection (cdp.js)
+    -> stealth patches before page scripts (stealth.js, headless only)
+    -> suppress all permission prompts (Browser.setPermission)
+    -> extract + inject cookies from your browser (auth.js)
+    -> navigate to URL, wait for load
+    -> detect + dismiss cookie consent dialogs (consent.js)
+    -> get full ARIA accessibility tree (aria.js)
+    -> 9-step pruning pipeline from mcprune (prune.js)
+    -> dispatch real input events: click/type/scroll (interact.js)
+    -> agent-ready snapshot with [ref=N] markers
+```
+
+11 modules, 2,400 lines, zero dependencies.
 
 ## Requirements
 
