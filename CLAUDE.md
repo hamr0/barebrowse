@@ -12,11 +12,13 @@
 
 ## Project Specifics
 
+- **What:** Vanilla JS library — CDP-direct browsing for autonomous agents. URL in, pruned ARIA snapshot out.
 - **Language:** Vanilla JavaScript, ES modules, no build step
 - **Runtime:** Node.js >= 22 (built-in WebSocket, sqlite)
 - **Protocol:** CDP (Chrome DevTools Protocol) direct — no Playwright
 - **Browser:** Any installed Chromium-based browser (chromium, chrome, brave, edge)
-- **Key files:** `src/index.js` (API), `src/cdp.js` (CDP client), `src/chromium.js` (browser launch), `src/aria.js` (ARIA formatting)
-- **Docs:** `docs/prd.md` (decisions + rationale), `docs/poc-plan.md` (phases + DoD)
+- **Modules:** 11 files in `src/`, ~2,400 lines, zero required deps
+- **Tests:** 54 passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
+- **Docs:** `docs/README.md` (navigation guide to all documentation)
 
 For full development and testing standards, see `.claude/memory/AGENT_RULES.md`.
