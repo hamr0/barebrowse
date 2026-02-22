@@ -13,7 +13,7 @@ import { createCDP } from './cdp.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
-import { click as cdpClick, type as cdpType, scroll as cdpScroll } from './interact.js';
+import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress } from './interact.js';
 
 /**
  * Browse a URL and return an ARIA snapshot.
@@ -136,6 +136,14 @@ export async function connect(opts = {}) {
 
     async scroll(deltaY) {
       await cdpScroll(page.session, deltaY);
+    },
+
+    async press(key) {
+      await cdpPress(page.session, key);
+    },
+
+    waitForNavigation(timeout = 30000) {
+      return page.session.once('Page.loadEventFired', timeout);
     },
 
     /** Raw CDP session for escape hatch */
