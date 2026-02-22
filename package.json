@@ -1,0 +1,15 @@
+{
+  "name": "barebrowse",
+  "version": "0.1.0",
+  "description": "Authenticated web browsing for autonomous agents via CDP",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": "./src/index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/**/*.test.js"
+  },
+  "license": "MIT"
+}
