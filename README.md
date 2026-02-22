@@ -1,8 +1,20 @@
-# barebrowse
+```
+  ~~~~~~~~~~~~~~~~~~~~
+  ~~~ .---------. ~~~
+  ~~~ | · clear | ~~~
+  ~~~ | · focus | ~~~
+  ~~~ '---------' ~~~
+  ~~~~~~~~~~~~~~~~~~~~
 
-**URL in, agent-ready snapshot out.** Zero dependencies. Uses your own browser.
+  barebrowse
+```
 
-barebrowse gives autonomous agents eyes and hands on the web. It launches your installed Chromium, navigates to any page, and returns a pruned ARIA snapshot — a compact, semantic representation of what's on screen. The agent reads the snapshot, picks an element by ref, acts, and reads the next snapshot. Observe, think, act.
+> Your agent browses like you do -- same browser, same logins, same cookies.
+> Prunes pages down to what matters. 40-90% fewer tokens, zero wasted context.
+
+---
+
+barebrowse gives autonomous agents eyes and hands on the web. It launches your installed Chromium, navigates to any page, and returns a pruned ARIA snapshot -- a compact, semantic representation of what's on screen. The agent reads the snapshot, picks an element by ref, acts, and reads the next snapshot. Observe, think, act.
 
 No Playwright. No bundled browser. No 200MB download. Just CDP over a WebSocket to whatever Chromium you already have.
 
@@ -10,7 +22,7 @@ No Playwright. No bundled browser. No 200MB download. Just CDP over a WebSocket 
 
 LLMs don't need DOM. They need to know what's on the page and what they can interact with. That's exactly what the browser's accessibility tree provides — every heading, button, link, input, and landmark, structured semantically.
 
-But raw ARIA trees are noisy. A typical page produces 50-100KB of ARIA data. Most of it is decorative wrappers, hidden elements, and structural noise. barebrowse includes a 9-step pruning pipeline (ported from [mcprune](https://github.com/nickvdyck/mcprune)) that strips 47-95% of tokens while keeping every interactive element and meaningful label. A page that costs $0.15 in tokens raw costs $0.02-0.08 pruned.
+But raw ARIA trees are noisy. A typical page produces 50-100KB of ARIA data. Most of it is decorative wrappers, hidden elements, and structural noise. barebrowse includes a 9-step pruning pipeline (ported from [mcprune](https://github.com/nickvdyck/mcprune)) that strips 40-90% of tokens while keeping every interactive element and meaningful label. A page that costs $0.15 in tokens raw costs $0.02-0.08 pruned.
 
 The snapshot format uses `[ref=N]` markers on interactive elements. The agent says "click ref 8" and barebrowse scrolls the element into view, calculates coordinates, and dispatches real mouse events. No CSS selectors. No XPath. Just semantic refs from the ARIA tree.
 
@@ -58,7 +70,7 @@ import { browse } from 'barebrowse';
 const snapshot = await browse('https://example.com', {
   mode: 'headless',      // 'headless' | 'headed' | 'hybrid'
   cookies: true,         // inject cookies from your browser
-  prune: true,           // ARIA pruning (47-95% token reduction)
+  prune: true,           // ARIA pruning (40-90% token reduction)
   consent: true,         // auto-dismiss cookie consent dialogs
 });
 ```
@@ -203,12 +215,12 @@ URL -> chromium.js     find/launch browser, permission-suppressing flags
 
 Real-world measurements on the pruning pipeline:
 
-| Page | Raw ARIA | Pruned (act) | Reduction | Est. cost saved |
-|------|----------|-------------|-----------|----------------|
-| Hacker News | 52K chars | 27K chars | 47% | ~$0.04/call |
-| Wikipedia article | 180K chars | 12K chars | 93% | ~$0.25/call |
-| Amazon product | 95K chars | 8K chars | 92% | ~$0.13/call |
-| Google results | 45K chars | 5K chars | 89% | ~$0.06/call |
+| Page | Raw ARIA | Pruned (act) | Reduction |
+|------|----------|-------------|-----------|
+| example.com | 377 chars | 45 chars | 88% |
+| Hacker News | 51,726 chars | 27,197 chars | 47% |
+| Wikipedia (article) | 109,479 chars | 40,566 chars | 63% |
+| DuckDuckGo | 42,254 chars | 5,407 chars | 87% |
 
 Two pruning modes:
 - **act** (default) — keeps interactive elements + visible labels. For clicking, typing, navigating.
