@@ -178,13 +178,17 @@ Action tools (click, type, press, scroll, goto) auto-return a fresh snapshot so 
 
 barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or any MCP client.
 
-`.mcp.json`:
+```bash
+npm install barebrowse       # or npm install -g barebrowse
+```
+
+Add to your MCP client config (`.mcp.json`, `claude_desktop_config.json`, etc.):
 ```json
 {
   "mcpServers": {
     "barebrowse": {
-      "command": "node",
-      "args": ["mcp-server.js"]
+      "command": "npx",
+      "args": ["barebrowse", "mcp"]
     }
   }
 }

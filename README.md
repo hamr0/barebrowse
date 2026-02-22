@@ -89,12 +89,19 @@ await page.close();
 
 For Claude Desktop, Cursor, Windsurf, or any MCP client.
 
+**Install globally** (available everywhere):
 ```bash
-npx barebrowse mcp
+npm install -g barebrowse
 ```
 
-Or add to your MCP config (`.mcp.json`, `claude_desktop_config.json`, etc.):
+**Or per-project** (in your repo):
+```bash
+npm install barebrowse
+```
 
+Then add to your MCP config:
+
+Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json` on macOS, `~/.config/Claude/claude_desktop_config.json` on Linux):
 ```json
 {
   "mcpServers": {
@@ -106,7 +113,21 @@ Or add to your MCP config (`.mcp.json`, `claude_desktop_config.json`, etc.):
 }
 ```
 
-This exposes 7 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`. The LLM calls `goto` to navigate, `snapshot` to observe, and action tools to interact. Action tools return `'ok'` — the LLM calls `snapshot` explicitly to see what changed.
+Cursor / Windsurf / Claude Code (`.mcp.json` in project root):
+```json
+{
+  "mcpServers": {
+    "barebrowse": {
+      "command": "npx",
+      "args": ["barebrowse", "mcp"]
+    }
+  }
+}
+```
+
+This exposes 7 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`. The LLM calls `goto` to navigate, `snapshot` to observe, and action tools to interact. Action tools return `'ok'` -- the LLM calls `snapshot` explicitly to see what changed.
+
+**Same package, two entry points.** `npm install barebrowse` gives you both the library (`import { browse } from 'barebrowse'`) and the MCP server (`npx barebrowse mcp`). Pick whichever fits your setup.
 
 ## Three modes
 

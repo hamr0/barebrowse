@@ -285,14 +285,14 @@ Action tools auto-return snapshot (300ms settle delay). The LLM always sees the 
 
 ### MCP server
 
-Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies.
+Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` then:
 
 ```json
 {
   "mcpServers": {
     "barebrowse": {
-      "command": "node",
-      "args": ["mcp-server.js"]
+      "command": "npx",
+      "args": ["barebrowse", "mcp"]
     }
   }
 }
