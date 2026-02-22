@@ -18,7 +18,7 @@
 
 barebrowse is agentic browsing stripped to the bone. It gives your AI agent eyes and hands on the web -- navigate any page, see what's there, click buttons, fill forms, scroll, and move on. It uses your installed Chromium browser (Chrome, Brave, Edge -- whatever you have), reuses your existing login sessions, and handles all the friction automatically: cookie consent walls, permission prompts, bot detection, GDPR dialogs.
 
-Instead of dumping raw DOM or taking screenshots, barebrowse returns a **pruned ARIA snapshot** -- a compact semantic view of what's on the page and what the agent can interact with. Buttons, links, inputs, headings -- labeled with `[ref=N]` markers the agent uses to act. The pruning pipeline is ported from [mcprune](https://github.com/nickvdyck/mcprune) and cuts 40-90% of tokens compared to raw page output. Every token your agent reads is meaningful.
+Instead of dumping raw DOM or taking screenshots, barebrowse returns a **pruned ARIA snapshot** -- a compact semantic view of what's on the page and what the agent can interact with. Buttons, links, inputs, headings -- labeled with `[ref=N]` markers the agent uses to act. The pruning pipeline is ported from [mcprune](https://github.com/hamr0/mcprune) and cuts 40-90% of tokens compared to raw page output. Every token your agent reads is meaningful.
 
 No Playwright. No bundled browser. No 200MB download. No broken dependencies. Zero deps. Just CDP over a WebSocket to whatever Chromium you already have.
 
@@ -80,7 +80,7 @@ This is the obstacle course your agent doesn't have to think about:
 
 ## What the agent sees
 
-Raw ARIA output from a page is noisy -- decorative wrappers, hidden elements, structural junk. The pruning pipeline (ported from [mcprune](https://github.com/nickvdyck/mcprune)) strips it down to what matters.
+Raw ARIA output from a page is noisy -- decorative wrappers, hidden elements, structural junk. The pruning pipeline (ported from [mcprune](https://github.com/hamr0/mcprune)) strips it down to what matters.
 
 | Page | Raw | Pruned | Reduction |
 |------|-----|--------|-----------|
