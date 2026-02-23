@@ -199,12 +199,18 @@ barebrowse open https://example.com    # Start daemon + navigate
 barebrowse snapshot                    # → .barebrowse/page-<timestamp>.yml
 barebrowse click 8                     # Click element ref=8
 barebrowse type 12 hello world         # Type into element ref=12
-barebrowse screenshot                  # → .barebrowse/screenshot-<timestamp>.png
-barebrowse console-logs                # → .barebrowse/console-<timestamp>.json
+barebrowse back                        # Go back in history
+barebrowse upload 7 /path/to/file.pdf  # Upload file to file input
+barebrowse pdf                         # → .barebrowse/page-<timestamp>.pdf
+barebrowse wait-for --text="Success"   # Wait for content to appear
+barebrowse tabs                        # List open tabs
+barebrowse save-state                  # → .barebrowse/state-<timestamp>.json
 barebrowse close                       # Kill daemon + browser
 ```
 
-Session lifecycle: `open` spawns a background daemon holding a `connect()` session. Subsequent commands POST to the daemon over HTTP (localhost). `close` shuts everything down.
+**Open flags:** `--mode=headless|headed|hybrid`, `--proxy=URL`, `--viewport=WxH`, `--storage-state=FILE`, `--no-cookies`, `--browser=firefox|chromium`, `--timeout=N`
+
+Session lifecycle: `open` spawns a background daemon holding a `connect()` session. Subsequent commands POST to the daemon over HTTP (localhost). `close` shuts everything down. JS dialogs (alert/confirm/prompt) are auto-dismissed and logged.
 
 Full command reference: `.claude/skills/barebrowse/SKILL.md`
 
@@ -228,7 +234,7 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 }
 ```
 
-7 tools exposed: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`.
+12 tools exposed: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`.
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
 

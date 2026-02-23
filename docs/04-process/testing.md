@@ -152,6 +152,27 @@ Tests real interactions: clicking, typing, scrolling, form submission, and navig
 
 ---
 
+## Manual validation (v0.4.0 features)
+
+Features added in v0.4.0 are manually validated but not yet in the automated test suite. See `docs/03-logs/validation-log.md` for full results.
+
+| Feature | Validation method | Result |
+|---------|-------------------|--------|
+| `back` / `forward` | example.com → wikipedia → back → forward | ok |
+| `upload <ref> <files..>` | data: URL with file input, verified onchange fired | ok |
+| `pdf` | Wikipedia export, 200KB PDF | ok |
+| `tabs` | Listed 2 tabs with urls/titles | ok |
+| `wait-for --text` | Found "Wikipedia" text | ok |
+| `wait-for --selector` | Found `body` selector | ok |
+| `dialog-log` | alert() auto-dismissed, 1 entry logged | ok |
+| `save-state` | 2.8KB cookies + localStorage JSON | ok |
+| `--viewport=WxH` | 800x600, confirmed via innerWidth/innerHeight | ok |
+| `drag` | Wired through all layers, needs drag UI to visually test |
+| `--proxy` | Wired to Chromium launch arg, needs proxy to test |
+| `--storage-state` | Wired to Network.setCookies, loads from save-state output |
+
+---
+
 ## Writing new tests
 
 Follow the existing pattern:
