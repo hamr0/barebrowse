@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.4.5
+
+- README: "What this is" rewritten — concise, no implementation details exposed
+
 ## 0.4.4
 
 Snapshot URL prefix and MCP large-snapshot handling.
