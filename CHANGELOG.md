@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.4.1
+
+- Docs: testing guide updated with v0.4.0 manual validation table
+- Docs: barebrowse.context.md — CLI examples expanded, open flags listed, MCP tool count 7→12
+- Docs: validation-log.md — full manual test results for all 10 new features
+
 ## 0.4.0
 
 10 new features inspired by Playwright MCP. All validated manually against live sites.
