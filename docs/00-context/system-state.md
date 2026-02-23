@@ -291,7 +291,7 @@ const result = await loop.run(messages, tools);
 await close();
 ```
 
-9 tools: browse, goto, snapshot, click, type, press, scroll, select, screenshot.
+13 tools: browse, goto, snapshot, click, type, press, scroll, select, back, forward, drag, upload, screenshot.
 Action tools auto-return snapshot (300ms settle delay). The LLM always sees the result.
 
 ### MCP server
@@ -328,11 +328,11 @@ barebrowse close                       # Kill daemon + browser
 
 Architecture: `open` spawns a detached child process running an HTTP server on a random localhost port. Session state stored in `.barebrowse/session.json`. Subsequent commands POST to the daemon. `close` sends shutdown, daemon calls `page.close()` + `process.exit(0)`.
 
-Full commands: open, close, status, goto, snapshot, screenshot, click, type, fill, press, scroll, hover, select, eval, wait-idle, console-logs, network-log.
+Full commands: open, close, status, goto, back, forward, snapshot, screenshot, pdf, click, type, fill, press, scroll, hover, select, drag, upload, tabs, tab, eval, wait-idle, wait-for, console-logs, network-log, dialog-log, save-state.
 
 Self-sufficiency features (console/network capture, eval) let agents debug without guessing -- they see JS errors and failed requests directly.
 
-SKILL.md (`.claude/skills/barebrowse/SKILL.md`) teaches Claude Code the CLI commands. Install with `barebrowse install --skill`.
+SKILL.md (`commands/barebrowse/SKILL.md`) teaches Claude Code the CLI commands. Install with `barebrowse install --skill`.
 
 ---
 
@@ -353,7 +353,7 @@ barebrowse = the eyes + hands  (browse, read, interact with the web)
 - **Linux first.** Tested on Fedora/KDE. macOS/Windows cookie extraction paths exist in auth.js but untested.
 - **Node >= 22.** Built-in WebSocket, built-in SQLite.
 - **Not a server.** Library that agents import. Wrap as MCP (included) or HTTP if needed.
-- **Not cross-platform tested.** Local development only, not published to npm.
+- **Not cross-platform tested.** Tested on Linux only. Published to npm as `barebrowse`.
 
 ---
 
@@ -381,14 +381,20 @@ barebrowse/
 │   ├── headed-demo.js # Interactive demo: Wikipedia → DuckDuckGo
 │   └── yt-demo.js     # YouTube demo: Firefox cookies → search → play video
 ├── docs/
-│   ├── prd.md         # Decisions + rationale (reference)
-│   ├── poc-plan.md    # Original POC phases + DoD
-│   ├── blueprint.md   # This file
-│   └── testing.md     # Test guide: pyramid, all 54 tests, CI strategy
+│   ├── README.md             # Documentation navigation guide
+│   ├── 00-context/           # vision, assumptions, system-state (this file)
+│   ├── 01-product/           # prd.md
+│   ├── 03-logs/              # decisions, implementation, bugs, validation, insights
+│   ├── 04-process/           # dev-workflow, definition-of-done, testing (64 tests)
+│   └── archive/              # poc-plan.md
 ├── mcp-server.js      # MCP server (JSON-RPC 2.0 over stdio)
 ├── cli.js             # CLI entry: session commands, MCP, browse, install
 ├── .mcp.json          # MCP server config for Claude Desktop / Cursor
 ├── barebrowse.context.md  # LLM-consumable integration guide
+├── commands/
+│   ├── barebrowse.md         # CLI command reference (any agent)
+│   └── barebrowse/
+│       └── SKILL.md          # CLI command reference (Claude Code skill)
 ├── package.json
 ├── README.md
 └── CLAUDE.md

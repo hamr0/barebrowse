@@ -185,7 +185,7 @@ try {
 ```
 
 `createBrowseTools(opts)` returns:
-- `tools` -- array of bareagent-compatible tool objects (browse, goto, snapshot, click, type, press, scroll, select, screenshot)
+- `tools` -- array of bareagent-compatible tool objects (browse, goto, snapshot, click, type, press, scroll, select, back, forward, drag, upload, screenshot)
 - `close()` -- cleanup function, call when done
 
 Action tools (click, type, press, scroll, goto) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
@@ -212,7 +212,7 @@ barebrowse close                       # Kill daemon + browser
 
 Session lifecycle: `open` spawns a background daemon holding a `connect()` session. Subsequent commands POST to the daemon over HTTP (localhost). `close` shuts everything down. JS dialogs (alert/confirm/prompt) are auto-dismissed and logged.
 
-Full command reference: `.claude/skills/barebrowse/SKILL.md`
+Full command reference: `commands/barebrowse/SKILL.md` (Claude Code) or `commands/barebrowse.md` (other agents)
 
 ## MCP wrapper
 

@@ -286,7 +286,7 @@ function install() {
 
 function installSkill() {
   const thisDir = fileURLToPath(new URL('.', import.meta.url));
-  const src = join(thisDir, '.claude', 'skills', 'barebrowse', 'SKILL.md');
+  const src = join(thisDir, 'commands', 'barebrowse', 'SKILL.md');
 
   if (!existsSync(src)) {
     console.error('SKILL.md not found in package. Reinstall barebrowse.');
@@ -408,6 +408,6 @@ MCP:
 As a library:
   import { browse, connect } from 'barebrowse';
 
-More: see README.md or barebrowse.context.md
+More: see README.md or commands/barebrowse.md
 `);
 }

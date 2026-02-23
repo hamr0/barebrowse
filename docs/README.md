@@ -50,6 +50,7 @@
 |------|---------|
 | `README.md` | Public-facing project overview |
 | `barebrowse.context.md` | LLM-consumable integration guide (full API, gotchas, wiring) |
-| `.claude/skills/barebrowse/SKILL.md` | CLI command reference + Claude Code skill definition |
+| `commands/barebrowse.md` | CLI command reference for any agent (same as SKILL.md without frontmatter) |
+| `commands/barebrowse/SKILL.md` | CLI command reference for Claude Code (copy to `.claude/skills/`) |
 | `CHANGELOG.md` | Detailed version-by-version changelog |
 | `CLAUDE.md` | AI agent instructions for this project |

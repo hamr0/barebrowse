@@ -45,9 +45,9 @@ Outputs go to `.barebrowse/` as files -- agents read them with their file tools,
 
 **Teach your agent the commands** by installing the skill file (a markdown reference the agent reads as context). The CLI tool itself still needs `npm install barebrowse` -- the skill just teaches the agent how to use it.
 
-**Claude Code:** `.claude/skills/barebrowse/` (project) or `~/.claude/skills/barebrowse/` (global, via `barebrowse install --skill`).
+**Claude Code:** Copy `commands/barebrowse/SKILL.md` to `.claude/skills/barebrowse/SKILL.md` (project) or run `barebrowse install --skill` (global).
 
-**Other agents:** `.barebrowse/commands/` (project) or `~/.config/barebrowse/commands/` (global). Copy [SKILL.md](.claude/skills/barebrowse/SKILL.md) there.
+**Other agents:** Copy `commands/barebrowse.md` to your agent's command/skill directory.
 
 For writing your own skill files for other CLI tools: [docs/skill-template.md](docs/skill-template.md).
 
@@ -91,7 +91,7 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 
 ### 3. Library -- for agentic automation
 
-Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (9 tools, auto-snapshot after every action).
+Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (13 tools, auto-snapshot after every action).
 
 For code examples, API reference, and wiring instructions, see **[barebrowse.context.md](barebrowse.context.md)** -- the full integration guide.
 

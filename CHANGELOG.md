@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.4.2
+
+Authenticated browsing improvements. MCP sessions now auto-inject cookies and fall back to headed mode when bot-detected.
+
+### MCP server
+- Session uses `mode: 'hybrid'` — headless by default, automatic headed fallback on challenge pages
+- `goto` tool now injects cookies from user's browsers before navigation (Chromium + Firefox merged)
+- Tool descriptions updated with trigger words for better agent tool selection
+
+### Cookie extraction (`src/auth.js`)
+- `extractCookies()` auto mode merges all browsers (Chromium + Firefox, last-write-wins by `name@domain`)
+- `authenticate()` strips subdomains (`mail.google.com` → `google.com`) so parent-domain cookies are included
+
+### Challenge detection (`src/index.js`)
+- `isChallengePage()` detects Reddit block pages ("prove your humanity", "file a ticket")
+- `connect()` hybrid fallback triggers on `goto()` when challenge detected
+
+### Skill files
+- New: `commands/barebrowse.md` — CLI command reference for non-Claude agents (same as SKILL.md)
+- Moved: `SKILL.md` from `.claude/skills/barebrowse/` to `commands/barebrowse/SKILL.md`
+- `install --skill` reads from new `commands/` path
+
+### Docs
+- README: MCP tool count 7→12, bareagent tools 9→13, skill install paths updated
+- barebrowse.context.md: v0.4.2, hybrid for connect(), MCP cookie injection
+- docs/00-context/system-state.md: bareagent 13 tools, CLI 27 commands, file map updated, published to npm
+- docs/03-logs/validation-log.md: full MCP validation results (Gmail, YouTube, LinkedIn, Reddit, Amazon, GitHub)
+
 ## 0.4.1
 
 - Docs: testing guide updated with v0.4.0 manual validation table

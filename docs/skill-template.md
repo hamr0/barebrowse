@@ -92,15 +92,15 @@ Both require the underlying tool to be installed. Choose based on your agent's c
 
 ## Example: barebrowse
 
-barebrowse ships its skill at `.claude/skills/barebrowse/SKILL.md`:
+barebrowse ships its skill at `commands/barebrowse/SKILL.md`:
 
 ```bash
 # Claude Code — project
-cp node_modules/barebrowse/.claude/skills/barebrowse/SKILL.md .claude/skills/barebrowse/SKILL.md
+cp node_modules/barebrowse/commands/barebrowse/SKILL.md .claude/skills/barebrowse/SKILL.md
 
 # Claude Code — global
 barebrowse install --skill
 
 # Other agents — project or global
-cp node_modules/barebrowse/.claude/skills/barebrowse/SKILL.md .barebrowse/commands/SKILL.md
+cp node_modules/barebrowse/commands/barebrowse/SKILL.md .barebrowse/commands/SKILL.md
 ```
