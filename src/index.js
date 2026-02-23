@@ -103,7 +103,7 @@ export async function browse(url, opts = {}) {
     } else {
       snapshot = raw;
     }
-    const stats = `# ${raw.length.toLocaleString()} chars → ${snapshot.length.toLocaleString()} chars (${Math.round((1 - snapshot.length / raw.length) * 100)}% pruned)`;
+    const stats = `# ${url}\n# ${raw.length.toLocaleString()} chars → ${snapshot.length.toLocaleString()} chars (${Math.round((1 - snapshot.length / raw.length) * 100)}% pruned)`;
     snapshot = stats + '\n' + snapshot;
 
     // Step 7: Clean up
@@ -221,10 +221,12 @@ export async function connect(opts = {}) {
       const result = await ariaTree(page);
       refMap = result.refMap;
       const raw = formatTree(result.tree);
-      if (pruneOpts === false) return raw;
+      const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
+      const pageUrl = entries[currentIndex]?.url || '';
+      if (pruneOpts === false) return `# ${pageUrl}\n` + raw;
       const pruned = pruneTree(result.tree, { mode: pruneOpts?.mode || 'act' });
       const out = formatTree(pruned);
-      const stats = `# ${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
+      const stats = `# ${pageUrl}\n# ${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
       return stats + '\n' + out;
     },
 

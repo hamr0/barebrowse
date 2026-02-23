@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.4.4
+
+Snapshot URL prefix and MCP large-snapshot handling.
+
+### Snapshot URL (`src/index.js`)
+- First line of every snapshot is now `# <current-page-url>`
+- Works in both `browse()` (uses the url param) and `connect().snapshot()` (uses `Page.getNavigationHistory`)
+
+### MCP maxChars (`mcp-server.js`)
+- `browse` and `snapshot` tools accept `maxChars` param (default 30000)
+- If snapshot exceeds limit: saved to `.barebrowse/page-<timestamp>.yml`, returns file path message
+- If under limit: returned inline as before
+
+### Docs
+- barebrowse.context.md: snapshot format updated with URL line, maxChars documented
+- commands/barebrowse.md + SKILL.md: snapshot example updated
+- docs/00-context/system-state.md: pipeline step 8 updated, MCP maxChars noted
+
+## 0.4.3
+
+Cookie consent expanded to 29 languages.
+
+- Added: RU, UK, PL, CS, TR, RO, HU, EL, SV, DA, NO, FI, AR, FA, ZH, JA, KO, VI, TH, HI, ID/MS
+- Dialog hints for 11 more languages
+- `.npmignore`: added `.idea/` (leaked in 0.4.2 tarball)
+
 ## 0.4.2
 
 Authenticated browsing improvements. MCP sessions now auto-inject cookies and fall back to headed mode when bot-detected.

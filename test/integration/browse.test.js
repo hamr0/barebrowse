@@ -66,6 +66,12 @@ describe('browse()', () => {
     // Raw output should have InlineTextBox filtered by aria.js but not tree-pruned
     assert.ok(snapshot.includes('RootWebArea'), 'raw should keep RootWebArea');
   });
+
+  it('snapshot starts with URL line', async () => {
+    const snapshot = await browse('https://example.com');
+    const firstLine = snapshot.split('\n')[0];
+    assert.equal(firstLine, '# https://example.com', 'first line should be the page URL');
+  });
 });
 
 describe('connect()', () => {
@@ -90,6 +96,30 @@ describe('connect()', () => {
       await page.goto('https://news.ycombinator.com');
       const snap2 = await page.snapshot();
       assert.ok(snap2.includes('Hacker News'));
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('snapshot starts with URL line', async () => {
+    const page = await connect();
+    try {
+      await page.goto('https://example.com');
+      const snapshot = await page.snapshot();
+      const firstLine = snapshot.split('\n')[0];
+      assert.equal(firstLine, '# https://example.com/', 'first line should be the page URL');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('raw snapshot starts with URL line', async () => {
+    const page = await connect();
+    try {
+      await page.goto('https://example.com');
+      const raw = await page.snapshot(false);
+      const firstLine = raw.split('\n')[0];
+      assert.equal(firstLine, '# https://example.com/', 'raw snapshot first line should be the page URL');
     } finally {
       await page.close();
     }

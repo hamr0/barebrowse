@@ -87,14 +87,13 @@ const snapshot = await browse('https://example.com', {
 
 ## Snapshot format
 
-The snapshot is a YAML-like ARIA tree. Each line is one node:
+The snapshot is a YAML-like ARIA tree. First line is the page URL, second is pruning stats, then the tree:
 
 ```
-- WebArea "Example Domain" [ref=1]
-  - heading "Example Domain" [level=1] [ref=3]
-  - paragraph [ref=5]
-    - StaticText "This domain is for use in illustrative examples." [ref=6]
-  - link "More information..." [ref=8]
+# https://example.com/
+# 379 chars → 45 chars (88% pruned)
+- heading "Example Domain" [level=1] [ref=3]
+- link "More information..." [ref=8]
 ```
 
 Key rules:
@@ -237,6 +236,8 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 12 tools exposed: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`.
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
+
+`browse` and `snapshot` accept a `maxChars` param (default 30000). If the snapshot exceeds the limit, it's saved to `.barebrowse/page-<timestamp>.yml` and a short message with the file path is returned instead.
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 

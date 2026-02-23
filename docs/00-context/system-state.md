@@ -155,7 +155,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 
 8. SNAPSHOT          Accessibility.getFullAXTree -> nested tree (aria.js)
                      prune.js: 9-step pipeline (47-95% token reduction)
-                     Output: YAML-like text with [ref=N] markers
+                     Output: URL + pruning stats + YAML-like text with [ref=N] markers
 
 9. INTERACT          interact.js dispatches real CDP Input events
                      click: scrollIntoView -> getBoxModel -> mousePressed/Released
@@ -311,6 +311,7 @@ Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` the
 
 12 tools: browse (one-shot), goto, snapshot, click, type, press, scroll, back, forward, drag, upload, pdf.
 Action tools return `'ok'` -- agent calls `snapshot` explicitly (MCP tool calls are cheap to chain).
+`browse` and `snapshot` accept `maxChars` (default 30000) — large snapshots are saved to `.barebrowse/` and a file path is returned.
 Session runs in hybrid mode (headless + automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation.
 Session tools share a singleton page, lazy-created on first use.
 

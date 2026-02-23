@@ -96,11 +96,9 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 The snapshot is a YAML-like ARIA tree. Each line is one node:
 
 ```
-- WebArea "Example Domain" [ref=1]
-  - heading "Example Domain" [level=1] [ref=3]
-  - paragraph [ref=5]
-    - StaticText "This domain is for use in illustrative examples." [ref=6]
-  - link "More information..." [ref=8]
+# https://example.com/
+# 379 chars → 45 chars (88% pruned)
+- heading "Example Domain" [level=1] [ref=3]
 ```
 
 - `[ref=N]` — Use this number with click, type, fill, hover, select, drag, upload

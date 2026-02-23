@@ -10,6 +10,19 @@
  */
 
 import { browse, connect } from './src/index.js';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+const MAX_CHARS_DEFAULT = 30000;
+const OUTPUT_DIR = join(process.cwd(), '.barebrowse');
+
+function saveSnapshot(text) {
+  mkdirSync(OUTPUT_DIR, { recursive: true });
+  const ts = new Date().toISOString().replace(/[:.]/g, '-');
+  const file = join(OUTPUT_DIR, `page-${ts}.yml`);
+  writeFileSync(file, text);
+  return file;
+}
 
 let _page = null;
 
@@ -27,6 +40,7 @@ const TOOLS = [
       properties: {
         url: { type: 'string', description: 'URL to browse' },
         mode: { type: 'string', enum: ['headless', 'headed', 'hybrid'], description: 'Browser mode (default: headless)' },
+        maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
       required: ['url'],
     },
@@ -45,7 +59,12 @@ const TOOLS = [
   {
     name: 'snapshot',
     description: 'Get the current ARIA snapshot of the session page. Returns a YAML-like tree with [ref=N] markers on interactive elements.',
-    inputSchema: { type: 'object', properties: {} },
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
+      },
+    },
   },
   {
     name: 'click',
@@ -141,9 +160,15 @@ const TOOLS = [
 
 async function handleToolCall(name, args) {
   switch (name) {
-    case 'browse':
-      return await browse(args.url, { mode: args.mode });
-
+    case 'browse': {
+      const text = await browse(args.url, { mode: args.mode });
+      const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
+      if (text.length > limit) {
+        const file = saveSnapshot(text);
+        return `Snapshot (${text.length} chars) saved to ${file}`;
+      }
+      return text;
+    }
     case 'goto': {
       const page = await getPage();
       try { await page.injectCookies(args.url); } catch {}
@@ -152,7 +177,13 @@ async function handleToolCall(name, args) {
     }
     case 'snapshot': {
       const page = await getPage();
-      return await page.snapshot();
+      const text = await page.snapshot();
+      const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
+      if (text.length > limit) {
+        const file = saveSnapshot(text);
+        return `Snapshot (${text.length} chars) saved to ${file}`;
+      }
+      return text;
     }
     case 'click': {
       const page = await getPage();
@@ -218,7 +249,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.4.2' },
+      serverInfo: { name: 'barebrowse', version: '0.4.4' },
     });
   }
 
