@@ -569,7 +569,9 @@ function isChallengePage(tree) {
     'checking your browser',
     'please wait',
     'verify you are human',
+    'prove your humanity',
     'attention required',
+    'file a ticket',
   ];
   const lower = text.toLowerCase();
   return challengePhrases.some((p) => lower.includes(p));

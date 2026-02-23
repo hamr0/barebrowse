@@ -229,4 +229,41 @@ All 12 MCP tools tested live via Claude Code MCP integration. Stats line (`# X c
 
 ---
 
+## MCP cookies + hybrid fallback validation (v0.4.2)
+
+Three changes tested: all-browser cookie merge in auth.js, hybrid mode for connect(), cookie injection + hybrid in MCP goto.
+
+### Cookie injection — login-walled sites via MCP goto
+
+| Site | Logged In? | Details |
+|------|-----------|---------|
+| **Gmail** | Yes | Full inbox visible: Compose, labels, 4 emails. Required domain-stripping fix (`mail.google.com` → `google.com`) to capture parent-domain cookies (SID, HSID, etc.). 47 cookies merged from Firefox + Chromium. |
+| **YouTube** | Yes | Personalized feed: tabs for Linux, AI, Electrical Engineering. Recommendations include Claude Code videos, KDE Plasma. Account buttons visible. |
+| **LinkedIn** | Yes | Full feed as Amr Hassan: Home, My Network, Jobs, Messaging, Notifications. Posts visible. Stealth patches + cookies bypassed LinkedIn's aggressive bot detection. |
+| **Amazon.nl** | No (expected) | Not logged in but consent dismissed, search + product pages worked. Cookie injection had no effect (no Amazon session in Firefox). |
+| **GitHub** | No | Shows generic homepage with "Sign in". No GitHub session cookies in Firefox. |
+
+### Bot detection — hybrid fallback
+
+| Site | Headless Result | Hybrid Fallback | Final Result |
+|------|----------------|-----------------|--------------|
+| **Google Search** | Full results, no CAPTCHA | Not triggered (stealth sufficient) | Pass — logged in as Amr Hassan |
+| **Reddit** | "Prove your humanity" + reCAPTCHA | Triggered → connected to headed Chromium on 9222 | Pass — full feed with posts, logged in |
+| **LinkedIn** | Loaded fine with stealth + cookies | Not triggered | Pass |
+
+### Bug fixes discovered during validation
+
+1. **Domain stripping in authenticate()**: `mail.google.com` extracted only 9 cookies (subdomain-specific). Fix: strip to registrable domain (`google.com`) → 47 cookies including all auth cookies (SID, HSID, SSID, APISID, SAPISID).
+2. **Reddit challenge detection**: Block page shows "Prove your humanity" and "File a ticket" — neither matched existing challenge phrases. Added both to `isChallengePage()`.
+
+### connect() hybrid mode
+
+Tested `connect({ mode: 'hybrid' })` with Reddit: headless detected challenge → killed browser → connected to headed Chromium → Reddit loaded with full content. Same code path as MCP session.
+
+### All-browser cookie merge
+
+`extractCookies({ domain: 'google.com' })` in auto mode: Chromium cookies merged first, then Firefox cookies (last-write-wins by `name@domain`). 47 cookies total for google.com. Previous behavior: stopped at first browser found (Chromium only, missed Firefox session).
+
+---
+
 *Add new validation entries when testing against new sites or features.*
