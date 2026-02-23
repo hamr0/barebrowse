@@ -148,7 +148,7 @@ Everything the agent can do through barebrowse:
 |--------|-------------|
 | **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
 | **Back / Forward** | Browser history navigation |
-| **Snapshot** | Pruned ARIA tree with `[ref=N]` markers (40-90% token reduction) |
+| **Snapshot** | Pruned ARIA tree with `[ref=N]` markers. Two modes: `act` (buttons, links, inputs) and `read` (full text). 40-90% token reduction. |
 | **Click** | Scroll into view + mouse click at element center |
 | **Type** | Focus + insert text, with option to clear existing content first |
 | **Press** | Special keys: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
