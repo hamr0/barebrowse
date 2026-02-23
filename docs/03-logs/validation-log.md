@@ -120,4 +120,79 @@ Full end-to-end validation of every CLI command against real websites.
 
 ---
 
+## New features manual validation (v0.4.0)
+
+All tested against live sites via CLI session from `/tmp`.
+
+### Navigation: back/forward
+
+| Command | Result |
+|---------|--------|
+| `open https://example.com` | Session started |
+| `goto https://wikipedia.org` | "ok" |
+| `back` | "ok" — returned to example.com |
+| `forward` | "ok" — returned to wikipedia.org |
+
+### File upload
+
+| Command | Result |
+|---------|--------|
+| `goto 'data:text/html,<input type="file" id="f"><script>...</script>'` | "ok" |
+| `snapshot` | `button "Choose File" [ref=7]` |
+| `upload 7 /tmp/test-upload.txt` | "ok" |
+| `eval 'document.title'` | `"uploaded"` — onchange fired, confirmed working |
+
+### PDF export
+
+| Command | Result |
+|---------|--------|
+| (on wikipedia.org) `pdf` | `.barebrowse/page-*.pdf` — 200,716 bytes |
+
+### Tabs
+
+| Command | Result |
+|---------|--------|
+| `tabs` | `[{"index":0,"url":"https://www.wikipedia.org/","title":"Wikipedia",...}, {"index":1,"url":"about:blank",...}]` |
+
+### Wait-for
+
+| Command | Result |
+|---------|--------|
+| `wait-for --text=Wikipedia` | "ok" — found text immediately |
+| `wait-for --selector=body` | "ok" — found selector immediately |
+
+### JS dialog auto-dismiss
+
+| Command | Result |
+|---------|--------|
+| `eval 'alert("hello from dialog"); "done"'` | `"done"` — alert auto-dismissed, eval continued |
+| `dialog-log` | `.barebrowse/dialogs-*.json (1 entries)` — dialog logged with type, message, timestamp |
+
+### Save state
+
+| Command | Result |
+|---------|--------|
+| `save-state` | `.barebrowse/state-*.json` — 2,836 bytes (cookies + localStorage) |
+
+### Viewport flag
+
+| Command | Result |
+|---------|--------|
+| `open https://example.com --viewport=800x600` | Session started |
+| `eval 'window.innerWidth + "x" + window.innerHeight'` | `"800x600"` — confirmed |
+
+### Drag (wired, needs drag-and-drop UI for visual test)
+
+Wired through interact.js → index.js → daemon.js → cli.js. Mouse event sequence: mousePressed at source → mouseMoved to midpoint → mouseMoved to target → mouseReleased at target. Requires a drag-and-drop UI to validate visually.
+
+### Proxy flag
+
+Wired through cli.js → daemon.js → chromium.js → `--proxy-server` Chromium launch arg. Requires a proxy server to validate.
+
+### Storage-state flag
+
+Wired through cli.js → daemon.js → connect() → `Network.setCookies` on startup. Loads from JSON file produced by `save-state`.
+
+---
+
 *Add new validation entries when testing against new sites or features.*
