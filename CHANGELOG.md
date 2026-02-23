@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.3.1
+
+- Fix `.npmignore`: exclude `.claude/memory/`, `.claude/stash/`, `.claude/settings.local.json` from package (leaked in 0.3.0)
+
+## 0.3.0
+
+CLI session mode. Shell commands that output to disk — coding agents read files when needed instead of getting full snapshots in every tool response. ~4x more token-efficient than MCP for multi-step browsing flows.
+
+### New: CLI session commands
+- `barebrowse open [url] [flags]` — spawn background daemon holding a `connect()` session
+- `barebrowse close` / `status` — session lifecycle
+- `barebrowse goto <url>` — navigate
+- `barebrowse snapshot [--mode=act|read]` — ARIA snapshot → `.barebrowse/page-*.yml`
+- `barebrowse screenshot [--format]` — screenshot → `.barebrowse/screenshot-*.png`
+- `barebrowse click/type/fill/press/scroll/hover/select` — all interactions from connect() API
+- Open flags: `--mode`, `--port`, `--no-cookies`, `--browser`, `--timeout`, `--prune-mode`, `--no-consent`
+
+### New: agent self-sufficiency
+- `barebrowse eval <expression>` — run JS in page context via `Runtime.evaluate`
+- `barebrowse console-logs [--level --clear]` — dump captured console logs → `.barebrowse/console-*.json`
+- `barebrowse network-log [--failed]` — dump network requests → `.barebrowse/network-*.json`
+- `barebrowse wait-idle [--timeout]` — wait for network idle
+
+### New: daemon architecture (`src/daemon.js` + `src/session-client.js`)
+- Background HTTP server on random localhost port, holding a `connect()` session
+- Spawned as detached child process, communicates via `session.json`
+- Console capture via `Runtime.consoleAPICalled`
+- Network capture via `Network.requestWillBeSent` / `responseReceived` / `loadingFailed`
+- Graceful shutdown on `close` command or SIGTERM
+
+### New: SKILL.md for Claude Code
+- `.claude/skills/barebrowse/SKILL.md` — skill definition + full CLI command reference
+- `barebrowse install --skill` — copies SKILL.md to `~/.config/claude/skills/barebrowse/`
+
+### Fixed: MCP setup instructions
+- README now has per-client instructions: Claude Code (`claude mcp add`), Claude Desktop/Cursor (`npx barebrowse install`), VS Code (`.vscode/mcp.json`)
+- `install` command no longer writes `.mcp.json` for Claude Code — prints `claude mcp add` hint instead
+
+### Fixed: ARIA tree formatting (`src/aria.js`)
+- Ignored nodes joined children with empty string instead of newline, causing sibling subtrees to concatenate on one line
+- Fixed to `.filter(Boolean).join('\n')`
+
+### Changed
+- `cli.js` — expanded from 3 commands to full dispatch table (20+ commands)
+- `barebrowse.context.md` — added CLI as third integration path, updated MCP setup
+- `README.md` — "Two ways" → "Three ways", added CLI section
+
+### Docs
+- `docs/04-process/testing.md` — updated to 64 tests, added CLI test section
+- `docs/00-context/system-state.md` — added daemon/session-client to module table, CLI to integrations
+- `docs/03-logs/validation-log.md` — full CLI manual validation results
+
+### Tests
+- 64 tests passing (was 54 in 0.2.x)
+- New: `test/integration/cli.test.js` (10 tests) — full open → snapshot → goto → click → eval → console → network → close cycle
+- All existing 54 tests unchanged and passing
+
 ## 0.2.1
 
 - README rewritten: no code blocks, full obstacle course table with mode column, two usage paths (MCP vs framework), mcprune credited, measured token savings, context.md as code reference

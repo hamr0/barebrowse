@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.1.0 | Node.js >= 22 | 0 required deps | MIT
+> v0.3.0 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -13,9 +13,10 @@ No Playwright. No bundled browser. No build step. Vanilla JS, ES modules.
 npm install barebrowse
 ```
 
-Two entry points:
-- `import { browse } from 'barebrowse'` -- one-shot: URL in, snapshot out
-- `import { connect } from 'barebrowse'` -- session: navigate, interact, observe
+Three integration paths:
+1. **Library:** `import { browse, connect } from 'barebrowse'` -- one-shot or interactive session
+2. **MCP server:** `barebrowse mcp` -- JSON-RPC over stdio for Claude Desktop, Cursor, etc.
+3. **CLI session:** `barebrowse open` / `click` / `snapshot` / `close` -- shell commands, outputs to disk
 
 ## Which mode do I need?
 
@@ -174,15 +175,33 @@ try {
 
 Action tools (click, type, press, scroll, goto) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
 
+## CLI session mode
+
+For coding agents (Claude Code, Copilot, Cursor) and quick interactive testing. Commands output files to `.barebrowse/` -- agents read them with file tools, avoiding token waste in tool responses.
+
+```bash
+barebrowse open https://example.com    # Start daemon + navigate
+barebrowse snapshot                    # → .barebrowse/page-<timestamp>.yml
+barebrowse click 8                     # Click element ref=8
+barebrowse type 12 hello world         # Type into element ref=12
+barebrowse screenshot                  # → .barebrowse/screenshot-<timestamp>.png
+barebrowse console-logs                # → .barebrowse/console-<timestamp>.json
+barebrowse close                       # Kill daemon + browser
+```
+
+Session lifecycle: `open` spawns a background daemon holding a `connect()` session. Subsequent commands POST to the daemon over HTTP (localhost). `close` shuts everything down.
+
+Full command reference: `.claude/skills/barebrowse/SKILL.md`
+
 ## MCP wrapper
 
 barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or any MCP client.
 
-```bash
-npm install barebrowse       # or npm install -g barebrowse
-```
+**Claude Code:** `claude mcp add barebrowse -- npx barebrowse mcp`
 
-Add to your MCP client config (`.mcp.json`, `claude_desktop_config.json`, etc.):
+**Claude Desktop / Cursor:** `npx barebrowse install` (auto-detects and writes config)
+
+**Manual config** (`claude_desktop_config.json`, `.cursor/mcp.json`):
 ```json
 {
   "mcpServers": {

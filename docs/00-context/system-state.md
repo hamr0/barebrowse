@@ -163,7 +163,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 
 ### Module table
 
-Eleven modules, 2,396 lines, zero required dependencies.
+Thirteen modules, zero required dependencies.
 
 | Module | Lines | Purpose |
 |---|---|---|
@@ -177,6 +177,8 @@ Eleven modules, 2,396 lines, zero required dependencies.
 | `src/consent.js` | 210 | Auto-dismiss cookie consent dialogs, 7 languages |
 | `src/stealth.js` | 51 | Navigator patches for headless anti-detection |
 | `src/bareagent.js` | 161 | Tool adapter for bareagent Loop |
+| `src/daemon.js` | ~230 | Background HTTP server holding connect() session for CLI mode |
+| `src/session-client.js` | ~60 | HTTP client to daemon (sendCommand, readSession, isAlive) |
 | `mcp-server.js` | 216 | MCP server (JSON-RPC 2.0 over stdio) |
 
 ---
@@ -254,11 +256,12 @@ Anti-detection for headless mode via `Page.addScriptToEvaluateOnNewDocument` (ru
 - `Permissions.prototype.query` -> notifications return 'prompt'
 - Applied automatically in headless mode
 
-### Tests -- 47+ passing
+### Tests -- 64 passing
 - 16 unit tests (pruning logic)
 - 7 unit tests (cookie extraction -- 2 skip when Chromium profile locked)
 - 5 unit tests (CDP client + browser launch)
 - 11 integration tests (end-to-end browse pipeline)
+- 10 integration tests (CLI session lifecycle: open/snapshot/goto/click/eval/console/network/close)
 - 15 integration tests (real-world interactions: data: URL fixture + live sites)
 
 ---
@@ -302,6 +305,26 @@ Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` the
 Action tools return `'ok'` -- agent calls `snapshot` explicitly (MCP tool calls are cheap to chain).
 Session tools share a singleton page, lazy-created on first use.
 
+### CLI session -- for coding agents + human devs
+
+Shell commands that output to disk. Coding agents (Claude Code, Copilot, Cursor) read output files with their file tools -- no tokens wasted in tool responses.
+
+```bash
+barebrowse open https://example.com    # Start daemon + navigate
+barebrowse snapshot                    # → .barebrowse/page-*.yml
+barebrowse click 8                     # Click element
+barebrowse console-logs                # → .barebrowse/console-*.json
+barebrowse close                       # Kill daemon + browser
+```
+
+Architecture: `open` spawns a detached child process running an HTTP server on a random localhost port. Session state stored in `.barebrowse/session.json`. Subsequent commands POST to the daemon. `close` sends shutdown, daemon calls `page.close()` + `process.exit(0)`.
+
+Full commands: open, close, status, goto, snapshot, screenshot, click, type, fill, press, scroll, hover, select, eval, wait-idle, console-logs, network-log.
+
+Self-sufficiency features (console/network capture, eval) let agents debug without guessing -- they see JS errors and failed requests directly.
+
+SKILL.md (`.claude/skills/barebrowse/SKILL.md`) teaches Claude Code the CLI commands. Install with `barebrowse install --skill`.
+
 ---
 
 ## Ecosystem
@@ -339,10 +362,12 @@ barebrowse/
 │   ├── interact.js    # Click, type, press, scroll, hover, select
 │   ├── consent.js     # Auto-dismiss cookie consent dialogs
 │   ├── stealth.js     # Navigator patches for headless anti-detection
-│   └── bareagent.js   # Tool adapter for bareagent Loop
+│   ├── bareagent.js   # Tool adapter for bareagent Loop
+│   ├── daemon.js      # Background HTTP server for CLI session
+│   └── session-client.js  # HTTP client to daemon
 ├── test/
 │   ├── unit/          # prune, auth, cdp tests
-│   └── integration/   # browse + interact tests (real sites)
+│   └── integration/   # browse, interact, cli tests
 ├── examples/
 │   ├── headed-demo.js # Interactive demo: Wikipedia → DuckDuckGo
 │   └── yt-demo.js     # YouTube demo: Firefox cookies → search → play video
@@ -352,7 +377,7 @@ barebrowse/
 │   ├── blueprint.md   # This file
 │   └── testing.md     # Test guide: pyramid, all 54 tests, CI strategy
 ├── mcp-server.js      # MCP server (JSON-RPC 2.0 over stdio)
-├── cli.js             # CLI entry: `npx barebrowse mcp` or `npx barebrowse browse <url>`
+├── cli.js             # CLI entry: session commands, MCP, browse, install
 ├── .mcp.json          # MCP server config for Claude Desktop / Cursor
 ├── barebrowse.context.md  # LLM-consumable integration guide
 ├── package.json

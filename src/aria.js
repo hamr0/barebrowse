@@ -20,7 +20,7 @@ export function formatTree(node, depth = 0) {
 
   // Skip ignored nodes but still process their children
   if (node.ignored) {
-    return node.children.map((c) => formatTree(c, depth)).join('');
+    return node.children.map((c) => formatTree(c, depth)).filter(Boolean).join('\n');
   }
 
   // Skip low-level rendering nodes that are noise for agents

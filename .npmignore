@@ -1,4 +1,7 @@
-.claude/
+.claude/memory/
+.claude/stash/
+.claude/settings.local.json
+.claude/projects/
 .git/
 test/
 examples/

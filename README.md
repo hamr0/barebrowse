@@ -30,18 +30,65 @@ npm install barebrowse
 
 Requires Node.js >= 22 and any installed Chromium-based browser.
 
-## Two ways to use it
+## Three ways to use it
 
-### 1. MCP server -- for Claude Desktop, Cursor, Claude Code
+### 1. CLI session -- for coding agents and quick testing
 
+```bash
+barebrowse open https://example.com    # Start session + navigate
+barebrowse snapshot                    # ARIA snapshot → .barebrowse/page-*.yml
+barebrowse click 8                     # Click element
+barebrowse close                       # End session
 ```
-npm install -g barebrowse
+
+Outputs go to `.barebrowse/` as files -- agents read them with their file tools, no token waste in tool responses. Install the skill for Claude Code:
+
+```bash
+barebrowse install --skill
+# or: claude mcp add barebrowse -- npx barebrowse mcp
+```
+
+Full command reference: [.claude/skills/barebrowse/SKILL.md](.claude/skills/barebrowse/SKILL.md)
+
+### 2. MCP server -- for Claude Desktop, Cursor, and other MCP clients
+
+**Claude Code:**
+```bash
+claude mcp add barebrowse -- npx barebrowse mcp
+```
+
+**Claude Desktop / Cursor:**
+```bash
 npx barebrowse install
 ```
 
-That's it. `install` auto-detects your MCP client and writes the config. No manual JSON editing. Restart your client and you have 7 browsing tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`.
+Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`):
+```json
+{
+  "mcpServers": {
+    "barebrowse": {
+      "command": "npx",
+      "args": ["barebrowse", "mcp"]
+    }
+  }
+}
+```
 
-### 2. Framework -- for agentic automation
+**VS Code (`.vscode/mcp.json`):**
+```json
+{
+  "servers": {
+    "barebrowse": {
+      "command": "npx",
+      "args": ["barebrowse", "mcp"]
+    }
+  }
+}
+```
+
+7 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`.
+
+### 3. Library -- for agentic automation
 
 Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (9 tools, auto-snapshot after every action).
 

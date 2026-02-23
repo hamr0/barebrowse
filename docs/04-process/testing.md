@@ -6,14 +6,14 @@
 node --test test/unit/*.test.js test/integration/*.test.js
 ```
 
-54 tests, 5 files, ~45s on a typical machine. No test framework -- uses Node's built-in `node:test` runner.
+64 tests, 6 files, ~60s on a typical machine. No test framework -- uses Node's built-in `node:test` runner.
 
 ## Test pyramid
 
 ```
           /  E2E  \         15 tests — real websites (Google, Wikipedia, GitHub, etc.)
          /----------\
-        / Integration \     11 tests — full browse/connect pipeline against example.com, HN
+        / Integration \     21 tests — browse/connect pipeline + CLI session lifecycle
        /----------------\
       /      Unit        \  28 tests — pruning, cookie extraction, CDP client, browser launch
      /--------------------\
@@ -97,6 +97,25 @@ Tests the full `browse()` and `connect()` pipeline end-to-end against real pages
 | 9 | connect() | creates a long-lived session and navigates | connect() + goto() + snapshot() works |
 | 10 | connect() | supports multiple navigations in one session | Multiple goto() calls on same page |
 | 11 | connect() | snapshot accepts prune: false for raw output | snapshot(false) preserves full tree |
+
+### `test/integration/cli.test.js` -- 10 tests
+
+Tests the full CLI session lifecycle: daemon spawn, command dispatch over HTTP, and cleanup. Uses a temp directory so tests don't pollute the project.
+
+| # | Test | What it validates |
+|---|------|-------------------|
+| 1 | open starts a daemon and creates session.json | `barebrowse open about:blank` spawns daemon, writes session.json with port+pid |
+| 2 | status shows running session | `barebrowse status` reports pid, port, start time |
+| 3 | snapshot creates a .yml file | `barebrowse snapshot` writes .barebrowse/page-*.yml |
+| 4 | goto navigates and snapshot shows new page content | `barebrowse goto example.com` + snapshot contains "Example Domain" + refs |
+| 5 | click sends click command | `barebrowse click <ref>` returns "ok" |
+| 6 | eval executes JS and returns result | `barebrowse eval 1+1` returns "2" |
+| 7 | console-logs creates a .json file | After eval with console.log, `console-logs` writes JSON |
+| 8 | network-log creates a .json file | `network-log` writes JSON with request entries |
+| 9 | close shuts down the daemon | `barebrowse close` removes session.json, daemon exits |
+| 10 | status after close shows no session | `barebrowse status` exits non-zero when no session |
+
+Note: Tests run sequentially within the suite (each depends on the session opened in test 1). The `after()` hook ensures daemon cleanup even if tests fail.
 
 ---
 
