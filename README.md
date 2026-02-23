@@ -16,7 +16,7 @@
 
 ## What this is
 
-barebrowse is agentic browsing stripped to the bone. It gives your AI agent eyes and hands on the web -- navigate any page, see what's there, click buttons, fill forms, scroll, and move on. It uses your installed Chromium browser (Chrome, Brave, Edge -- whatever you have), reuses your existing login sessions, and handles all the friction automatically: cookie consent walls, permission prompts, bot detection, GDPR dialogs.
+barebrowse is agentic browsing stripped to the bone. It gives your AI agent eyes and hands on the web -- navigate any page, see what's there, click buttons, fill forms, scroll, and move on. It uses your installed Chromium browser (Chrome, Brave, Edge -- whatever you have), reuses your existing login sessions, and handles all the friction automatically: cookie consent walls, permission prompts, and bot detection.
 
 Instead of dumping raw DOM or taking screenshots, barebrowse returns a **pruned ARIA snapshot** -- a compact semantic view of what's on the page and what the agent can interact with. Buttons, links, inputs, headings -- labeled with `[ref=N]` markers the agent uses to act. The pruning pipeline is ported from [mcprune](https://github.com/hamr0/mcprune) and cuts 40-90% of tokens compared to raw page output. Every token your agent reads is meaningful.
 
@@ -109,7 +109,7 @@ This is the obstacle course your agent doesn't have to think about:
 
 | Obstacle | How it's handled | Mode |
 |----------|-----------------|------|
-| **Cookie consent walls** (GDPR) | ARIA tree scan + jsClick accept button, 7 languages (EN, NL, DE, FR, ES, IT, PT) | Both |
+| **Cookie consent walls** | ARIA tree scan + jsClick accept button, 29 languages | Both |
 | **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
 | **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
 | **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues | Both |

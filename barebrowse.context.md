@@ -145,7 +145,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 
 | Obstacle | How | Mode |
 |---|---|---|
-| Cookie consent (GDPR) | ARIA scan + jsClick accept button, 7 languages | Both |
+| Cookie consent | ARIA scan + jsClick accept button, 29 languages | Both |
 | Consent behind iframes | JS `.click()` via DOM.resolveNode bypasses overlays | Both |
 | Permission prompts | Launch flags + CDP Browser.setPermission auto-deny | Both |
 | Media autoplay blocked | `--autoplay-policy=no-user-gesture-required` | Both |
@@ -288,7 +288,7 @@ URL -> chromium.js (find/launch browser, permission flags)
 
 7. **One page per connect().** Each `connect()` call creates one page. For multiple tabs, call `connect()` multiple times.
 
-8. **Consent dismiss is best-effort.** It handles 16+ tested sites across 7 languages but novel consent implementations may need manual handling. Disable with `{ consent: false }`.
+8. **Consent dismiss is best-effort.** It handles 16+ tested sites across 29 languages but novel consent implementations may need manual handling. Disable with `{ consent: false }`.
 
 9. **Screenshot returns base64.** Write to file with `fs.writeFileSync('shot.png', Buffer.from(base64, 'base64'))` or pass directly to a vision model.
 

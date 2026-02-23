@@ -64,7 +64,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 
 | Obstacle | How It's Handled | Mode |
 |----------|-----------------|------|
-| **Cookie consent walls** (GDPR) | ARIA tree scan, jsClick accept button. 7 languages: EN, NL, DE, FR, ES, IT, PT | Both |
+| **Cookie consent walls** | ARIA tree scan, jsClick accept button. 29 languages | Both |
 | **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
 | **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
 | **Consent behind iframe overlay** | JS `.click()` via `DOM.resolveNode` bypasses z-index/overlay issues | Both |
@@ -181,7 +181,7 @@ Thirteen modules, zero required dependencies.
 | `src/auth.js` | 279 | Cookie extraction (Chromium AES + keyring, Firefox), CDP injection |
 | `src/prune.js` | 472 | ARIA pruning pipeline (9-step, ported from mcprune) |
 | `src/interact.js` | 208 | Click, type, press, scroll, hover, select |
-| `src/consent.js` | 210 | Auto-dismiss cookie consent dialogs, 7 languages |
+| `src/consent.js` | ~280 | Auto-dismiss cookie consent dialogs, 29 languages |
 | `src/stealth.js` | 51 | Navigator patches for headless anti-detection |
 | `src/bareagent.js` | 161 | Tool adapter for bareagent Loop |
 | `src/daemon.js` | ~230 | Background HTTP server holding connect() session for CLI mode |
@@ -232,11 +232,11 @@ On `connect()` sessions: `click(ref)`, `type(ref, text, opts)`, `press(key)`, `s
 **Real-world tested against:** Google, Wikipedia, GitHub (SPA), Hacker News, DuckDuckGo, YouTube (search + video playback), example.com
 
 ### Cookie consent auto-dismiss -- done
-Automatically detects and dismisses GDPR/cookie consent dialogs after page load.
+Automatically detects and dismisses cookie consent dialogs after page load.
 - Scans ARIA tree for `dialog`/`alertdialog` with consent-related content
 - Falls back to global button scan for sites that don't use dialog roles (e.g. BBC SourcePoint)
 - Uses JS `.click()` via `DOM.resolveNode` + `Runtime.callFunctionOn` to bypass iframe overlays
-- Multi-language: EN, NL, DE, FR, ES, IT, PT button text patterns
+- 29 languages: EN, NL, DE, FR, ES, IT, PT, RU, UK, PL, CS, TR, RO, HU, EL, SV, DA, NO, FI, AR, FA, ZH, JA, KO, VI, TH, HI, ID/MS
 - Opt-out via `{ consent: false }`
 - Works in both headless and headed modes
 
