@@ -70,7 +70,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **Consent behind iframe overlay** | JS `.click()` via `DOM.resolveNode` bypasses z-index/overlay issues | Both |
 | **Permission prompts** (location, notifications, camera, mic) | Launch flags + CDP `Browser.setPermission` auto-deny | Both |
 | **Media autoplay blocked** | `--autoplay-policy=no-user-gesture-required` | Both |
-| **Login walls** | Firefox cookie extraction, CDP injection (user's real sessions) | Both |
+| **Login walls** | All-browser cookie merge (Firefox + Chromium), CDP injection (user's real sessions) | Both |
 | **Pre-filled form inputs** | `type({ clear: true })` selects all + deletes before typing | Both |
 | **Off-screen elements** | `DOM.scrollIntoViewIfNeeded` before every click | Both |
 | **Form submission** | `press('Enter')` with proper `text: '\r'` triggers onsubmit | Both |
@@ -86,8 +86,6 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 
 | Obstacle | What's Needed | Difficulty |
 |----------|--------------|------------|
-| File upload | `Input.setFiles` via CDP | Low |
-| Drag and drop | `Input.dispatchDragEvent` sequence | Medium |
 | Infinite scroll | Scroll + wait for new content strategy | Medium |
 | CAPTCHAs | Cannot solve -- headed mode lets user solve manually | N/A |
 | Cross-origin iframes | Frame tree traversal via CDP | Medium |
@@ -251,9 +249,10 @@ Chrome permission prompts (location, notifications, camera, mic, etc.) are suppr
 - No user prompt ever appears -- agents browse without interruption
 
 ### Cross-browser cookie injection -- done
-Firefox cookies (user's default browser) extracted from SQLite -> injected into headless or headed Chromium via CDP `Network.setCookie`. No need to use Chromium as daily browser.
-- `browse()`: auto-injects cookies before navigation (opt-out with `{ cookies: false }`)
+Auto mode merges cookies from all detected browsers (Chromium + Firefox, last-write-wins by name+domain). No need to use Chromium as daily browser.
+- `browse()`: auto-injects merged cookies before navigation (opt-out with `{ cookies: false }`)
 - `connect()`: manual injection via `page.injectCookies(url, { browser: 'firefox' })`
+- MCP `goto`: auto-injects cookies before every navigation
 - Proven: YouTube login session transferred from Firefox -> headed Chromium -> video playback
 
 ### Stealth patches -- done
@@ -310,8 +309,9 @@ Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` the
 }
 ```
 
-7 tools: browse (one-shot), goto, snapshot, click, type, press, scroll.
+12 tools: browse (one-shot), goto, snapshot, click, type, press, scroll, back, forward, drag, upload, pdf.
 Action tools return `'ok'` -- agent calls `snapshot` explicitly (MCP tool calls are cheap to chain).
+Session runs in hybrid mode (headless + automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation.
 Session tools share a singleton page, lazy-created on first use.
 
 ### CLI session -- for coding agents + human devs

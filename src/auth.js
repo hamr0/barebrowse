@@ -232,14 +232,20 @@ export function extractCookies(opts = {}) {
     return extractChromiumCookies(path, domain);
   }
 
-  // Auto-detect: try Chromium browsers first, then Firefox
+  // Auto: try all browsers, merge (last-write-wins by name+domain)
+  const all = new Map();
   const chromium = findChromiumCookieDb();
-  if (chromium) return extractChromiumCookies(chromium.path, domain);
-
+  if (chromium) {
+    for (const c of extractChromiumCookies(chromium.path, domain))
+      all.set(`${c.name}@${c.domain}`, c);
+  }
   const firefox = findFirefoxCookieDb();
-  if (firefox) return extractFirefoxCookies(firefox, domain);
-
-  throw new Error('No browser cookie database found');
+  if (firefox) {
+    for (const c of extractFirefoxCookies(firefox, domain))
+      all.set(`${c.name}@${c.domain}`, c);
+  }
+  if (all.size === 0) throw new Error('No browser cookie database found');
+  return [...all.values()];
 }
 
 /**

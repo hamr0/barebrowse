@@ -120,7 +120,7 @@ export async function browse(url, opts = {}) {
  * Connect to a browser for a long-lived interactive session.
  *
  * @param {object} [opts]
- * @param {'headless'|'headed'} [opts.mode='headless'] - Browser mode
+ * @param {'headless'|'headed'|'hybrid'} [opts.mode='headless'] - Browser mode
  * @param {number} [opts.port=9222] - CDP port for headed mode
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
@@ -138,7 +138,7 @@ export async function connect(opts = {}) {
     cdp = await createCDP(browser.wsUrl);
   }
 
-  const page = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
+  let page = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
   let refMap = new Map();
 
   // Suppress permission prompts for all modes
@@ -157,23 +157,45 @@ export async function connect(opts = {}) {
 
   // Auto-dismiss JS dialogs (alert, confirm, prompt)
   const dialogLog = [];
-  page.session.on('Page.javascriptDialogOpening', async (params) => {
-    dialogLog.push({
-      type: params.type,
-      message: params.message,
-      timestamp: new Date().toISOString(),
+  function setupDialogHandler(session) {
+    session.on('Page.javascriptDialogOpening', async (params) => {
+      dialogLog.push({
+        type: params.type,
+        message: params.message,
+        timestamp: new Date().toISOString(),
+      });
+      await session.send('Page.handleJavaScriptDialog', {
+        accept: params.type !== 'beforeunload',
+        promptText: params.defaultPrompt || '',
+      });
     });
-    await page.session.send('Page.handleJavaScriptDialog', {
-      accept: params.type !== 'beforeunload',
-      promptText: params.defaultPrompt || '',
-    });
-  });
+  }
+  setupDialogHandler(page.session);
 
   return {
     async goto(url, timeout = 30000) {
       await navigate(page, url, timeout);
       if (opts.consent !== false) {
         await dismissConsent(page.session);
+      }
+
+      // Hybrid fallback: if bot-blocked, retry with headed browser
+      if (mode === 'hybrid') {
+        const { tree } = await ariaTree(page);
+        if (isChallengePage(tree)) {
+          await cdp.send('Target.closeTarget', { targetId: page.targetId });
+          cdp.close();
+          if (browser) { browser.process.kill(); browser = null; }
+
+          const port = opts.port || 9222;
+          const wsUrl = await getDebugUrl(port);
+          cdp = await createCDP(wsUrl);
+          page = await createPage(cdp, false, { viewport: opts.viewport });
+          setupDialogHandler(page.session);
+          await suppressPermissions(cdp);
+          await navigate(page, url, timeout);
+          if (opts.consent !== false) await dismissConsent(page.session);
+        }
       }
     },
 

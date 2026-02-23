@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.3.0 | Node.js >= 22 | 0 required deps | MIT
+> v0.4.2 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -51,7 +51,7 @@ const snapshot = await browse('https://example.com', {
 
 ## connect() API
 
-`connect(opts)` returns a page handle for interactive sessions. Same opts as `browse()` for mode/port.
+`connect(opts)` returns a page handle for interactive sessions. Same opts as `browse()` for mode/port. Supports `hybrid` mode — starts headless, falls back to headed on bot detection (same as `browse()`).
 
 | Method | Args | Returns | Notes |
 |---|---|---|---|
@@ -238,7 +238,9 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
 
-Session tools (goto, snapshot, click, type, press, scroll) share a singleton page, lazy-created on first use.
+Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
+
+Session tools share a singleton page, lazy-created on first use.
 
 ## Architecture
 

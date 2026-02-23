@@ -87,7 +87,7 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-7 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`.
+12 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Session runs in hybrid mode with automatic cookie injection.
 
 ### 3. Library -- for agentic automation
 
@@ -115,13 +115,13 @@ This is the obstacle course your agent doesn't have to think about:
 | **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues | Both |
 | **Permission prompts** (location, camera, mic) | Launch flags + CDP Browser.setPermission auto-deny | Both |
 | **Media autoplay blocked** | Autoplay policy flag on launch | Both |
-| **Login walls** | Cookie extraction from Firefox/Chromium, injected via CDP | Both |
+| **Login walls** | Cookie extraction from all browsers (Firefox + Chromium merged), injected via CDP | Both |
 | **Pre-filled form inputs** | Select-all + delete before typing | Both |
 | **Off-screen elements** | Scrolled into view before every click | Both |
 | **Form submission** | Enter key triggers onsubmit | Both |
 | **Tab between fields** | Tab key moves focus correctly | Both |
 | **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
-| **Bot detection** (Google, Reddit) | Stealth patches (headless) + headed fallback with real cookies | Both |
+| **Bot detection** (Google, Reddit) | Stealth patches (headless) + automatic headed fallback with real cookies | Hybrid |
 | **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
 | **Profile locking** | Unique temp dir per headless instance | Headless |

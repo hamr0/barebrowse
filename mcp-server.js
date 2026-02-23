@@ -14,14 +14,14 @@ import { browse, connect } from './src/index.js';
 let _page = null;
 
 async function getPage() {
-  if (!_page) _page = await connect();
+  if (!_page) _page = await connect({ mode: 'hybrid' });
   return _page;
 }
 
 const TOOLS = [
   {
     name: 'browse',
-    description: 'One-shot: navigate to a URL and return a pruned ARIA snapshot. Stateless — does not use the session page.',
+    description: 'Browse a URL in a real browser. Use instead of web fetch when the page needs JavaScript, login cookies, consent dismissal, or bot detection. Returns a pruned ARIA snapshot with [ref=N] markers for interaction. Stateless — does not use the session page.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -33,7 +33,7 @@ const TOOLS = [
   },
   {
     name: 'goto',
-    description: 'Navigate the session page to a URL. Returns ok — call snapshot to observe.',
+    description: 'Navigate the session page to a URL. Injects cookies from the user\'s browser for authenticated access. Returns ok — call snapshot to observe.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -146,6 +146,7 @@ async function handleToolCall(name, args) {
 
     case 'goto': {
       const page = await getPage();
+      try { await page.injectCookies(args.url); } catch {}
       await page.goto(args.url);
       return 'ok';
     }
@@ -217,7 +218,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.2.2' },
+      serverInfo: { name: 'barebrowse', version: '0.4.2' },
     });
   }
 

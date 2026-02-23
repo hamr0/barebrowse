@@ -195,4 +195,38 @@ Wired through cli.js → daemon.js → connect() → `Network.setCookies` on sta
 
 ---
 
+## MCP server validation (v0.4.1)
+
+All 12 MCP tools tested live via Claude Code MCP integration. Stats line (`# X chars → Y chars (N% pruned)`) confirmed on every snapshot.
+
+### Tools tested successfully (10/12)
+
+| Tool | Test | Result |
+|------|------|--------|
+| `browse` | One-shot HN | `51,397 → 26,983 (48% pruned)` — stats line present |
+| `goto` | DDG, Wikipedia, data: URLs | All navigated successfully |
+| `snapshot` | Multiple pages | Stats line on every snapshot, pruning working |
+| `click` | Wikipedia "About Wikipedia" link | Navigated to target page |
+| `type` | DDG search box `barebrowse npm` | Text entered correctly |
+| `press` | Enter to submit DDG search | Search submitted (CAPTCHA returned — expected headless) |
+| `scroll` | 500px down on Wikipedia:About | Scrolled successfully |
+| `back` | After Wikipedia:About → CDP page | Returned to previous page |
+| `forward` | After back | Returned to Wikipedia:About |
+| `pdf` | Wikipedia:About | 380K base64 PDF generated |
+
+### Tools tested with known limitations (2/12)
+
+| Tool | Test | Result |
+|------|------|--------|
+| `upload` | data: page with file input | `ok` returned, file set via DOM.setFileInputFiles. onchange fires but result text pruned in act mode (non-interactive content). Works in integration tests. |
+| `drag` | data: page with draggable divs | Mouse events dispatched but HTML5 drag/drop dataTransfer not populated via CDP synthetic events. Known CDP limitation (same as Playwright). |
+
+### Observations
+
+- DDG returned CAPTCHA in headless ("Select all squares containing a duck") — expected, hybrid mode handles this
+- Stats line format: `# 42,367 chars → 5,453 chars (87% pruned)` — present on all pruned snapshots
+- Token reduction ranges observed: 37% (Wikipedia) to 88% (example.com)
+
+---
+
 *Add new validation entries when testing against new sites or features.*
