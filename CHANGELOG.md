@@ -1,10 +1,13 @@
 # Changelog
 
+## 0.3.3
+
+- Simplified skill install paths: Claude Code (`.claude/` project, `~/.claude/` global), other agents (`.barebrowse/commands/` project, `~/.config/barebrowse/commands/` global)
+
 ## 0.3.2
 
-- Skill install table in README: per-agent instructions for Claude Code, Cursor, Windsurf, Copilot (project + global scope)
-- Clarified that `npm install barebrowse` is still required — the skill file is documentation only
-- New: `docs/skill-template.md` — generic template for any CLI tool to create a skill file, with frontmatter reference, install locations, and skill-vs-MCP comparison
+- Skill install instructions in README, clarified `npm install` still required — skill is documentation only
+- New: `docs/skill-template.md` — generic template for any CLI tool to create a skill file
 
 ## 0.3.1
 

@@ -63,23 +63,11 @@ Show a real example so the agent knows what to expect.
 
 The skill file is just a `.md` file placed where the agent can find it:
 
-### Claude Code
+**Claude Code:** `.claude/skills/your-tool/` (project) or `~/.claude/skills/your-tool/` (global).
 
-| Scope | Location | How |
-|-------|----------|-----|
-| **This project only** | `.claude/skills/your-tool/SKILL.md` | Copy file into project |
-| **All projects (global)** | `~/.config/claude/skills/your-tool/SKILL.md` | Copy file to home config |
+**Other agents:** `.your-tool/commands/` (project) or `~/.config/your-tool/commands/` (global).
 
-### Other coding agents (Cursor, Windsurf, Copilot, etc.)
-
-| Agent | Project scope | Global scope |
-|-------|---------------|--------------|
-| **Cursor** | `.cursor/rules/your-tool.md` | `~/.cursor/rules/your-tool.md` |
-| **Windsurf** | `.windsurf/rules/your-tool.md` | `~/.windsurf/rules/your-tool.md` |
-| **GitHub Copilot** | `.github/copilot-instructions.md` (append) | N/A |
-| **Generic** | Drop in project root as `your-tool.context.md` | Varies by agent |
-
-> **Note:** Non-Claude agents ignore the YAML frontmatter — they just read it as markdown context. The `allowed-tools` field is Claude Code specific.
+Non-Claude agents ignore the YAML frontmatter — they just read it as markdown context. The `allowed-tools` field is Claude Code specific.
 
 ## What the skill does NOT do
 
@@ -104,16 +92,15 @@ Both require the underlying tool to be installed. Choose based on your agent's c
 
 ## Example: barebrowse
 
-barebrowse ships its skill at `.claude/skills/barebrowse/SKILL.md`. Install options:
+barebrowse ships its skill at `.claude/skills/barebrowse/SKILL.md`:
 
 ```bash
-# Project-local (Claude Code picks it up automatically)
+# Claude Code — project
 cp node_modules/barebrowse/.claude/skills/barebrowse/SKILL.md .claude/skills/barebrowse/SKILL.md
 
-# Global (all projects)
+# Claude Code — global
 barebrowse install --skill
-# copies to ~/.config/claude/skills/barebrowse/SKILL.md
 
-# For Cursor
-cp node_modules/barebrowse/.claude/skills/barebrowse/SKILL.md .cursor/rules/barebrowse.md
+# Other agents — project or global
+cp node_modules/barebrowse/.claude/skills/barebrowse/SKILL.md .barebrowse/commands/SKILL.md
 ```
