@@ -1,6 +1,6 @@
 {
   "name": "barebrowse",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Authenticated web browsing for autonomous agents via CDP. URL in, pruned ARIA snapshot out.",
   "type": "module",
   "main": "src/index.js",

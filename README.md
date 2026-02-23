@@ -18,7 +18,7 @@
 
 barebrowse gives your AI agent a real browser. Navigate, read, interact, move on.
 
-It runs on whatever browser you already have -- your sessions, your cookies. Pages come back stripped to what matters -- 40-90% fewer tokens than raw output.
+It uses the browser you already have -- your sessions, your cookies. Pages come back stripped to what matters -- 40-90% fewer tokens than raw output.
 
 No Playwright. Zero dependencies. No bundled browser. No 200MB download.
 
