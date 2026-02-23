@@ -56,6 +56,8 @@ const snapshot = await browse('https://example.com', {
 | Method | Args | Returns | Notes |
 |---|---|---|---|
 | `goto(url, timeout?)` | url: string, timeout: number (default 30000) | void | Navigate + wait for load + dismiss consent |
+| `goBack()` | -- | void | Navigate back in browser history |
+| `goForward()` | -- | void | Navigate forward in browser history |
 | `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read' } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. |
 | `click(ref)` | ref: string | void | Scroll into view + mouse press+release at center |
 | `type(ref, text, opts?)` | ref: string, text: string, opts: { clear?, keyEvents? } | void | Focus + insert text. `clear: true` replaces existing. |
@@ -63,12 +65,25 @@ const snapshot = await browse('https://example.com', {
 | `scroll(deltaY)` | deltaY: number | void | Mouse wheel. Positive = down, negative = up. |
 | `hover(ref)` | ref: string | void | Move mouse to element center |
 | `select(ref, value)` | ref: string, value: string | void | Set `<select>` value or click custom dropdown option |
+| `drag(fromRef, toRef)` | fromRef: string, toRef: string | void | Drag from one element to another |
+| `upload(ref, files)` | ref: string, files: string[] | void | Set files on a file input (absolute paths) |
 | `screenshot(opts?)` | { format?: 'png'\|'jpeg'\|'webp', quality?: number } | string (base64) | Page screenshot |
+| `pdf(opts?)` | { landscape?: boolean } | string (base64) | Export page as PDF |
+| `tabs()` | -- | Array<{index, url, title, targetId}> | List open browser tabs |
+| `switchTab(index)` | index: number | void | Switch to tab by index |
+| `waitFor(opts)` | { text?: string, selector?: string, timeout?: number } | void | Poll for content to appear on page |
 | `waitForNavigation(timeout?)` | timeout: number (default 30000) | void | Wait for page load or frame navigation |
 | `waitForNetworkIdle(opts?)` | { timeout?: number, idle?: number } | void | Wait until no pending requests for `idle` ms (default 500) |
+| `saveState(filePath)` | filePath: string | void | Export cookies + localStorage to JSON file |
 | `injectCookies(url, opts?)` | url: string, { browser?: string } | void | Extract cookies from user's browser and inject via CDP |
+| `dialogLog` | -- | Array<{type, message, timestamp}> | Auto-dismissed JS dialog history |
 | `cdp` | -- | object | Raw CDP session for escape hatch: `page.cdp.send(method, params)` |
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless) |
+
+**connect() options** (in addition to mode/port/consent):
+- `proxy: 'http://...'` — HTTP/SOCKS proxy for browser
+- `viewport: '1280x720'` — Set viewport dimensions
+- `storageState: 'file.json'` — Load cookies/localStorage from saved state
 
 ## Snapshot format
 

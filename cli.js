@@ -2,35 +2,7 @@
 /**
  * cli.js -- barebrowse CLI entry point.
  *
- * Session commands:
- *   barebrowse open [url] [flags]     Open browser session (daemon)
- *   barebrowse close                  Close session + kill daemon
- *   barebrowse status                 Check if session is running
- *
- * Navigation:
- *   barebrowse goto <url>             Navigate to URL
- *   barebrowse snapshot [--mode]      Get pruned ARIA snapshot → file
- *   barebrowse screenshot [--format]  Take screenshot → file
- *
- * Interaction:
- *   barebrowse click <ref>            Click element by ref
- *   barebrowse type <ref> <text>      Type text into element
- *   barebrowse fill <ref> <text>      Clear + type (replace content)
- *   barebrowse press <key>            Press special key
- *   barebrowse scroll <deltaY>        Scroll page
- *   barebrowse hover <ref>            Hover over element
- *   barebrowse select <ref> <value>   Select dropdown value
- *
- * Self-sufficiency:
- *   barebrowse eval <expression>      Evaluate JS in page
- *   barebrowse wait-idle [--timeout]  Wait for network idle
- *   barebrowse console-logs           Dump console logs → file
- *   barebrowse network-log            Dump network log → file
- *
- * Legacy / tools:
- *   barebrowse browse <url> [mode]    One-shot browse (stdout)
- *   barebrowse mcp                    Start MCP server (stdio)
- *   barebrowse install [--skill]      Auto-configure MCP or install skill
+ * See `barebrowse` (no args) for full command reference.
  */
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from 'node:fs';
@@ -84,6 +56,26 @@ if (args.includes('--daemon-internal')) {
   await cmdProxy('console-logs', { level: parseFlag('--level'), clear: hasFlag('--clear') });
 } else if (cmd === 'network-log') {
   await cmdProxy('network-log', { failed: hasFlag('--failed') });
+} else if (cmd === 'back') {
+  await cmdProxy('back');
+} else if (cmd === 'forward') {
+  await cmdProxy('forward');
+} else if (cmd === 'drag' && args[1] && args[2]) {
+  await cmdProxy('drag', { fromRef: args[1], toRef: args[2] });
+} else if (cmd === 'upload' && args[1] && args[2]) {
+  await cmdProxy('upload', { ref: args[1], files: args.slice(2).filter(a => !a.startsWith('--')).map(f => resolve(f)) });
+} else if (cmd === 'pdf') {
+  await cmdProxy('pdf', { landscape: hasFlag('--landscape') });
+} else if (cmd === 'tabs') {
+  await cmdProxy('tabs');
+} else if (cmd === 'tab' && args[1]) {
+  await cmdProxy('tab', { index: Number(args[1]) });
+} else if (cmd === 'wait-for') {
+  await cmdProxy('wait-for', { text: parseFlag('--text'), selector: parseFlag('--selector'), timeout: parseFlag('--timeout') });
+} else if (cmd === 'save-state') {
+  await cmdProxy('save-state');
+} else if (cmd === 'dialog-log') {
+  await cmdProxy('dialog-log');
 } else {
   printUsage();
 }
@@ -111,6 +103,9 @@ async function cmdOpen() {
     timeout: parseFlag('--timeout'),
     pruneMode: parseFlag('--prune-mode') || 'act',
     consent: !hasFlag('--no-consent'),
+    proxy: parseFlag('--proxy'),
+    viewport: parseFlag('--viewport'),
+    storageState: parseFlag('--storage-state'),
   };
 
   try {
@@ -208,6 +203,9 @@ async function runDaemonInternal() {
     timeout: parseFlag('--timeout'),
     pruneMode: parseFlag('--prune-mode') || 'act',
     consent: !hasFlag('--no-consent'),
+    proxy: parseFlag('--proxy'),
+    viewport: parseFlag('--viewport'),
+    storageState: parseFlag('--storage-state'),
   };
   const outputDir = parseFlag('--output-dir') || resolve('.barebrowse');
   const url = parseFlag('--url');
@@ -360,11 +358,17 @@ Session:
     --timeout=N                     Navigation timeout in ms
     --prune-mode=act|read           Default pruning mode
     --no-consent                    Skip consent dismissal
+    --proxy=URL                     HTTP/SOCKS proxy server
+    --viewport=WxH                  Viewport size (e.g. 1280x720)
+    --storage-state=FILE            Load cookies/localStorage from JSON file
 
 Navigation:
   barebrowse goto <url>             Navigate to URL
+  barebrowse back                   Go back in history
+  barebrowse forward                Go forward in history
   barebrowse snapshot [--mode=M]    ARIA snapshot -> .barebrowse/page-*.yml
   barebrowse screenshot [--format]  Screenshot -> .barebrowse/screenshot-*.png
+  barebrowse pdf [--landscape]      PDF export -> .barebrowse/page-*.pdf
 
 Interaction:
   barebrowse click <ref>            Click element
@@ -374,12 +378,24 @@ Interaction:
   barebrowse scroll <deltaY>        Scroll (positive=down)
   barebrowse hover <ref>            Hover element
   barebrowse select <ref> <value>   Select dropdown value
+  barebrowse drag <from> <to>       Drag element to another
+  barebrowse upload <ref> <files..> Upload files to file input
+
+Tabs:
+  barebrowse tabs                   List open tabs
+  barebrowse tab <index>            Switch to tab by index
 
 Debugging:
   barebrowse eval <expression>      Run JS in page context
   barebrowse wait-idle [--timeout]  Wait for network idle
+  barebrowse wait-for [opts]        Wait for text/selector to appear
+    --text=STRING                   Wait for text in page body
+    --selector=CSS                  Wait for CSS selector to match
+    --timeout=N                     Max wait time in ms (default: 30000)
   barebrowse console-logs           Console logs -> .barebrowse/console-*.json
   barebrowse network-log            Network log -> .barebrowse/network-*.json
+  barebrowse dialog-log             JS dialog log -> .barebrowse/dialogs-*.json
+  barebrowse save-state             Cookies + localStorage -> .barebrowse/state-*.json
 
 One-shot:
   barebrowse browse <url> [mode]    Browse + print snapshot to stdout

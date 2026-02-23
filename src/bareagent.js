@@ -134,6 +134,44 @@ export function createBrowseTools(opts = {}) {
       execute: async ({ ref, value }) => actionAndSnapshot((page) => page.select(ref, value)),
     },
     {
+      name: 'back',
+      description: 'Go back in browser history. Returns the updated snapshot.',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => actionAndSnapshot((page) => page.goBack()),
+    },
+    {
+      name: 'forward',
+      description: 'Go forward in browser history. Returns the updated snapshot.',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => actionAndSnapshot((page) => page.goForward()),
+    },
+    {
+      name: 'drag',
+      description: 'Drag one element to another by their refs. Returns the updated snapshot.',
+      parameters: {
+        type: 'object',
+        properties: {
+          fromRef: { type: 'string', description: 'Source element ref' },
+          toRef: { type: 'string', description: 'Target element ref' },
+        },
+        required: ['fromRef', 'toRef'],
+      },
+      execute: async ({ fromRef, toRef }) => actionAndSnapshot((page) => page.drag(fromRef, toRef)),
+    },
+    {
+      name: 'upload',
+      description: 'Upload files to a file input element. Returns the updated snapshot.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string', description: 'File input element ref' },
+          files: { type: 'array', items: { type: 'string' }, description: 'Absolute file paths' },
+        },
+        required: ['ref', 'files'],
+      },
+      execute: async ({ ref, files }) => actionAndSnapshot((page) => page.upload(ref, files)),
+    },
+    {
       name: 'screenshot',
       description: 'Take a screenshot of the current page. Returns base64-encoded image.',
       parameters: {

@@ -3,7 +3,7 @@
  * mcp-server.js — MCP server for barebrowse.
  *
  * Raw JSON-RPC 2.0 over stdio. No SDK dependency.
- * 7 tools: browse (one-shot), goto, snapshot, click, type, press, scroll.
+ * 12 tools: browse, goto, snapshot, click, type, press, scroll, back, forward, drag, upload, pdf.
  *
  * Session tools share a singleton page, lazy-created on first use.
  * Action tools return 'ok' — agent calls snapshot explicitly to observe.
@@ -93,6 +93,50 @@ const TOOLS = [
       required: ['deltaY'],
     },
   },
+  {
+    name: 'back',
+    description: 'Go back in browser history. Returns ok.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'forward',
+    description: 'Go forward in browser history. Returns ok.',
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'drag',
+    description: 'Drag one element to another by refs from the snapshot. Returns ok.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        fromRef: { type: 'string', description: 'Source element ref' },
+        toRef: { type: 'string', description: 'Target element ref' },
+      },
+      required: ['fromRef', 'toRef'],
+    },
+  },
+  {
+    name: 'upload',
+    description: 'Upload files to a file input element by ref. Returns ok.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'File input element ref' },
+        files: { type: 'array', items: { type: 'string' }, description: 'Absolute file paths' },
+      },
+      required: ['ref', 'files'],
+    },
+  },
+  {
+    name: 'pdf',
+    description: 'Export current page as PDF. Returns base64-encoded PDF data.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        landscape: { type: 'boolean', description: 'Landscape orientation (default: false)' },
+      },
+    },
+  },
 ];
 
 async function handleToolCall(name, args) {
@@ -128,6 +172,30 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       await page.scroll(args.deltaY);
       return 'ok';
+    }
+    case 'back': {
+      const page = await getPage();
+      await page.goBack();
+      return 'ok';
+    }
+    case 'forward': {
+      const page = await getPage();
+      await page.goForward();
+      return 'ok';
+    }
+    case 'drag': {
+      const page = await getPage();
+      await page.drag(args.fromRef, args.toRef);
+      return 'ok';
+    }
+    case 'upload': {
+      const page = await getPage();
+      await page.upload(args.ref, args.files);
+      return 'ok';
+    }
+    case 'pdf': {
+      const page = await getPage();
+      return await page.pdf({ landscape: args.landscape });
     }
     default:
       throw new Error(`Unknown tool: ${name}`);

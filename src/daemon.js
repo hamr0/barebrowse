@@ -36,6 +36,9 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   if (opts.timeout) args.push('--timeout', String(opts.timeout));
   if (opts.pruneMode) args.push('--prune-mode', opts.pruneMode);
   if (opts.consent === false) args.push('--no-consent');
+  if (opts.proxy) args.push('--proxy', opts.proxy);
+  if (opts.viewport) args.push('--viewport', opts.viewport);
+  if (opts.storageState) args.push('--storage-state', opts.storageState);
 
   const child = spawn(process.execPath, args, {
     detached: true,
@@ -71,6 +74,9 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     mode: opts.mode || 'headless',
     port: opts.port ? Number(opts.port) : undefined,
     consent: opts.consent,
+    proxy: opts.proxy,
+    viewport: opts.viewport,
+    storageState: opts.storageState,
   });
 
   // Console log capture
@@ -190,6 +196,63 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     async select({ ref, value }) {
       await page.select(String(ref), value);
       return { ok: true };
+    },
+
+    async back() {
+      await page.goBack();
+      return { ok: true };
+    },
+
+    async forward() {
+      await page.goForward();
+      return { ok: true };
+    },
+
+    async drag({ fromRef, toRef }) {
+      await page.drag(String(fromRef), String(toRef));
+      return { ok: true };
+    },
+
+    async upload({ ref, files }) {
+      await page.upload(String(ref), files);
+      return { ok: true };
+    },
+
+    async pdf({ landscape }) {
+      const data = await page.pdf({ landscape });
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const file = join(absDir, `page-${ts}.pdf`);
+      writeFileSync(file, Buffer.from(data, 'base64'));
+      return { ok: true, file };
+    },
+
+    async tabs() {
+      const list = await page.tabs();
+      return { ok: true, value: list };
+    },
+
+    async tab({ index }) {
+      await page.switchTab(Number(index));
+      return { ok: true };
+    },
+
+    async 'wait-for'({ text, selector, timeout }) {
+      await page.waitFor({ text, selector, timeout });
+      return { ok: true };
+    },
+
+    async 'save-state'() {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const file = join(absDir, `state-${ts}.json`);
+      await page.saveState(file);
+      return { ok: true, file };
+    },
+
+    async 'dialog-log'() {
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const file = join(absDir, `dialogs-${ts}.json`);
+      writeFileSync(file, JSON.stringify(page.dialogLog, null, 2));
+      return { ok: true, file, count: page.dialogLog.length };
     },
 
     async eval({ expression }) {

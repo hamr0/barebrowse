@@ -123,6 +123,7 @@ This is the obstacle course your agent doesn't have to think about:
 | **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
 | **Bot detection** (Google, Reddit) | Stealth patches (headless) + headed fallback with real cookies | Both |
 | **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
+| **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
 | **Profile locking** | Unique temp dir per headless instance | Headless |
 | **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
 
@@ -146,6 +147,7 @@ Everything the agent can do through barebrowse:
 | Action | What it does |
 |--------|-------------|
 | **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
+| **Back / Forward** | Browser history navigation |
 | **Snapshot** | Pruned ARIA tree with `[ref=N]` markers (40-90% token reduction) |
 | **Click** | Scroll into view + mouse click at element center |
 | **Type** | Focus + insert text, with option to clear existing content first |
@@ -153,9 +155,16 @@ Everything the agent can do through barebrowse:
 | **Scroll** | Mouse wheel up or down |
 | **Hover** | Move mouse to element center (triggers tooltips, hover states) |
 | **Select** | Set dropdown value (native select or custom dropdown) |
+| **Drag** | Drag one element to another (Kanban boards, sliders) |
+| **Upload** | Set files on a file input element |
 | **Screenshot** | Page capture as base64 PNG/JPEG/WebP |
+| **PDF** | Export page as PDF |
+| **Tabs** | List open tabs, switch between them |
+| **Wait for content** | Poll for text or CSS selector to appear on page |
 | **Wait for navigation** | SPA-aware: works for full page loads and pushState |
 | **Wait for network idle** | Resolve when no pending requests for 500ms |
+| **Dialog handling** | Auto-dismiss JS alert/confirm/prompt dialogs |
+| **Save state** | Export cookies + localStorage to JSON |
 | **Inject cookies** | Extract from Firefox/Chromium and inject via CDP |
 | **Raw CDP** | Escape hatch for any Chrome DevTools Protocol command |
 

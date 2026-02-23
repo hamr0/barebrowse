@@ -206,3 +206,39 @@ export async function select(session, backendNodeId, value) {
     returnByValue: true,
   });
 }
+
+/**
+ * Drag one element to another.
+ * Scrolls source into view, mouse down, move to target center, mouse up.
+ *
+ * @param {object} session - Session-scoped CDP handle
+ * @param {number} fromNodeId - Source element backendDOMNodeId
+ * @param {number} toNodeId - Target element backendDOMNodeId
+ */
+export async function drag(session, fromNodeId, toNodeId) {
+  const from = await getCenter(session, fromNodeId);
+  const to = await getCenter(session, toNodeId);
+
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mousePressed', x: from.x, y: from.y, button: 'left', clickCount: 1,
+  });
+  // Intermediate move for drag recognition
+  const midX = (from.x + to.x) / 2;
+  const midY = (from.y + to.y) / 2;
+  await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: midX, y: midY });
+  await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: to.x, y: to.y });
+  await session.send('Input.dispatchMouseEvent', {
+    type: 'mouseReleased', x: to.x, y: to.y, button: 'left', clickCount: 1,
+  });
+}
+
+/**
+ * Upload files to a file input element.
+ *
+ * @param {object} session - Session-scoped CDP handle
+ * @param {number} backendNodeId - Backend DOM node ID of the file input
+ * @param {string[]} files - Absolute paths to files to upload
+ */
+export async function upload(session, backendNodeId, files) {
+  await session.send('DOM.setFileInputFiles', { files, backendNodeId });
+}

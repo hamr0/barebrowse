@@ -48,6 +48,14 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | Screenshot | `page.screenshot(opts)` | `Page.captureScreenshot`, returns base64 string | Done |
 | Wait for nav | `page.waitForNavigation()` | Promise.race of loadEventFired + frameNavigated (SPA-aware) | Done |
 | Wait for idle | `page.waitForNetworkIdle(opts)` | Resolve when no pending requests for N ms (default 500) | Done |
+| Wait for content | `page.waitFor({ text, selector })` | Poll for text or CSS selector to appear on page | Done |
+| Back / Forward | `page.goBack()` / `page.goForward()` | Browser history navigation via `Page.getNavigationHistory` | Done |
+| Drag | `page.drag(fromRef, toRef)` | Mouse down on source, move to target, release | Done |
+| Upload | `page.upload(ref, files)` | Set files on file input via `DOM.setFileInputFiles` | Done |
+| PDF | `page.pdf(opts)` | Export page as PDF via `Page.printToPDF` | Done |
+| Tabs | `page.tabs()` / `page.switchTab(index)` | List and switch between browser tabs | Done |
+| Dialog handling | Auto | JS alert/confirm/prompt auto-dismissed, logged to `page.dialogLog` | Done |
+| Save state | `page.saveState(filePath)` | Export cookies + localStorage to JSON for later `--storage-state` | Done |
 | Inject cookies | `page.injectCookies(url, opts)` | Extract cookies from Firefox/Chromium, inject via CDP | Done |
 | Raw CDP | `page.cdp.send(method, params)` | Escape hatch for any CDP command | Done |
 | Close | `page.close()` | Close page target, disconnect CDP, kill browser (if headless) | Done |
@@ -70,6 +78,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **SPA navigation** (YouTube, GitHub) | `waitForNavigation()` uses frameNavigated + loadEventFired race | Both |
 | **Bot detection** (Google, Reddit) | Stealth patches (headless) + headed mode with real cookies | Both |
 | **`navigator.webdriver`** | Stealth patches: webdriver, plugins, languages, chrome object | Headless |
+| **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via `Page.handleJavaScriptDialog`, logged to `dialogLog` | Both |
 | **Profile locking** | Unique temp dir per headless instance (`/tmp/barebrowse-<pid>-<ts>`) | Headless |
 | **ARIA noise** | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
 

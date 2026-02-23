@@ -84,6 +84,10 @@ export async function launch(opts = {}) {
     '--disable-features=MediaRouter',
   ];
 
+  if (opts.proxy) {
+    args.push(`--proxy-server=${opts.proxy}`);
+  }
+
   if (opts.userDataDir) {
     args.push(`--user-data-dir=${opts.userDataDir}`);
   } else {

@@ -1,5 +1,45 @@
 # Changelog
 
+## 0.4.0
+
+10 new features inspired by Playwright MCP. All validated manually against live sites.
+
+### New commands
+- `back` / `forward` — Browser history navigation via `Page.getNavigationHistory`
+- `drag <fromRef> <toRef>` — Drag-and-drop between elements (Kanban boards, sliders)
+- `upload <ref> <files..>` — File upload via `DOM.setFileInputFiles`
+- `pdf [--landscape]` — PDF export via `Page.printToPDF`
+- `tabs` / `tab <index>` — List and switch between browser tabs
+- `wait-for --text=X --selector=Y` — Poll for content to appear on page
+- `save-state` — Export cookies + localStorage to JSON
+- `dialog-log` — View auto-dismissed JS dialog history
+
+### New open flags
+- `--proxy=URL` — HTTP/SOCKS proxy server (pass-through to Chromium launch args)
+- `--viewport=WxH` — Set viewport dimensions via `Emulation.setDeviceMetricsOverride`
+- `--storage-state=FILE` — Load cookies/localStorage from previously saved JSON
+
+### Built-in behavior
+- JS dialog auto-dismiss — alert/confirm/prompt handled via `Page.handleJavaScriptDialog`, logged to `dialogLog`
+
+### Library API additions (connect())
+- `goBack()`, `goForward()`, `drag(fromRef, toRef)`, `upload(ref, files)`
+- `pdf(opts)`, `tabs()`, `switchTab(index)`, `waitFor({ text, selector, timeout })`
+- `saveState(filePath)`, `dialogLog` array
+- New connect opts: `proxy`, `viewport`, `storageState`
+
+### MCP server
+- 5 new tools: `back`, `forward`, `drag`, `upload`, `pdf` (12 total, was 7)
+
+### bareagent adapter
+- 4 new tools: `back`, `forward`, `drag`, `upload` (13 total, was 9)
+
+### Docs
+- SKILL.md updated with all new commands and flags
+- README: new actions table, dialog handling in obstacle course
+- barebrowse.context.md: full connect() API table updated
+- docs/00-context/system-state.md: actions + obstacle tables updated
+
 ## 0.3.3
 
 - Simplified skill install paths: Claude Code (`.claude/` project, `~/.claude/` global), other agents (`.barebrowse/commands/` project, `~/.config/barebrowse/commands/` global)
