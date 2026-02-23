@@ -95,13 +95,16 @@ export async function browse(url, opts = {}) {
     }
 
     // Step 6: Prune for agent consumption
+    const raw = formatTree(tree);
     let snapshot;
     if (opts.prune !== false) {
       const pruned = pruneTree(tree, { mode: opts.pruneMode || 'act' });
       snapshot = formatTree(pruned);
     } else {
-      snapshot = formatTree(tree);
+      snapshot = raw;
     }
+    const stats = `# ${raw.length.toLocaleString()} chars → ${snapshot.length.toLocaleString()} chars (${Math.round((1 - snapshot.length / raw.length) * 100)}% pruned)`;
+    snapshot = stats + '\n' + snapshot;
 
     // Step 7: Clean up
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
@@ -195,9 +198,12 @@ export async function connect(opts = {}) {
     async snapshot(pruneOpts) {
       const result = await ariaTree(page);
       refMap = result.refMap;
-      if (pruneOpts === false) return formatTree(result.tree);
+      const raw = formatTree(result.tree);
+      if (pruneOpts === false) return raw;
       const pruned = pruneTree(result.tree, { mode: pruneOpts?.mode || 'act' });
-      return formatTree(pruned);
+      const out = formatTree(pruned);
+      const stats = `# ${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
+      return stats + '\n' + out;
     },
 
     async click(ref) {
