@@ -41,14 +41,19 @@ barebrowse click 8                     # Click element
 barebrowse close                       # End session
 ```
 
-Outputs go to `.barebrowse/` as files -- agents read them with their file tools, no token waste in tool responses. Install the skill for Claude Code:
+Outputs go to `.barebrowse/` as files -- agents read them with their file tools, no token waste in tool responses.
 
-```bash
-barebrowse install --skill
-# or: claude mcp add barebrowse -- npx barebrowse mcp
-```
+**Teach your agent the commands** by installing the skill file (a markdown reference the agent reads as context). The CLI tool itself still needs `npm install barebrowse` -- the skill just teaches the agent how to use it.
 
-Full command reference: [.claude/skills/barebrowse/SKILL.md](.claude/skills/barebrowse/SKILL.md)
+| Agent | Project scope | Global scope |
+|-------|---------------|--------------|
+| **Claude Code** | `.claude/skills/barebrowse/SKILL.md` (auto-detected) | `barebrowse install --skill` |
+| **Cursor** | `.cursor/rules/barebrowse.md` | `~/.cursor/rules/barebrowse.md` |
+| **Windsurf** | `.windsurf/rules/barebrowse.md` | `~/.windsurf/rules/barebrowse.md` |
+| **Copilot** | Append to `.github/copilot-instructions.md` | N/A |
+| **Any agent** | Copy `SKILL.md` to project root or context dir | Varies |
+
+Source file: [.claude/skills/barebrowse/SKILL.md](.claude/skills/barebrowse/SKILL.md). For writing your own skill files: [docs/skill-template.md](docs/skill-template.md).
 
 ### 2. MCP server -- for Claude Desktop, Cursor, and other MCP clients
 

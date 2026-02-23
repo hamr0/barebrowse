@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.2
+
+- Skill install table in README: per-agent instructions for Claude Code, Cursor, Windsurf, Copilot (project + global scope)
+- Clarified that `npm install barebrowse` is still required — the skill file is documentation only
+- New: `docs/skill-template.md` — generic template for any CLI tool to create a skill file, with frontmatter reference, install locations, and skill-vs-MCP comparison
+
 ## 0.3.1
 
 - Fix `.npmignore`: exclude `.claude/memory/`, `.claude/stash/`, `.claude/settings.local.json` from package (leaked in 0.3.0)
