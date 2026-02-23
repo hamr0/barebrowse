@@ -276,7 +276,11 @@ export async function injectCookies(session, cookies) {
  * @param {object} [opts] - Options passed to extractCookies
  */
 export async function authenticate(session, url, opts = {}) {
-  const domain = new URL(url).hostname.replace(/^www\./, '');
+  // Strip to registrable domain so mail.google.com → google.com
+  // This ensures parent-domain cookies (.google.com) are included
+  const hostname = new URL(url).hostname.replace(/^www\./, '');
+  const parts = hostname.split('.');
+  const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
   const cookies = extractCookies({ ...opts, domain });
   if (cookies.length > 0) {
     await injectCookies(session, cookies);
