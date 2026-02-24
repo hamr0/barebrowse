@@ -105,27 +105,7 @@ For code examples, API reference, and wiring instructions, see **[barebrowse.con
 
 ## What it handles automatically
 
-This is the obstacle course your agent doesn't have to think about:
-
-| Obstacle | How it's handled | Mode |
-|----------|-----------------|------|
-| **Cookie consent walls** | ARIA tree scan + jsClick accept button, 29 languages | Both |
-| **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
-| **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
-| **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues | Both |
-| **Permission prompts** (location, camera, mic) | Launch flags + CDP Browser.setPermission auto-deny | Both |
-| **Media autoplay blocked** | Autoplay policy flag on launch | Both |
-| **Login walls** | Cookie extraction from all browsers (Firefox + Chromium merged), injected via CDP | Both |
-| **Pre-filled form inputs** | Select-all + delete before typing | Both |
-| **Off-screen elements** | Scrolled into view before every click | Both |
-| **Form submission** | Enter key triggers onsubmit | Both |
-| **Tab between fields** | Tab key moves focus correctly | Both |
-| **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
-| **Bot detection** (Google, Reddit) | Stealth patches (headless) + automatic headed fallback with real cookies | Hybrid |
-| **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
-| **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
-| **Profile locking** | Unique temp dir per headless instance | Headless |
-| **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
+Cookie consent walls (29 languages), login walls (cookie extraction from your browsers), bot detection (stealth patches + automatic headed fallback), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
 ## What the agent sees
 

@@ -131,6 +131,30 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 
 **What stays in mcprune:** The Playwright MCP proxy architecture. mcprune can continue to exist as a Playwright-based MCP server for users who want that path. But for barebrowse consumers, pruning is built in.
 
+### Obstacle Course — What barebrowse handles automatically
+
+The agent doesn't have to think about any of this:
+
+| Obstacle | How it's handled | Mode |
+|----------|-----------------|------|
+| **Cookie consent walls** | ARIA tree scan + jsClick accept button, 29 languages | Both |
+| **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
+| **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
+| **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues | Both |
+| **Permission prompts** (location, camera, mic) | Launch flags + CDP Browser.setPermission auto-deny | Both |
+| **Media autoplay blocked** | Autoplay policy flag on launch | Both |
+| **Login walls** | Cookie extraction from all browsers (Firefox + Chromium merged), injected via CDP | Both |
+| **Pre-filled form inputs** | Select-all + delete before typing | Both |
+| **Off-screen elements** | Scrolled into view before every click | Both |
+| **Form submission** | Enter key triggers onsubmit | Both |
+| **Tab between fields** | Tab key moves focus correctly | Both |
+| **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
+| **Bot detection** (Google, Reddit) | Stealth patches (headless) + automatic headed fallback with real cookies | Hybrid |
+| **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
+| **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
+| **Profile locking** | Unique temp dir per headless instance | Headless |
+| **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
+
 ---
 
 ## API Design
