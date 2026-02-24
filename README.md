@@ -202,6 +202,28 @@ URL -> find/launch browser (chromium.js)
 - Any Chromium-based browser installed (Chrome, Chromium, Brave, Edge, Vivaldi)
 - Linux tested (Fedora/KDE). macOS/Windows cookie paths exist but untested.
 
+## The bare ecosystem
+
+Three vanilla JS modules. Zero dependencies. Same API patterns.
+
+| | [**barebrowse**](https://npmjs.com/package/barebrowse) | [**baremobile**](https://npmjs.com/package/baremobile) | [**bareagent**](https://npmjs.com/package/bare-agent) |
+|---|---|---|---|
+| **Does** | Gives agents a real browser | Gives agents an Android device | Gives agents a think→act loop |
+| **How** | URL in → pruned snapshot out | Screen in → pruned snapshot out | Goal in → coordinated actions out |
+| **Replaces** | Playwright, Selenium, Puppeteer | Appium, Espresso, UIAutomator2 | LangChain, CrewAI, AutoGen |
+| **Interfaces** | Library · CLI · MCP | Library · CLI · MCP | Library · CLI · subprocess |
+| **Solo or together** | Works standalone | Works standalone | Orchestrates both as tools |
+
+**What you can build:**
+
+- **Headless automation** — scrape sites, fill forms, extract data, monitor pages on a schedule
+- **QA & testing** — automated test suites for web and Android apps without heavyweight frameworks
+- **Personal AI assistants** — chatbots that browse the web or control your phone on your behalf
+- **Remote device control** — manage Android devices over WiFi, including on-device via Termux
+- **Agentic workflows** — multi-step tasks where an AI plans, browses, and acts across web and mobile
+
+**Why this exists:** Most automation stacks ship 200MB of opinions before you write a line of code. These don't. Install, import, go.
+
 ## License
 
 MIT
