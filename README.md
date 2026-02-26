@@ -186,13 +186,13 @@ URL -> find/launch browser (chromium.js)
 
 Three vanilla JS modules. Zero dependencies. Same API patterns.
 
-| | [**barebrowse**](https://npmjs.com/package/barebrowse) | [**baremobile**](https://npmjs.com/package/baremobile) | [**bareagent**](https://npmjs.com/package/bare-agent) |
+| | [**bareagent**](https://npmjs.com/package/bare-agent) | [**barebrowse**](https://npmjs.com/package/barebrowse) | [**baremobile**](https://npmjs.com/package/baremobile) |
 |---|---|---|---|
-| **Does** | Gives agents a real browser | Gives agents an Android device | Gives agents a think→act loop |
-| **How** | URL in → pruned snapshot out | Screen in → pruned snapshot out | Goal in → coordinated actions out |
-| **Replaces** | Playwright, Selenium, Puppeteer | Appium, Espresso, UIAutomator2 | LangChain, CrewAI, AutoGen |
-| **Interfaces** | Library · CLI · MCP | Library · CLI · MCP | Library · CLI · subprocess |
-| **Solo or together** | Works standalone | Works standalone | Orchestrates both as tools |
+| **Does** | Gives agents a think→act loop | Gives agents a real browser | Gives agents an Android device |
+| **How** | Goal in → coordinated actions out | URL in → pruned snapshot out | Screen in → pruned snapshot out |
+| **Replaces** | LangChain, CrewAI, AutoGen | Playwright, Selenium, Puppeteer | Appium, Espresso, UIAutomator2 |
+| **Interfaces** | Library · CLI · subprocess | Library · CLI · MCP | Library · CLI · MCP |
+| **Solo or together** | Orchestrates both as tools | Works standalone | Works standalone |
 
 **What you can build:**
 
