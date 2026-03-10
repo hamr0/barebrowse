@@ -223,10 +223,10 @@ export async function connect(opts = {}) {
       const raw = formatTree(result.tree);
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
-      if (pruneOpts === false) return `# ${pageUrl}\n` + raw;
+      if (pruneOpts === false) return `url: ${pageUrl}\n` + raw;
       const pruned = pruneTree(result.tree, { mode: pruneOpts?.mode || 'act' });
       const out = formatTree(pruned);
-      const stats = `# ${pageUrl}\n# ${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
+      const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
       return stats + '\n' + out;
     },
 

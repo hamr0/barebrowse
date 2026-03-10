@@ -22,7 +22,7 @@ function saveSnapshot(text) {
 
 describe('MCP saveSnapshot', () => {
   it('saves text to a .yml file and returns the path', () => {
-    const text = '# https://example.com/\n- heading "Test"';
+    const text = 'url: https://example.com/\n- heading "Test"';
     const file = saveSnapshot(text);
     try {
       assert.ok(file.endsWith('.yml'), 'file should have .yml extension');

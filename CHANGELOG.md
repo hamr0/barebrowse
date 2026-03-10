@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.7
+
+Snapshot URL prefix format changed from `# <url>` to `url: <url>`.
+
+- Fix: MCP clients (Claude Code) stripped `#`-prefixed lines as comments, making the URL invisible to agents
+- Snapshot first line is now `url: <current-page-url>` (was `# <current-page-url>`)
+- Stats line no longer prefixed with `#`
+
+## 0.4.6
+
+- README wording fix
+
 ## 0.4.5
 
 - README: "What this is" rewritten — concise, no implementation details exposed

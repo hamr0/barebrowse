@@ -70,7 +70,7 @@ describe('browse()', () => {
   it('snapshot starts with URL line', async () => {
     const snapshot = await browse('https://example.com');
     const firstLine = snapshot.split('\n')[0];
-    assert.equal(firstLine, '# https://example.com', 'first line should be the page URL');
+    assert.equal(firstLine, 'url: https://example.com', 'first line should be the page URL');
   });
 });
 
