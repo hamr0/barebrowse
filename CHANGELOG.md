@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.8
+
+- Fix: `browse()` one-shot also had `#` prefix (missed in 0.4.7)
+- MCP server version string updated
+
 ## 0.4.7
 
 Snapshot URL prefix format changed from `# <url>` to `url: <url>`.

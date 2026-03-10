@@ -103,7 +103,7 @@ export async function browse(url, opts = {}) {
     } else {
       snapshot = raw;
     }
-    const stats = `# ${url}\n# ${raw.length.toLocaleString()} chars → ${snapshot.length.toLocaleString()} chars (${Math.round((1 - snapshot.length / raw.length) * 100)}% pruned)`;
+    const stats = `url: ${url}\n${raw.length.toLocaleString()} chars → ${snapshot.length.toLocaleString()} chars (${Math.round((1 - snapshot.length / raw.length) * 100)}% pruned)`;
     snapshot = stats + '\n' + snapshot;
 
     // Step 7: Clean up
