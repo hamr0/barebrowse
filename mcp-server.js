@@ -286,7 +286,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.1' },
+      serverInfo: { name: 'barebrowse', version: '0.5.2' },
     });
   }
 

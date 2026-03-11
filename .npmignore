@@ -1,10 +1,11 @@
-.claude/memory/
-.claude/stash/
-.claude/settings.local.json
-.claude/projects/
+.claude/
 .git/
 .idea/
+.barebrowse/
+.mcp.json
+baremobile.md
+CLAUDE.md
+docs/
 test/
 examples/
-docs/prd.md
-docs/poc-plan.md
+node_modules/

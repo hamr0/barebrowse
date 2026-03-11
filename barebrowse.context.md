@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.1 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.2 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 

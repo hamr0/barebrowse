@@ -1,8 +1,12 @@
 # Changelog
 
-## 0.5.1
+## 0.5.2
 
-bareagent tool parity + test fix.
+Clean npm tarball + bareagent tool parity.
+
+### npm package
+- `.npmignore` updated: excluded `.barebrowse/`, `.mcp.json`, `baremobile.md`, `CLAUDE.md`, `docs/` from tarball
+- Package size: 41 files / 390KB → 21 files / 180KB
 
 ### bareagent adapter
 - Added `hover`, `tabs`, `switchTab`, `pdf` tools (was 13 + assess, now 17 + assess)
@@ -11,10 +15,6 @@ bareagent tool parity + test fix.
 ### Tests
 - Fixed 2 snapshot URL prefix assertions (`# url` → `url: url`) to match 0.4.7 format change
 - 69/69 passing
-
-### Version
-- Package version: 0.5.1
-- MCP server version string updated
 
 ## 0.5.0
 
