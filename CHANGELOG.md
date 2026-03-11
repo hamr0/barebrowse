@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.3
+
+Improved bot detection for hybrid mode fallback.
+
+### Challenge detection (`src/index.js`)
+- `isChallengePage()` now catches near-empty pages (< 50 chars of text) as blocks
+- Added challenge phrases: "unknown error", "access denied", "permission denied", "request blocked"
+- Sites like CNN that return generic error pages instead of Cloudflare challenges now correctly trigger hybrid → headed fallback
+
 ## 0.5.2
 
 Clean npm tarball + bareagent tool parity.

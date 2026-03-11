@@ -105,7 +105,7 @@ For code examples, API reference, and wiring instructions, see **[barebrowse.con
 
 ## What it handles automatically
 
-Cookie consent walls (29 languages), login walls (cookie extraction from your browsers), bot detection (stealth patches + automatic headed fallback), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
+Cookie consent walls (29 languages), login walls (cookie extraction from your browsers), bot detection (stealth patches + automatic headed fallback on challenge pages, error pages, and near-empty responses), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
 ## What the agent sees
 

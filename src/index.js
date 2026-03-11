@@ -565,6 +565,8 @@ function waitForNetworkIdle(session, opts = {}) {
 function isChallengePage(tree) {
   if (!tree) return true;
   const text = flattenTreeText(tree);
+  // Near-empty pages are almost certainly blocks
+  if (text.trim().length < 50) return true;
   const challengePhrases = [
     'just a moment',
     'checking if the site connection is secure',
@@ -574,6 +576,10 @@ function isChallengePage(tree) {
     'prove your humanity',
     'attention required',
     'file a ticket',
+    'unknown error',
+    'access denied',
+    'permission denied',
+    'request blocked',
   ];
   const lower = text.toLowerCase();
   return challengePhrases.some((p) => lower.includes(p));

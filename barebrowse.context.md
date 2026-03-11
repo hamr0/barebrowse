@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.2 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.3 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -153,7 +153,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Off-screen elements | `DOM.scrollIntoViewIfNeeded` before every click | Both |
 | Form submission | `press('Enter')` triggers onsubmit | Both |
 | SPA navigation | `waitForNavigation()` uses loadEventFired + frameNavigated | Both |
-| Bot detection | Headed mode with real cookies bypasses most checks | Headed |
+| Bot detection | Hybrid fallback: detects challenge pages, error pages, and near-empty responses, then switches to headed | Hybrid |
 | `navigator.webdriver` | Stealth patches in headless (webdriver, plugins, chrome obj) | Headless |
 | Profile locking | Unique temp dir per headless instance | Headless |
 | ARIA noise | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
