@@ -87,11 +87,11 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-12 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Session runs in hybrid mode with automatic cookie injection.
+12 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Session runs in hybrid mode with automatic cookie injection.
 
 ### 3. Library -- for agentic automation
 
-Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (13 tools, auto-snapshot after every action).
+Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (17 tools, auto-snapshot after every action).
 
 For code examples, API reference, and wiring instructions, see **[barebrowse.context.md](barebrowse.context.md)** -- the full integration guide.
 
@@ -139,6 +139,7 @@ Everything the agent can do through barebrowse:
 | **Upload** | Set files on a file input element |
 | **Screenshot** | Page capture as base64 PNG/JPEG/WebP |
 | **PDF** | Export page as PDF |
+| **Assess** | Privacy scan: score (0-100), risk level, 10-category breakdown. Requires `npm install wearehere`. |
 | **Tabs** | List open tabs, switch between them |
 | **Wait for content** | Poll for text or CSS selector to appear on page |
 | **Wait for navigation** | SPA-aware: works for full page loads and pushState |
@@ -174,7 +175,7 @@ URL -> find/launch browser (chromium.js)
     -> agent-ready snapshot with [ref=N] markers
 ```
 
-11 modules, 2,400 lines, zero dependencies.
+11 modules, 2,400 lines, zero required dependencies.
 
 ## Requirements
 

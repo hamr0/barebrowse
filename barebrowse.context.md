@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.4.2 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.1 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -90,7 +90,7 @@ const snapshot = await browse('https://example.com', {
 The snapshot is a YAML-like ARIA tree. First line is the page URL, second is pruning stats, then the tree:
 
 ```
-# https://example.com/
+url: https://example.com/
 # 379 chars → 45 chars (88% pruned)
 - heading "Example Domain" [level=1] [ref=3]
 - link "More information..." [ref=8]
@@ -184,10 +184,10 @@ try {
 ```
 
 `createBrowseTools(opts)` returns:
-- `tools` -- array of bareagent-compatible tool objects (browse, goto, snapshot, click, type, press, scroll, select, back, forward, drag, upload, screenshot)
+- `tools` -- array of bareagent-compatible tool objects (browse, goto, snapshot, click, type, press, scroll, select, hover, back, forward, drag, upload, tabs, switchTab, pdf, screenshot, plus assess if wearehere installed)
 - `close()` -- cleanup function, call when done
 
-Action tools (click, type, press, scroll, goto) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
+Action tools (click, type, press, scroll, hover, goto, back, forward, drag, upload, select, switchTab) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
 
 ## CLI session mode
 
@@ -233,7 +233,7 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 }
 ```
 
-12 tools exposed: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`.
+12 core tools: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Plus `assess` (privacy scan) if `wearehere` is installed (`npm install wearehere`).
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
 
@@ -270,8 +270,36 @@ URL -> chromium.js (find/launch browser, permission flags)
 | `src/interact.js` | ~170 | Click, type, press, scroll, hover, select |
 | `src/consent.js` | 200 | Auto-dismiss cookie consent dialogs across languages |
 | `src/stealth.js` | ~40 | Navigator patches for headless anti-detection |
-| `src/bareagent.js` | ~120 | Tool adapter for bareagent Loop |
+| `src/bareagent.js` | ~250 | Tool adapter for bareagent Loop |
 | `mcp-server.js` | ~170 | MCP server (JSON-RPC over stdio) |
+
+## Privacy assessment (optional)
+
+Install `wearehere` to add an `assess` tool to both the MCP server and bareagent adapter:
+
+```bash
+npm install wearehere
+```
+
+The `assess` tool navigates to a URL in an isolated browser page, scans for 10 privacy categories (cookies, trackers, fingerprinting, dark patterns, data brokers, form surveillance, link tracking, toxic terms, stored data, network traffic), and returns a compact JSON assessment:
+
+```json
+{
+  "site": "example.com",
+  "score": 62,
+  "risk": "high",
+  "recommendation": "Significant privacy risks. Avoid sharing personal info here.",
+  "concerns": ["Heavy hidden tracking", "Aggressive device fingerprinting"],
+  "categories": {
+    "cookies":      { "score": 10, "max": 15, "summary": "7 third-party cookies" },
+    "trackers":     { "score": 20, "max": 20, "summary": "14 hidden elements" },
+    "profiling":    { "score": 10, "max": 20, "summary": "Canvas + WebGL" },
+    "terms":        { "score": 15, "max": 15, "summary": "Binding arbitration" }
+  }
+}
+```
+
+Useful for agent threshold decisions: "skip sites above score 40", "warn if terms score >= 10", etc. When wearehere is not installed, the tool simply doesn't appear — no errors, no impact.
 
 ## Gotchas
 

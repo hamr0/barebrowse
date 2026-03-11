@@ -13,6 +13,13 @@ import { browse, connect } from './src/index.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
+// Optional: privacy assessment via wearehere
+let assessFn = null;
+try {
+  ({ assess: assessFn } = await import('wearehere'));
+} catch {}
+
+
 const MAX_CHARS_DEFAULT = 30000;
 const OUTPUT_DIR = join(process.cwd(), '.barebrowse');
 
@@ -158,6 +165,23 @@ const TOOLS = [
   },
 ];
 
+// Add assess tool if wearehere is installed
+if (assessFn) {
+  TOOLS.push({
+    name: 'assess',
+    description: 'Privacy assessment of any website. Navigates to the URL, scans for cookies, trackers, fingerprinting, dark patterns, data brokers, form surveillance, link tracking, and toxic terms. Returns a compact JSON with risk score (0-100), per-category breakdown, and recommendation. Powered by wearehere.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        url: { type: 'string', description: 'URL to assess (e.g. "https://example.com")' },
+        timeout: { type: 'number', description: 'Navigation timeout in ms (default: 30000)' },
+        settle: { type: 'number', description: 'Time to wait for trackers to load after page load, in ms (default: 3000)' },
+      },
+      required: ['url'],
+    },
+  });
+}
+
 async function handleToolCall(name, args) {
   switch (name) {
     case 'browse': {
@@ -229,6 +253,19 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       return await page.pdf({ landscape: args.landscape });
     }
+    case 'assess': {
+      if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
+      const page = await connect({ mode: 'hybrid' });
+      try {
+        const result = await assessFn(page, args.url, {
+          timeout: args.timeout,
+          settle: args.settle,
+        });
+        return JSON.stringify(result, null, 2);
+      } finally {
+        await page.close().catch(() => {});
+      }
+    }
     default:
       throw new Error(`Unknown tool: ${name}`);
   }
@@ -249,7 +286,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.4.8' },
+      serverInfo: { name: 'barebrowse', version: '0.5.1' },
     });
   }
 

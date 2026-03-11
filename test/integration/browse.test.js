@@ -107,7 +107,7 @@ describe('connect()', () => {
       await page.goto('https://example.com');
       const snapshot = await page.snapshot();
       const firstLine = snapshot.split('\n')[0];
-      assert.equal(firstLine, '# https://example.com/', 'first line should be the page URL');
+      assert.equal(firstLine, 'url: https://example.com/', 'first line should be the page URL');
     } finally {
       await page.close();
     }
@@ -119,7 +119,7 @@ describe('connect()', () => {
       await page.goto('https://example.com');
       const raw = await page.snapshot(false);
       const firstLine = raw.split('\n')[0];
-      assert.equal(firstLine, '# https://example.com/', 'raw snapshot first line should be the page URL');
+      assert.equal(firstLine, 'url: https://example.com/', 'raw snapshot first line should be the page URL');
     } finally {
       await page.close();
     }

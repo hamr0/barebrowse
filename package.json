@@ -1,6 +1,6 @@
 {
   "name": "barebrowse",
-  "version": "0.4.8",
+  "version": "0.5.1",
   "description": "Authenticated web browsing for autonomous agents via CDP. URL in, pruned ARIA snapshot out.",
   "type": "module",
   "main": "src/index.js",
@@ -28,5 +28,8 @@
     "mcp",
     "headless"
   ],
+  "optionalDependencies": {
+    "wearehere": "^1.0.0"
+  },
   "license": "MIT"
 }

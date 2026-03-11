@@ -1,5 +1,42 @@
 # Changelog
 
+## 0.5.1
+
+bareagent tool parity + test fix.
+
+### bareagent adapter
+- Added `hover`, `tabs`, `switchTab`, `pdf` tools (was 13 + assess, now 17 + assess)
+- bareagent now exposes the full connect() API surface
+
+### Tests
+- Fixed 2 snapshot URL prefix assertions (`# url` → `url: url`) to match 0.4.7 format change
+- 69/69 passing
+
+### Version
+- Package version: 0.5.1
+- MCP server version string updated
+
+## 0.5.0
+
+Privacy assessment via wearehere integration.
+
+### New: `assess` tool
+- Scans any URL for privacy risks: cookies, trackers, fingerprinting, dark patterns, data brokers, form surveillance, link tracking, and toxic terms of service
+- Returns compact JSON: score (0-100), risk level (low/moderate/high/critical), per-category breakdown (10 categories with score/max/summary), concerns list, and recommendation
+- Available in MCP server (13th tool) and bareagent adapter (14th tool)
+- Conditionally loaded: only available when `wearehere` npm package is installed
+- Uses a dedicated `connect()` page per scan (isolated from the session page)
+
+### Integration
+- `wearehere` added as optional dependency in package.json
+- MCP server: dynamic `import('wearehere')` with try/catch fallback
+- bareagent adapter: same dynamic import pattern
+- Zero impact when wearehere is not installed — all existing tools work unchanged
+
+### Version
+- Package version: 0.5.0
+- MCP server version string updated
+
 ## 0.4.8
 
 - Fix: `browse()` one-shot also had `#` prefix (missed in 0.4.7)

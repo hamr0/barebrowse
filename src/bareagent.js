@@ -13,6 +13,12 @@
 
 import { browse, connect } from './index.js';
 
+// Optional: privacy assessment via wearehere
+let assessFn = null;
+try {
+  ({ assess: assessFn } = await import('wearehere'));
+} catch {}
+
 const SETTLE_MS = 300;
 const settle = () => new Promise((r) => setTimeout(r, SETTLE_MS));
 
@@ -134,6 +140,18 @@ export function createBrowseTools(opts = {}) {
       execute: async ({ ref, value }) => actionAndSnapshot((page) => page.select(ref, value)),
     },
     {
+      name: 'hover',
+      description: 'Hover over an element by its ref. Returns the updated snapshot.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string', description: 'Element ref from snapshot' },
+        },
+        required: ['ref'],
+      },
+      execute: async ({ ref }) => actionAndSnapshot((page) => page.hover(ref)),
+    },
+    {
       name: 'back',
       description: 'Go back in browser history. Returns the updated snapshot.',
       parameters: { type: 'object', properties: {} },
@@ -172,6 +190,42 @@ export function createBrowseTools(opts = {}) {
       execute: async ({ ref, files }) => actionAndSnapshot((page) => page.upload(ref, files)),
     },
     {
+      name: 'tabs',
+      description: 'List all open tabs. Returns JSON array of { index, url, title }.',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => {
+        const page = await getPage();
+        const tabList = await page.tabs();
+        return JSON.stringify(tabList, null, 2);
+      },
+    },
+    {
+      name: 'switchTab',
+      description: 'Switch to a tab by index. Returns the updated snapshot.',
+      parameters: {
+        type: 'object',
+        properties: {
+          index: { type: 'number', description: 'Tab index (from tabs tool output)' },
+        },
+        required: ['index'],
+      },
+      execute: async ({ index }) => actionAndSnapshot((page) => page.switchTab(index)),
+    },
+    {
+      name: 'pdf',
+      description: 'Export current page as PDF. Returns base64-encoded PDF data.',
+      parameters: {
+        type: 'object',
+        properties: {
+          landscape: { type: 'boolean', description: 'Landscape orientation (default: false)' },
+        },
+      },
+      execute: async ({ landscape } = {}) => {
+        const page = await getPage();
+        return await page.pdf({ landscape });
+      },
+    },
+    {
       name: 'screenshot',
       description: 'Take a screenshot of the current page. Returns base64-encoded image.',
       parameters: {
@@ -186,6 +240,32 @@ export function createBrowseTools(opts = {}) {
       },
     },
   ];
+
+  // Add assess tool if wearehere is installed
+  if (assessFn) {
+    tools.push({
+      name: 'assess',
+      description: 'Privacy assessment of a website. Returns risk score (0-100), per-category breakdown, concerns, and recommendation.',
+      parameters: {
+        type: 'object',
+        properties: {
+          url: { type: 'string', description: 'URL to assess' },
+          timeout: { type: 'number', description: 'Navigation timeout in ms (default: 30000)' },
+          settle: { type: 'number', description: 'Time to wait for trackers to load, in ms (default: 3000)' },
+        },
+        required: ['url'],
+      },
+      execute: async ({ url, timeout, settle }) => {
+        const page = await connect(opts);
+        try {
+          const result = await assessFn(page, url, { timeout, settle });
+          return JSON.stringify(result, null, 2);
+        } finally {
+          await page.close().catch(() => {});
+        }
+      },
+    });
+  }
 
   return {
     tools,
