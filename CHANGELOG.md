@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.7
+
+MCP server crash resilience + process hardening.
+
+### Process hardening (`mcp-server.js`)
+- Added `unhandledRejection` and `uncaughtException` handlers — browser OOM/crash no longer kills the MCP server process
+- Previously: heavy sites like zalando.de crashed the browser via OOM, the CDP WebSocket close rejected pending promises, unhandled rejections crashed Node
+- Now: session resets and next request gets a fresh browser. Server stays alive.
+
+### Validated at scale
+- Scanned 149 sites across NL/US/EU with zero server crashes
+- Only 1 genuine timeout (rtv.nl) — all former crashers (zalando.de, otto.de, bijenkorf.nl, jumbo.com, klm.nl) now return results
+- Full results: `wearehere-scan-results.md`
+
 ## 0.5.6
 
 Assess now works on bot-blocking EU sites. Headed fallback + consent fix.

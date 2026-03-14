@@ -379,7 +379,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.6' },
+      serverInfo: { name: 'barebrowse', version: '0.5.7' },
     });
   }
 
@@ -441,6 +441,15 @@ process.stdin.on('data', (chunk) => {
       process.stdout.write(jsonrpcError(null, -32700, `Parse error: ${err.message}`) + '\n');
     }
   }
+});
+
+// Prevent unhandled rejections and uncaught exceptions from crashing the server.
+// Browser OOM/crash rejects all pending CDP promises — some may not be awaited.
+process.on('unhandledRejection', (err) => {
+  _page = null;
+});
+process.on('uncaughtException', (err) => {
+  _page = null;
 });
 
 // Clean up on exit

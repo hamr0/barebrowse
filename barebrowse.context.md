@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.6 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.7 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -243,7 +243,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use. Assess tries headless first; if bot-blocked (score ≤5 with all zeros), retries with a separate headed session. Tabs dismissed for consent and closed after every scan. Max 3 concurrent, with CDP crash recovery.
+Session tools share a singleton page, lazy-created on first use. Assess tries headless first; if bot-blocked (score ≤5 with all zeros), retries with a separate headed session. Tabs dismissed for consent and closed after every scan. Max 3 concurrent. Browser OOM/crash auto-recovers (session resets, server stays alive).
 
 ## Architecture
 

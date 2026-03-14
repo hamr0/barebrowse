@@ -4,6 +4,14 @@ Chronological record of what changed and why. For detailed changelogs, see `/CHA
 
 ---
 
+## v0.5.7 (2026-03-14)
+
+MCP server crash resilience. Browser OOM/crash no longer kills the server process.
+
+- Added `unhandledRejection` + `uncaughtException` handlers to mcp-server.js
+- Session auto-resets on crash, next request gets a fresh browser
+- Validated: 149 sites scanned across NL/US/EU with zero server crashes
+
 ## v0.5.6 (2026-03-14)
 
 Assess headed fallback + consent fix for bot-blocking EU sites.
