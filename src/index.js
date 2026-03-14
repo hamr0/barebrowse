@@ -73,10 +73,10 @@ export async function browse(url, opts = {}) {
     }
 
     // Step 5: Get ARIA tree
-    let { tree } = await ariaTree(page);
+    let { tree, nodeCount } = await ariaTree(page);
 
     // Step 5.5: Hybrid fallback — if headless was bot-blocked, retry headed
-    if (mode === 'hybrid' && isChallengePage(tree)) {
+    if (mode === 'hybrid' && isChallengePage(tree, nodeCount)) {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       cdp.close();
       if (browser) { browser.process.kill(); browser = null; }
@@ -140,6 +140,7 @@ export async function connect(opts = {}) {
 
   let page = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
   let refMap = new Map();
+  let botBlocked = false;
 
   // Suppress permission prompts for all modes
   await suppressPermissions(cdp);
@@ -179,23 +180,28 @@ export async function connect(opts = {}) {
         await dismissConsent(page.session);
       }
 
-      // Hybrid fallback: if bot-blocked, retry with headed browser
-      if (mode === 'hybrid') {
-        const { tree } = await ariaTree(page);
-        if (isChallengePage(tree)) {
-          await cdp.send('Target.closeTarget', { targetId: page.targetId });
-          cdp.close();
-          if (browser) { browser.process.kill(); browser = null; }
+      // Check for bot challenge
+      const { tree, nodeCount } = await ariaTree(page);
+      botBlocked = isChallengePage(tree, nodeCount);
 
-          const port = opts.port || 9222;
-          const wsUrl = await getDebugUrl(port);
-          cdp = await createCDP(wsUrl);
-          page = await createPage(cdp, false, { viewport: opts.viewport });
-          setupDialogHandler(page.session);
-          await suppressPermissions(cdp);
-          await navigate(page, url, timeout);
-          if (opts.consent !== false) await dismissConsent(page.session);
-        }
+      // Hybrid fallback: if bot-blocked, retry with headed browser
+      if (botBlocked && mode === 'hybrid') {
+        await cdp.send('Target.closeTarget', { targetId: page.targetId });
+        cdp.close();
+        if (browser) { browser.process.kill(); browser = null; }
+
+        const port = opts.port || 9222;
+        const wsUrl = await getDebugUrl(port);
+        cdp = await createCDP(wsUrl);
+        page = await createPage(cdp, false, { viewport: opts.viewport });
+        setupDialogHandler(page.session);
+        await suppressPermissions(cdp);
+        await navigate(page, url, timeout);
+        if (opts.consent !== false) await dismissConsent(page.session);
+
+        // Re-check after headed fallback
+        const after = await ariaTree(page);
+        botBlocked = isChallengePage(after.tree, after.nodeCount);
       }
     },
 
@@ -223,11 +229,12 @@ export async function connect(opts = {}) {
       const raw = formatTree(result.tree);
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
-      if (pruneOpts === false) return `url: ${pageUrl}\n` + raw;
+      const warn = botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '';
+      if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
       const pruned = pruneTree(result.tree, { mode: pruneOpts?.mode || 'act' });
       const out = formatTree(pruned);
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
-      return stats + '\n' + out;
+      return stats + '\n' + warn + out;
     },
 
     async click(ref) {
@@ -334,6 +341,8 @@ export async function connect(opts = {}) {
       writeFileSync(filePath, JSON.stringify(state, null, 2));
     },
 
+    get botBlocked() { return botBlocked; },
+
     dialogLog,
 
     async screenshot(screenshotOpts = {}) {
@@ -368,13 +377,17 @@ export async function connect(opts = {}) {
     async createTab() {
       const tab = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
       await suppressPermissions(cdp);
+      let tabBotBlocked = false;
       return {
         async goto(url, timeout = 30000) {
           await navigate(tab, url, timeout);
           if (opts.consent !== false) {
             await dismissConsent(tab.session);
           }
+          const { tree, nodeCount } = await ariaTree(tab);
+          tabBotBlocked = isChallengePage(tree, nodeCount);
         },
+        get botBlocked() { return tabBotBlocked; },
         async injectCookies(url, cookieOpts) {
           await authenticate(tab.session, url, { browser: cookieOpts?.browser });
         },
@@ -485,7 +498,7 @@ async function ariaTree(page) {
     }
   }
 
-  return { tree, refMap };
+  return { tree, refMap, nodeCount: nodes.length };
 }
 
 /**
@@ -583,10 +596,14 @@ function waitForNetworkIdle(session, opts = {}) {
 
 /**
  * Detect if a page is a bot-challenge page (Cloudflare, etc.).
- * Heuristic: very short ARIA tree + known challenge phrases.
+ * Heuristic: low ARIA node count, short text, or known challenge phrases.
+ * @param {object} tree - Nested ARIA tree (from buildTree)
+ * @param {number} [nodeCount] - Raw CDP node count (from Accessibility.getFullAXTree)
  */
-function isChallengePage(tree) {
+function isChallengePage(tree, nodeCount) {
   if (!tree) return true;
+  // Real pages have 50+ ARIA nodes. Bot challenges have <20.
+  if (nodeCount !== undefined && nodeCount < 50) return true;
   const text = flattenTreeText(tree);
   // Near-empty pages are almost certainly blocks
   if (text.trim().length < 50) return true;

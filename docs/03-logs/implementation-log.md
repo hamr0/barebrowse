@@ -4,6 +4,14 @@ Chronological record of what changed and why. For detailed changelogs, see `/CHA
 
 ---
 
+## v0.5.8 (2026-03-14)
+
+Bot challenge detection for all browsing via ARIA node count.
+
+- `isChallengePage()` checks node count (<50) — catches bot walls that old text heuristic missed
+- `botBlocked` flag on pages and tabs, `snapshot()` warning line, assess uses flag for headed fallback
+- Tested: reuters, homedepot, leboncoin, idealista all correctly detected
+
 ## v0.5.7 (2026-03-14)
 
 MCP server crash resilience. Browser OOM/crash no longer kills the server process.

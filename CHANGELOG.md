@@ -1,5 +1,26 @@
 # Changelog
 
+## 0.5.8
+
+Bot challenge detection for all browsing, not just assess.
+
+### Bot detection (`src/index.js`)
+- `isChallengePage()` now checks ARIA node count (<50 = bot-blocked) in addition to text length and phrase matching
+- `botBlocked` property exposed on both `connect()` pages and `createTab()` tabs
+- `goto()` on main page and tabs sets `botBlocked` after every navigation
+- `snapshot()` prepends `[BOT CHALLENGE DETECTED]` warning line when flagged
+- Hybrid fallback on main page now uses node count for more reliable detection
+
+### Assess handler (`mcp-server.js`)
+- Headed fallback now uses `tab.botBlocked` flag instead of naive score threshold (≤5 + all zeros)
+- Previously: sites like Reuters, Home Depot, Leboncoin returned fake-clean scores because the bot challenge page looked "clean" to the scanner
+- Now: node count catches every bot-blocked page regardless of score
+
+### Tested
+- reuters.com, homedepot.com, leboncoin.fr, idealista.com all correctly flagged `botBlocked: true`
+- svt.se, whatsapp.com, google.com correctly flagged `false`
+- 71/71 tests passing
+
 ## 0.5.7
 
 MCP server crash resilience + process hardening.

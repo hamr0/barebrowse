@@ -317,8 +317,9 @@ async function handleToolCall(name, args) {
               }),
             ]);
             clearTimeout(timer);
+            const wasBotBlocked = tab.botBlocked;
             await tab.close().catch(() => {});
-            return JSON.stringify(result, null, 2);
+            return { result, botBlocked: wasBotBlocked };
           } catch (err) {
             clearTimeout(timer);
             await tab.close().catch(() => {});
@@ -328,29 +329,23 @@ async function handleToolCall(name, args) {
 
         // Try headless first
         try {
-          const result = await runAssess(false);
-          // Check if result looks bot-blocked (score 0-5, no trackers, few cookies)
-          try {
-            const parsed = JSON.parse(result);
-            const { network, trackers, profiling } = parsed.categories || {};
-            const allZero = (network?.score || 0) === 0
-              && (trackers?.score || 0) === 0
-              && (profiling?.score || 0) === 0;
-            if (allZero && (parsed.score || 0) <= 5) {
-              // Likely bot-blocked — retry headed
-              try {
-                return await runAssess(true);
-              } catch {
-                return result; // headed failed, return headless result
-              }
+          const { result, botBlocked } = await runAssess(false);
+          if (botBlocked) {
+            // Bot-blocked in headless — retry headed
+            try {
+              const headed = await runAssess(true);
+              return JSON.stringify(headed.result, null, 2);
+            } catch {
+              return JSON.stringify(result, null, 2); // headed failed, return headless result
             }
-          } catch {}
-          return result;
+          }
+          return JSON.stringify(result, null, 2);
         } catch (err) {
           if (isCdpDead(err)) _page = null;
           // Headless crashed — try headed
           try {
-            return await runAssess(true);
+            const headed = await runAssess(true);
+            return JSON.stringify(headed.result, null, 2);
           } catch (retryErr) {
             throw retryErr;
           }
@@ -379,7 +374,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.7' },
+      serverInfo: { name: 'barebrowse', version: '0.5.8' },
     });
   }
 
