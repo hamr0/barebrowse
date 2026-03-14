@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.8 | Node.js >= 22 | 0 required deps | MIT
+> v0.6.1 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -23,10 +23,8 @@ Three integration paths:
 | Mode | What it does | When to use |
 |---|---|---|
 | `headless` (default) | Launches a fresh Chromium, no UI | Scraping, reading, fast automation |
-| `headed` | Connects to user's running browser on CDP port | Bot-detected sites, debugging, visual tasks |
-| `hybrid` | Tries headless first, falls back to headed if blocked | General-purpose agent browsing |
-
-Headed mode requires the browser to be launched with `--remote-debugging-port=9222`.
+| `headed` | Auto-launches a visible Chromium window | Bot-detected sites, debugging, visual tasks |
+| `hybrid` | Tries headless first, headed fallback per-navigation (switches back to headless next time) | General-purpose agent browsing |
 
 ## Minimal usage: one-shot browse
 
@@ -45,13 +43,12 @@ const snapshot = await browse('https://example.com', {
   pruneMode: 'act',      // 'act' (interactive elements) | 'read' (all content)
   consent: true,         // auto-dismiss cookie consent dialogs
   timeout: 30000,        // navigation timeout in ms
-  port: 9222,            // CDP port for headed/hybrid mode
 });
 ```
 
 ## connect() API
 
-`connect(opts)` returns a page handle for interactive sessions. Same opts as `browse()` for mode/port. Supports `hybrid` mode — starts headless, falls back to headed on bot detection (same as `browse()`).
+`connect(opts)` returns a page handle for interactive sessions. Same opts as `browse()` for mode. Supports `hybrid` mode — starts headless, auto-launches headed on bot detection (same as `browse()`).
 
 | Method | Args | Returns | Notes |
 |---|---|---|---|
@@ -312,13 +309,13 @@ Useful for agent threshold decisions: "skip sites above score 40", "warn if term
 
 3. **Pruning modes matter.** `act` mode (default) keeps interactive elements + visible labels. `read` mode keeps all text content. Use `read` for content extraction, `act` for form filling and navigation.
 
-4. **Headed mode requires manual browser launch.** Start your browser with `--remote-debugging-port=9222`. barebrowse connects to it -- it does not launch it.
+4. **Headed mode auto-launches Chromium.** No need to start a browser manually — barebrowse launches a headed Chromium instance with CDP enabled automatically.
 
 5. **Cookie extraction needs unlocked profile.** Chromium cookies are AES-encrypted with a keyring key. If Chromium is running, the profile may be locked. Firefox cookies are plaintext and always accessible.
 
-6. **Hybrid mode kills and relaunches.** If headless is bot-blocked, hybrid mode kills the headless browser and connects to headed on port 9222. The headed browser must already be running.
+6. **Hybrid mode is per-navigation.** If headless is bot-blocked, hybrid kills headless and launches headed for that URL. On the next `goto()`, it switches back to headless automatically. If headed can't launch (no display — CI, Docker), it degrades gracefully with the headless result and a `[BOT CHALLENGE DETECTED]` warning.
 
-7. **One page per connect().** Each `connect()` call creates one page. For multiple tabs, call `connect()` multiple times.
+7. **One page per connect(), but tabs are supported.** Each `connect()` call creates one page. Use `createTab()` for additional tabs in the same browser.
 
 8. **Consent dismiss is best-effort.** It handles 16+ tested sites across 29 languages but novel consent implementations may need manual handling. Disable with `{ consent: false }`.
 

@@ -286,61 +286,45 @@ async function handleToolCall(name, args) {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
       const releaseSlot = await acquireAssessSlot();
       try {
-        const runAssess = async (headed) => {
-          let tab;
-          if (headed) {
-            tab = await connect({ mode: 'headed' });
-          } else {
-            const page = await getPage();
-            tab = await page.createTab();
-          }
-          let timer;
-          try {
-            const result = await Promise.race([
-              (async () => {
-                await tab.injectCookies(args.url).catch(() => {});
-                return await assessFn(tab, args.url, { timeout: args.timeout, settle: args.settle });
-              })(),
-              new Promise((_, reject) => {
-                timer = setTimeout(() => {
-                  tab.close().catch(() => {});
-                  reject(new Error('assess timeout'));
-                }, 30000);
-              }),
-            ]);
-            clearTimeout(timer);
-            const wasBotBlocked = tab.botBlocked;
-            await tab.close().catch(() => {});
-            return { result, botBlocked: wasBotBlocked };
-          } catch (err) {
-            clearTimeout(timer);
-            await tab.close().catch(() => {});
-            throw err;
-          }
-        };
-
-        // Try headless first
+        const page = await getPage();
+        const tab = await page.createTab();
+        let timer;
         try {
-          const { result, botBlocked } = await runAssess(false);
-          if (botBlocked) {
-            // Bot-blocked in headless — retry headed
+          await tab.injectCookies(args.url).catch(() => {});
+          const result = await Promise.race([
+            assessFn(tab, args.url, { timeout: args.timeout, settle: args.settle }),
+            new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('assess timeout')), 30000); }),
+          ]);
+          clearTimeout(timer);
+          if (tab.botBlocked) {
+            // Bot-blocked — trigger hybrid fallback via main page, retry in new tab
+            await tab.close().catch(() => {});
+            await page.goto(args.url);
+            const tab2 = await page.createTab();
+            let timer2;
             try {
-              const headed = await runAssess(true);
-              return JSON.stringify(headed.result, null, 2);
-            } catch {
-              return JSON.stringify(result, null, 2); // headed failed, return headless result
+              await tab2.injectCookies(args.url).catch(() => {});
+              const r2 = await Promise.race([
+                assessFn(tab2, args.url, { timeout: args.timeout, settle: args.settle }),
+                new Promise((_, rej) => { timer2 = setTimeout(() => rej(new Error('assess timeout')), 30000); }),
+              ]);
+              clearTimeout(timer2);
+              if (tab2.botBlocked) r2._warning = 'Bot-blocked in both modes. Score may be unreliable.';
+              await tab2.close().catch(() => {});
+              return JSON.stringify(r2, null, 2);
+            } catch (err2) {
+              clearTimeout(timer2);
+              await tab2.close().catch(() => {});
+              throw err2;
             }
           }
+          await tab.close().catch(() => {});
           return JSON.stringify(result, null, 2);
         } catch (err) {
+          clearTimeout(timer);
+          await tab.close().catch(() => {});
           if (isCdpDead(err)) _page = null;
-          // Headless crashed — try headed
-          try {
-            const headed = await runAssess(true);
-            return JSON.stringify(headed.result, null, 2);
-          } catch (retryErr) {
-            throw retryErr;
-          }
+          throw err;
         }
       } finally {
         releaseSlot();
@@ -366,7 +350,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.9' },
+      serverInfo: { name: 'barebrowse', version: '0.6.0' },
     });
   }
 

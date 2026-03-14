@@ -84,8 +84,8 @@ CDP (Chrome DevTools Protocol) lets us connect to any Chromium-based browser —
 
 ```
 headless: spawn chromium --headless=new --remote-debugging-port=N
-headed:   connect to user's already-running browser on debug port
-hybrid:   try headless → detect failure → fall back to headed
+headed:   spawn chromium (visible window) --remote-debugging-port=N
+hybrid:   try headless → headed if blocked → back to headless next navigation
 ```
 
 After connection, every CDP command is the same. Three modes = ~20 extra lines in `chromium.js`, not three implementations.
@@ -96,7 +96,7 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 |---|---|---|
 | `headless` | Agent research, background tasks, CI | "Read this article and summarize it" |
 | `headed` | Personal assistant, interactive tasks, auth flows | "Book me a flight on this page" |
-| `hybrid` | Default for autonomous agents | Try headless; if CF-blocked, fall back to headed |
+| `hybrid` | Default for autonomous agents | Try headless each time; headed fallback per-URL, auto-switches back |
 
 **Headless is the default.** Most agent tasks are "go read this page." Headed is the escape hatch for when headless fails or the task requires user-visible interaction.
 

@@ -2,7 +2,7 @@
  * chromium.js — Find, launch, and connect to Chromium-based browsers.
  *
  * Supports: Chrome, Chromium, Brave, Edge, Vivaldi, Arc, Opera.
- * Modes: headless (launch new), headed (connect to running).
+ * Modes: headless (launch new, no UI), headed (launch new, visible window).
  */
 
 import { execSync, spawn } from 'node:child_process';
@@ -55,11 +55,12 @@ export function findBrowser() {
 }
 
 /**
- * Launch a headless Chromium instance with CDP enabled.
+ * Launch a Chromium instance with CDP enabled.
  * @param {object} [opts]
  * @param {string} [opts.binary] - Path to browser binary (auto-detected if omitted)
  * @param {number} [opts.port=0] - CDP port (0 = random available port)
  * @param {string} [opts.userDataDir] - Browser profile directory
+ * @param {boolean} [opts.headed=false] - Launch in headed mode (with visible window)
  * @returns {Promise<{wsUrl: string, process: ChildProcess, port: number}>}
  */
 export async function launch(opts = {}) {
@@ -67,7 +68,6 @@ export async function launch(opts = {}) {
   const port = opts.port || 0;
 
   const args = [
-    '--headless=new',
     `--remote-debugging-port=${port}`,
     '--no-first-run',
     '--no-default-browser-check',
@@ -75,7 +75,8 @@ export async function launch(opts = {}) {
     '--disable-sync',
     '--disable-translate',
     '--mute-audio',
-    '--hide-scrollbars',
+    // Headless-only flags
+    ...(!opts.headed ? ['--headless=new', '--hide-scrollbars'] : []),
     // Suppress permission prompts (location, notifications, camera, mic, etc.)
     '--disable-notifications',
     '--autoplay-policy=no-user-gesture-required',

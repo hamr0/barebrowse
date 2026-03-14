@@ -8,7 +8,7 @@
  *   const snapshot = await browse('https://example.com');
  */
 
-import { launch, getDebugUrl } from './chromium.js';
+import { launch } from './chromium.js';
 import { createCDP } from './cdp.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
@@ -27,7 +27,6 @@ import { applyStealth } from './stealth.js';
  * @param {boolean} [opts.cookies=true] - Inject user's cookies (Phase 2)
  * @param {boolean} [opts.prune=true] - Apply ARIA pruning (Phase 2)
  * @param {number} [opts.timeout=30000] - Navigation timeout in ms
- * @param {number} [opts.port] - CDP port for headed mode
  * @returns {Promise<string>} ARIA snapshot text
  */
 export async function browse(url, opts = {}) {
@@ -40,9 +39,8 @@ export async function browse(url, opts = {}) {
   try {
     // Step 1: Get a CDP connection
     if (mode === 'headed') {
-      const port = opts.port || 9222;
-      const wsUrl = await getDebugUrl(port);
-      cdp = await createCDP(wsUrl);
+      browser = await launch({ headed: true, proxy: opts.proxy });
+      cdp = await createCDP(browser.wsUrl);
     } else {
       // headless or hybrid (start headless)
       browser = await launch({ proxy: opts.proxy });
@@ -81,17 +79,20 @@ export async function browse(url, opts = {}) {
       cdp.close();
       if (browser) { browser.process.kill(); browser = null; }
 
-      const port = opts.port || 9222;
-      const wsUrl = await getDebugUrl(port);
-      cdp = await createCDP(wsUrl);
-      page = await createPage(cdp, false, { viewport: opts.viewport });
-      await suppressPermissions(cdp);
-      if (opts.cookies !== false) {
-        try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
+      try {
+        browser = await launch({ headed: true, proxy: opts.proxy });
+        cdp = await createCDP(browser.wsUrl);
+        page = await createPage(cdp, false, { viewport: opts.viewport });
+        await suppressPermissions(cdp);
+        if (opts.cookies !== false) {
+          try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
+        }
+        await navigate(page, url, timeout);
+        if (opts.consent !== false) await dismissConsent(page.session);
+        ({ tree } = await ariaTree(page));
+      } catch {
+        // Headed launch failed (no display?) — return headless result as-is
       }
-      await navigate(page, url, timeout);
-      if (opts.consent !== false) await dismissConsent(page.session);
-      ({ tree } = await ariaTree(page));
     }
 
     // Step 6: Prune for agent consumption
@@ -121,7 +122,6 @@ export async function browse(url, opts = {}) {
  *
  * @param {object} [opts]
  * @param {'headless'|'headed'|'hybrid'} [opts.mode='headless'] - Browser mode
- * @param {number} [opts.port=9222] - CDP port for headed mode
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
@@ -130,15 +130,15 @@ export async function connect(opts = {}) {
   let cdp;
 
   if (mode === 'headed') {
-    const port = opts.port || 9222;
-    const wsUrl = await getDebugUrl(port);
-    cdp = await createCDP(wsUrl);
+    browser = await launch({ headed: true, proxy: opts.proxy });
+    cdp = await createCDP(browser.wsUrl);
   } else {
     browser = await launch({ proxy: opts.proxy });
     cdp = await createCDP(browser.wsUrl);
   }
 
-  let page = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
+  let currentlyHeaded = (mode === 'headed');
+  let page = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
   let refMap = new Map();
   let botBlocked = false;
 
@@ -175,6 +175,20 @@ export async function connect(opts = {}) {
 
   return {
     async goto(url, timeout = 30000) {
+      // Switch back to headless if we fell back to headed previously
+      if (currentlyHeaded && mode === 'hybrid') {
+        await cdp.send('Target.closeTarget', { targetId: page.targetId });
+        cdp.close();
+        if (browser) { browser.process.kill(); browser = null; }
+
+        browser = await launch({ proxy: opts.proxy });
+        cdp = await createCDP(browser.wsUrl);
+        page = await createPage(cdp, true, { viewport: opts.viewport });
+        setupDialogHandler(page.session);
+        await suppressPermissions(cdp);
+        currentlyHeaded = false;
+      }
+
       await navigate(page, url, timeout);
       if (opts.consent !== false) {
         await dismissConsent(page.session);
@@ -190,18 +204,22 @@ export async function connect(opts = {}) {
         cdp.close();
         if (browser) { browser.process.kill(); browser = null; }
 
-        const port = opts.port || 9222;
-        const wsUrl = await getDebugUrl(port);
-        cdp = await createCDP(wsUrl);
-        page = await createPage(cdp, false, { viewport: opts.viewport });
-        setupDialogHandler(page.session);
-        await suppressPermissions(cdp);
-        await navigate(page, url, timeout);
-        if (opts.consent !== false) await dismissConsent(page.session);
+        try {
+          browser = await launch({ headed: true, proxy: opts.proxy });
+          cdp = await createCDP(browser.wsUrl);
+          page = await createPage(cdp, false, { viewport: opts.viewport });
+          setupDialogHandler(page.session);
+          await suppressPermissions(cdp);
+          await navigate(page, url, timeout);
+          if (opts.consent !== false) await dismissConsent(page.session);
 
-        // Re-check after headed fallback
-        const after = await ariaTree(page);
-        botBlocked = isChallengePage(after.tree, after.nodeCount);
+          // Re-check after headed fallback
+          const after = await ariaTree(page);
+          botBlocked = isChallengePage(after.tree, after.nodeCount);
+          currentlyHeaded = true;
+        } catch {
+          // Headed launch failed (no display?) — keep headless result, botBlocked stays true
+        }
       }
     },
 
@@ -375,7 +393,7 @@ export async function connect(opts = {}) {
     cdp: page.session,
 
     async createTab() {
-      const tab = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
+      const tab = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
       await suppressPermissions(cdp);
       let tabBotBlocked = false;
       return {

@@ -1,5 +1,62 @@
 # Changelog
 
+## 0.6.1
+
+Headed fallback is now a per-navigation escape hatch, not a permanent mode switch. Graceful degradation when headed is unavailable.
+
+### Switch-back to headless (`src/index.js`)
+- `connect().goto()` in hybrid mode: if currently headed from a previous fallback, kills the headed browser and launches fresh headless before navigating
+- New `currentlyHeaded` runtime state variable tracks actual browser mode (vs `mode` which is user config)
+- `createPage()` stealth decision uses runtime mode (`!currentlyHeaded`) instead of config mode (`mode !== 'headed'`)
+- `createTab()` also uses `currentlyHeaded` for correct stealth application
+
+### Graceful degradation (`src/index.js`)
+- `connect().goto()` hybrid fallback wrapped in try/catch — if `launch({ headed: true })` fails (no `$DISPLAY`, no Wayland, CI/Docker), keeps the headless result with `botBlocked: true` and `[BOT CHALLENGE DETECTED]` warning
+- `browse()` hybrid fallback also wrapped in try/catch — same graceful degradation for one-shot browsing
+- No crash on headless-only environments
+
+### Flow after changes
+```
+goto(url) in hybrid mode:
+  1. If currently headed → kill headed, launch headless, reset currentlyHeaded
+  2. Navigate to url
+  3. Check bot-blocked
+  4. If bot-blocked → TRY launch headed (set currentlyHeaded=true)
+                    → CATCH: headed unavailable, keep headless result
+```
+
+### Docs
+- Updated hybrid mode descriptions in barebrowse.context.md, system-state.md, prd.md
+
+### Tests
+- All existing tests pass (tests use headless mode, unaffected by hybrid logic)
+
+## 0.6.0
+
+Self-launching headed fallback. Headed and hybrid modes no longer require a manually-launched browser on port 9222 — barebrowse auto-launches a visible Chromium window via `launch({ headed: true })`.
+
+### Headed mode auto-launch (`src/chromium.js`)
+- `launch()` accepts `headed` option — skips `--headless=new` and `--hide-scrollbars` flags
+- Same temp profile, same random port, same CDP parsing, same process return
+
+### Hybrid fallback fix (`src/index.js`)
+- All 4 `getDebugUrl(port)` call sites replaced with `launch({ headed: true, proxy })` + `createCDP(browser.wsUrl)`
+- `browse()` headed branch, `browse()` hybrid fallback, `connect()` headed branch, `connect().goto()` hybrid fallback
+- `getDebugUrl` import removed from index.js (still exported from chromium.js for external use)
+- Hybrid mode now actually works — previously it tried to connect to port 9222 which nobody ran
+
+### Assess handler simplified (`mcp-server.js`)
+- Removed dual-path `runAssess(headed)` function (~60 lines of broken headed fallback)
+- Assess now uses the session's hybrid mode: if tab is bot-blocked, triggers headed fallback via main page `goto()`, then retries in a new tab
+- One flow, no separate `connect({ mode: 'headed' })` call
+
+### Docs
+- Removed all "launch browser with --remote-debugging-port=9222" instructions
+- Updated headed/hybrid mode descriptions across barebrowse.context.md, README.md, system-state.md, prd.md
+
+### Tests
+- 71/71 passing — no test changes needed (all tests use headless mode)
+
 ## 0.5.8
 
 Bot challenge detection for all browsing, not just assess.

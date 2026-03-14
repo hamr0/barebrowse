@@ -204,16 +204,17 @@ Spawn a fresh Chromium, navigate, snapshot, close. Default mode.
 - Stealth patches: `navigator.webdriver`, plugins, languages, chrome object
 
 ### Headed mode -- done
-Connect to an already-running browser on a CDP debug port.
+Auto-launch a visible Chromium window with CDP enabled.
 - Same ARIA + prune pipeline
 - Manual cookie injection via `page.injectCookies(url, { browser })` (e.g. inject Firefox cookies into headed Chromium)
 - Permission prompts suppressed via CDP `Browser.setPermission`
-- User must launch browser with `--remote-debugging-port=9222`
+- No manual browser setup needed — `launch({ headed: true })` handles everything
 
 ### Hybrid mode -- done
-Try headless first. If bot-blocked (Cloudflare, etc.), fall back to headed automatically.
+Try headless first. If bot-blocked (Cloudflare, etc.), auto-launch headed for that URL. Switch back to headless on the next navigation.
 - Detection: heuristic on ARIA tree for challenge phrases ("Just a moment", "Checking your browser")
-- Fallback: kill headless, connect to user's running browser on port 9222, re-navigate
+- Per-navigation fallback: kill headless → launch headed → on next `goto()`, kill headed → launch headless
+- Graceful degradation: if headed can't launch (no `$DISPLAY`, CI, Docker), keeps headless result with `botBlocked: true`
 - One flag: `mode: 'hybrid'`
 
 ### Interactions -- done, real-world tested

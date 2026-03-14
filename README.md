@@ -100,8 +100,8 @@ For code examples, API reference, and wiring instructions, see **[barebrowse.con
 | Mode | What happens | Best for |
 |------|-------------|----------|
 | **Headless** (default) | Launches a fresh Chromium, no UI | Fast automation, scraping, reading pages |
-| **Headed** | Connects to your running browser on CDP port | Bot-detected sites, visual debugging, CAPTCHAs |
-| **Hybrid** | Tries headless first, falls back to headed if blocked | General-purpose agent browsing |
+| **Headed** | Auto-launches a visible Chromium window | Bot-detected sites, visual debugging, CAPTCHAs |
+| **Hybrid** | Tries headless first, auto-launches headed if blocked | General-purpose agent browsing |
 
 ## What it handles automatically
 
