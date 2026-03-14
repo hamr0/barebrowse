@@ -105,7 +105,7 @@ For code examples, API reference, and wiring instructions, see **[barebrowse.con
 
 ## What it handles automatically
 
-Cookie consent walls (29 languages), login walls (cookie extraction from your browsers), bot detection (stealth patches + automatic headed fallback on challenge pages, error pages, and near-empty responses), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
+Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (stealth patches + automatic headed fallback on challenge pages, error pages, and near-empty responses), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
 ## What the agent sees
 
@@ -139,7 +139,7 @@ Everything the agent can do through barebrowse:
 | **Upload** | Set files on a file input element |
 | **Screenshot** | Page capture as base64 PNG/JPEG/WebP |
 | **PDF** | Export page as PDF |
-| **Assess** | Privacy scan: score (0-100), risk level, 10-category breakdown. Reuses session browser via tabs (max 3 concurrent, properly closed after each scan), auto-retries on CDP crash, 30s timeout per scan. Requires `npm install wearehere`. |
+| **Assess** | Privacy scan: score (0-100), risk level, 10-category breakdown. Tries headless first, falls back to headed if bot-blocked. Consent auto-dismissed before scan. Max 3 concurrent, 30s timeout, tabs cleaned up. Requires `npm install wearehere`. |
 | **Tabs** | List open tabs, switch between them |
 | **Wait for content** | Poll for text or CSS selector to appear on page |
 | **Wait for navigation** | SPA-aware: works for full page loads and pushState |

@@ -140,7 +140,7 @@ The agent doesn't have to think about any of this:
 | **Cookie consent walls** | ARIA tree scan + jsClick accept button, 29 languages | Both |
 | **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
 | **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
-| **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues | Both |
+| **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues, real mouse click fallback for CMPs ignoring synthetic clicks | Both |
 | **Permission prompts** (location, camera, mic) | Launch flags + CDP Browser.setPermission auto-deny | Both |
 | **Media autoplay blocked** | Autoplay policy flag on launch | Both |
 | **Login walls** | Cookie extraction from all browsers (Firefox + Chromium merged), injected via CDP | Both |

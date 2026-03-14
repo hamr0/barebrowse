@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.5 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.6 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -146,7 +146,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Obstacle | How | Mode |
 |---|---|---|
 | Cookie consent | ARIA scan + jsClick accept button, 29 languages | Both |
-| Consent behind iframes | JS `.click()` via DOM.resolveNode bypasses overlays | Both |
+| Consent behind iframes | JS `.click()` via DOM.resolveNode bypasses overlays, real mouse click fallback for CMPs that ignore synthetic clicks | Both |
 | Permission prompts | Launch flags + CDP Browser.setPermission auto-deny | Both |
 | Media autoplay blocked | `--autoplay-policy=no-user-gesture-required` | Both |
 | Login walls | Cookie extraction from Firefox/Chromium + CDP injection | Both |
@@ -243,7 +243,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use. Assess runs in isolated tabs within the session (max 3 concurrent, with retry and CDP crash recovery). Tabs are closed after every assess (success, error, and timeout paths).
+Session tools share a singleton page, lazy-created on first use. Assess tries headless first; if bot-blocked (score ≤5 with all zeros), retries with a separate headed session. Tabs dismissed for consent and closed after every scan. Max 3 concurrent, with CDP crash recovery.
 
 ## Architecture
 

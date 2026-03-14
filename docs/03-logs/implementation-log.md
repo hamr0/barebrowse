@@ -4,6 +4,15 @@ Chronological record of what changed and why. For detailed changelogs, see `/CHA
 
 ---
 
+## v0.5.6 (2026-03-14)
+
+Assess headed fallback + consent fix for bot-blocking EU sites.
+
+- Assess tries headless first, falls back to headed if bot-blocked (score ≤5 + all zeros)
+- Tab `goto()` now dismisses consent (was missing — trackers couldn't fire behind consent wall)
+- Added bare `accepteren` Dutch pattern + realClick fallback for CMPs ignoring synthetic clicks
+- Tested: Lufthansa 50/high, Coolblue 55/high, Rabobank 75/critical (was 5/low on all three)
+
 ## v0.5.5 (2026-03-14)
 
 Fix assess tab leak + Linux shared memory crash.

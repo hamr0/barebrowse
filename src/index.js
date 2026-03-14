@@ -371,6 +371,9 @@ export async function connect(opts = {}) {
       return {
         async goto(url, timeout = 30000) {
           await navigate(tab, url, timeout);
+          if (opts.consent !== false) {
+            await dismissConsent(tab.session);
+          }
         },
         async injectCookies(url, cookieOpts) {
           await authenticate(tab.session, url, { browser: cookieOpts?.browser });

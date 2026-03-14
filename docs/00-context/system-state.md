@@ -67,7 +67,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **Cookie consent walls** | ARIA tree scan, jsClick accept button. 29 languages | Both |
 | **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
 | **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
-| **Consent behind iframe overlay** | JS `.click()` via `DOM.resolveNode` bypasses z-index/overlay issues | Both |
+| **Consent behind iframe overlay** | JS `.click()` via `DOM.resolveNode` bypasses z-index/overlay issues, real mouse click fallback for CMPs ignoring synthetic clicks | Both |
 | **Permission prompts** (location, notifications, camera, mic) | Launch flags + CDP `Browser.setPermission` auto-deny | Both |
 | **Media autoplay blocked** | `--autoplay-policy=no-user-gesture-required` | Both |
 | **Login walls** | All-browser cookie merge (Firefox + Chromium), CDP injection (user's real sessions) | Both |

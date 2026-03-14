@@ -21,6 +21,7 @@ const ACCEPT_PATTERNS = [
   // Dutch
   /\balles\s*accepteren\b/i,
   /\balles\s*toestaan\b/i,
+  /\baccepteren\b/i,
   /\bakkoord\b/i,
   // German
   /\balle\s*akzeptieren\b/i,
@@ -163,6 +164,20 @@ async function jsClick(session, backendNodeId) {
 }
 
 /**
+ * Click a node via real mouse events (scrollIntoView → getBoxModel → mousePressed/Released).
+ * Some CMPs ignore synthetic .click() and only respond to real Input events.
+ */
+async function realClick(session, backendNodeId) {
+  await session.send('DOM.scrollIntoViewIfNeeded', { backendNodeId });
+  const { model } = await session.send('DOM.getBoxModel', { backendNodeId });
+  const [x1, y1, x2, y2, x3, y3, x4, y4] = model.content;
+  const cx = (x1 + x3) / 2;
+  const cy = (y1 + y3) / 2;
+  await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', x: cx, y: cy, button: 'left', clickCount: 1 });
+  await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x: cx, y: cy, button: 'left', clickCount: 1 });
+}
+
+/**
  * Try to dismiss a cookie consent dialog on the current page.
  * Inspects the ARIA tree for dialog elements with consent-related content,
  * then clicks the "accept" button.
@@ -212,8 +227,19 @@ export async function dismissConsent(session) {
     const button = findAcceptButton(dialogId, nodes, nodeMap, parentMap);
     if (button?.backendDOMNodeId) {
       try {
+        // Try jsClick first (bypasses iframe overlays)
         await jsClick(session, button.backendDOMNodeId);
         await new Promise((r) => setTimeout(r, 1000));
+        // Check if consent actually dismissed — some CMPs ignore synthetic clicks
+        const { nodes: nodesAfter } = await session.send('Accessibility.getFullAXTree');
+        const stillThere = nodesAfter.some((n) =>
+          n.role?.value === 'button' && n.name?.value === button.name?.value
+        );
+        if (stillThere) {
+          // Retry with real mouse event
+          await realClick(session, button.backendDOMNodeId);
+          await new Promise((r) => setTimeout(r, 1000));
+        }
         return true;
       } catch {
         // Click failed — try next dialog
@@ -278,10 +304,24 @@ function tryGlobalConsentButton(nodes, session) {
       if (node.role?.value !== 'button') continue;
       const name = node.name?.value || '';
       if (name && pattern.test(name) && node.backendDOMNodeId) {
-        return jsClick(session, node.backendDOMNodeId)
-          .then(() => new Promise((r) => setTimeout(r, 1000)))
-          .then(() => true)
-          .catch(() => false);
+        return (async () => {
+          try {
+            await jsClick(session, node.backendDOMNodeId);
+            await new Promise((r) => setTimeout(r, 1000));
+            // Check if button still exists — retry with real click if so
+            const { nodes: nodesAfter } = await session.send('Accessibility.getFullAXTree');
+            const stillThere = nodesAfter.some((n) =>
+              n.role?.value === 'button' && n.name?.value === name
+            );
+            if (stillThere) {
+              await realClick(session, node.backendDOMNodeId);
+              await new Promise((r) => setTimeout(r, 1000));
+            }
+            return true;
+          } catch {
+            return false;
+          }
+        })();
       }
     }
   }

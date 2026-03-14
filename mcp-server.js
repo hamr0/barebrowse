@@ -294,9 +294,14 @@ async function handleToolCall(name, args) {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
       await acquireAssessSlot();
       try {
-        const runAssess = async () => {
-          const page = await getPage();
-          const tab = await page.createTab();
+        const runAssess = async (headed) => {
+          let tab;
+          if (headed) {
+            tab = await connect({ mode: 'headed' });
+          } else {
+            const page = await getPage();
+            tab = await page.createTab();
+          }
           let timer;
           try {
             const result = await Promise.race([
@@ -320,15 +325,33 @@ async function handleToolCall(name, args) {
             throw err;
           }
         };
+
+        // Try headless first
         try {
-          return await runAssess();
+          const result = await runAssess(false);
+          // Check if result looks bot-blocked (score 0-5, no trackers, few cookies)
+          try {
+            const parsed = JSON.parse(result);
+            const { network, trackers, profiling } = parsed.categories || {};
+            const allZero = (network?.score || 0) === 0
+              && (trackers?.score || 0) === 0
+              && (profiling?.score || 0) === 0;
+            if (allZero && (parsed.score || 0) <= 5) {
+              // Likely bot-blocked — retry headed
+              try {
+                return await runAssess(true);
+              } catch {
+                return result; // headed failed, return headless result
+              }
+            }
+          } catch {}
+          return result;
         } catch (err) {
           if (isCdpDead(err)) _page = null;
-          await new Promise((r) => setTimeout(r, 2000));
+          // Headless crashed — try headed
           try {
-            return await runAssess();
+            return await runAssess(true);
           } catch (retryErr) {
-            if (isCdpDead(retryErr)) _page = null;
             throw retryErr;
           }
         }
@@ -356,7 +379,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.5' },
+      serverInfo: { name: 'barebrowse', version: '0.5.6' },
     });
   }
 

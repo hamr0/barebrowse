@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.6
+
+Assess now works on bot-blocking EU sites. Headed fallback + consent fix.
+
+### Assess headed fallback (`mcp-server.js`)
+- Assess tries headless first; if result looks bot-blocked (score ≤5, all zeros), retries with a separate `connect({ mode: 'headed' })` session
+- Previously all assess scans ran headless-only — sites like Lufthansa, Coolblue, Rabobank returned score 5 (empty page behind bot wall)
+- Now: Lufthansa 50/high, Coolblue 55/high, Rabobank 75/critical
+
+### Consent dismissal improvements (`src/consent.js`)
+- Tab `goto()` now runs `dismissConsent()` (was missing — consent walls blocked all trackers from loading, making assess see a clean page)
+- Added `/\baccepteren\b/i` Dutch pattern (Rabobank uses bare "ACCEPTEREN" without "alles")
+- realClick fallback: if jsClick doesn't dismiss the CMP (button disappears from ARIA but overlay stays), retries with real `Input.dispatchMouseEvent` mouse click
+- Both dialog-scoped and global consent paths now have the jsClick→realClick fallback
+
+### createTab consent (`src/index.js`)
+- `createTab().goto()` now dismisses consent after navigation (same as main page `goto()`)
+
 ## 0.5.5
 
 Fix assess tab leak and Linux shared memory crash.
