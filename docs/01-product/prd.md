@@ -149,7 +149,7 @@ The agent doesn't have to think about any of this:
 | **Form submission** | Enter key triggers onsubmit | Both |
 | **Tab between fields** | Tab key moves focus correctly | Both |
 | **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
-| **Bot detection** (Google, Reddit) | Stealth patches (headless) + automatic headed fallback with real cookies | Hybrid |
+| **Bot detection** (Google, Reddit) | ARIA node count (<50 = blocked) + text heuristics. `botBlocked` flag + snapshot warning. Stealth patches (headless) + automatic headed fallback | Hybrid |
 | **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
 | **Profile locking** | Unique temp dir per headless instance | Headless |

@@ -76,7 +76,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **Form submission** | `press('Enter')` with proper `text: '\r'` triggers onsubmit | Both |
 | **Tab between fields** | `press('Tab')` with `text: '\t'` moves focus | Both |
 | **SPA navigation** (YouTube, GitHub) | `waitForNavigation()` uses frameNavigated + loadEventFired race | Both |
-| **Bot detection** (Google, Reddit) | Stealth patches (headless) + headed mode with real cookies | Both |
+| **Bot detection** (Google, Reddit) | ARIA node count (<50 = blocked) + text heuristics. `botBlocked` flag + `[BOT CHALLENGE DETECTED]` snapshot warning. Stealth patches (headless) + automatic headed fallback | Both |
 | **`navigator.webdriver`** | Stealth patches: webdriver, plugins, languages, chrome object | Headless |
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via `Page.handleJavaScriptDialog`, logged to `dialogLog` | Both |
 | **Profile locking** | Unique temp dir per headless instance (`/tmp/barebrowse-<pid>-<ts>`) | Headless |

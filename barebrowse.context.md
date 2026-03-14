@@ -76,9 +76,10 @@ const snapshot = await browse('https://example.com', {
 | `waitForNetworkIdle(opts?)` | { timeout?: number, idle?: number } | void | Wait until no pending requests for `idle` ms (default 500) |
 | `saveState(filePath)` | filePath: string | void | Export cookies + localStorage to JSON file |
 | `injectCookies(url, opts?)` | url: string, { browser?: string } | void | Extract cookies from user's browser and inject via CDP |
+| `botBlocked` | -- | boolean | True if last `goto()` hit a bot challenge (ARIA node count <50). Resets on each navigation. |
 | `dialogLog` | -- | Array<{type, message, timestamp}> | Auto-dismissed JS dialog history |
 | `cdp` | -- | object | Raw CDP session for escape hatch: `page.cdp.send(method, params)` |
-| `createTab()` | -- | tab handle | New tab in same browser. Returns `{ goto, injectCookies, waitForNetworkIdle, cdp, close }`. Tab close doesn't affect session. |
+| `createTab()` | -- | tab handle | New tab in same browser. Returns `{ goto, botBlocked, injectCookies, waitForNetworkIdle, cdp, close }`. Tab close doesn't affect session. |
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless) |
 
 **connect() options** (in addition to mode/port/consent):
@@ -154,7 +155,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Off-screen elements | `DOM.scrollIntoViewIfNeeded` before every click | Both |
 | Form submission | `press('Enter')` triggers onsubmit | Both |
 | SPA navigation | `waitForNavigation()` uses loadEventFired + frameNavigated | Both |
-| Bot detection | Hybrid fallback: detects challenge pages, error pages, and near-empty responses, then switches to headed | Hybrid |
+| Bot detection | ARIA node count (<50 = bot-blocked) + text heuristics. `botBlocked` flag set after every `goto()`. Hybrid fallback switches to headed. Snapshot shows `[BOT CHALLENGE DETECTED]` warning. | Hybrid |
 | `navigator.webdriver` | Stealth patches in headless (webdriver, plugins, chrome obj) | Headless |
 | Profile locking | Unique temp dir per headless instance | Headless |
 | Shared memory crash (Linux) | `--disable-dev-shm-usage` flag prevents `/dev/shm` exhaustion | Headless |
