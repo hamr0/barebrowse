@@ -6,16 +6,16 @@
 node --test test/unit/*.test.js test/integration/*.test.js
 ```
 
-64 tests, 6 files, ~60s on a typical machine. No test framework -- uses Node's built-in `node:test` runner.
+71 tests, 6 files, ~60s on a typical machine. No test framework -- uses Node's built-in `node:test` runner.
 
 ## Test pyramid
 
 ```
           /  E2E  \         15 tests — real websites (Google, Wikipedia, GitHub, etc.)
          /----------\
-        / Integration \     21 tests — browse/connect pipeline + CLI session lifecycle
+        / Integration \     23 tests — browse/connect pipeline + tab lifecycle + CLI session
        /----------------\
-      /      Unit        \  28 tests — pruning, cookie extraction, CDP client, browser launch
+      /      Unit        \  30 tests — pruning, cookie extraction, CDP client, browser launch, MCP
      /--------------------\
 ```
 
@@ -23,7 +23,7 @@ Unit tests are fast and isolated. Integration tests launch a real headless Chrom
 
 ---
 
-## Unit tests (28 tests)
+## Unit tests (30 tests)
 
 ### `test/unit/prune.test.js` -- 16 tests
 
@@ -78,11 +78,11 @@ Tests browser discovery, launch, CDP WebSocket client, and session handling.
 
 ---
 
-## Integration tests (11 tests)
+## Integration tests (13 tests)
 
-### `test/integration/browse.test.js` -- 11 tests
+### `test/integration/browse.test.js` -- 13 tests
 
-Tests the full `browse()` and `connect()` pipeline end-to-end against real pages.
+Tests the full `browse()` and `connect()` pipeline end-to-end against real pages, plus `createTab()` lifecycle.
 
 | # | Suite | Test | What it validates |
 |---|-------|------|-------------------|
@@ -96,7 +96,11 @@ Tests the full `browse()` and `connect()` pipeline end-to-end against real pages
 | 8 | browse() | can disable pruning | prune: false keeps raw RootWebArea |
 | 9 | connect() | creates a long-lived session and navigates | connect() + goto() + snapshot() works |
 | 10 | connect() | supports multiple navigations in one session | Multiple goto() calls on same page |
-| 11 | connect() | snapshot accepts prune: false for raw output | snapshot(false) preserves full tree |
+| 11 | connect() | snapshot starts with URL line | First line is `url: <page-url>` |
+| 12 | connect() | raw snapshot starts with URL line | Raw snapshot also has URL first line |
+| 13 | connect() | snapshot accepts prune: false for raw output | snapshot(false) preserves full tree |
+| 14 | createTab() | creates and closes tabs without leaking | 5 tabs created, navigated, closed — tab count returns to original |
+| 15 | createTab() | tab close is idempotent | Double-close doesn't throw |
 
 ### `test/integration/cli.test.js` -- 10 tests
 

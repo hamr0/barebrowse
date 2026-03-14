@@ -36,7 +36,7 @@
 |------|-------------|
 | [dev-workflow.md](04-process/dev-workflow.md) | Dev rules, dependency hierarchy, running tests, environment setup |
 | [definition-of-done.md](04-process/definition-of-done.md) | Checklist: when is a feature/fix actually done |
-| [testing.md](04-process/testing.md) | Test pyramid, all 64 tests documented, writing new tests, CI strategy |
+| [testing.md](04-process/testing.md) | Test pyramid, all 71 tests documented, writing new tests, CI strategy |
 
 ### archive/ -- Historical docs
 

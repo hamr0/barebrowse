@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.5
+
+Fix assess tab leak and Linux shared memory crash.
+
+### Assess tab leak (`mcp-server.js`)
+- Fixed: successful assess calls never closed the tab — tabs accumulated, eating RAM until Chromium crashed
+- `tab.close()` now called in the success path (was only in error/timeout paths)
+- This was the root cause of crashes on heavy EU cookie consent sites (zalando.de, otto.de, etc.) — not the CMPs themselves
+
+### Chromium launch (`src/chromium.js`)
+- Added `--disable-dev-shm-usage` flag — prevents shared memory crashes on Linux systems with limited `/dev/shm`
+
+### Tests
+- New: `createTab()` suite in browse.test.js (2 tests)
+  - Creates 5 tabs, navigates each, closes all, verifies no zombie tabs remain
+  - Tab close is idempotent (double-close doesn't throw)
+- 71/71 passing (was 69)
+
 ## 0.5.4
 
 Assess tool hardened: session reuse, concurrency, self-healing.

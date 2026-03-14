@@ -80,6 +80,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **`navigator.webdriver`** | Stealth patches: webdriver, plugins, languages, chrome object | Headless |
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via `Page.handleJavaScriptDialog`, logged to `dialogLog` | Both |
 | **Profile locking** | Unique temp dir per headless instance (`/tmp/barebrowse-<pid>-<ts>`) | Headless |
+| **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
 | **ARIA noise** | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
 
 ### Not yet handled
@@ -186,7 +187,7 @@ Thirteen modules, zero required dependencies.
 | `src/bareagent.js` | 161 | Tool adapter for bareagent Loop |
 | `src/daemon.js` | ~230 | Background HTTP server holding connect() session for CLI mode |
 | `src/session-client.js` | ~60 | HTTP client to daemon (sendCommand, readSession, isAlive) |
-| `mcp-server.js` | 216 | MCP server (JSON-RPC 2.0 over stdio) |
+| `mcp-server.js` | ~340 | MCP server (JSON-RPC 2.0 over stdio, assess session reuse + concurrency) |
 
 ---
 
@@ -264,13 +265,14 @@ Anti-detection for headless mode via `Page.addScriptToEvaluateOnNewDocument` (ru
 - `Permissions.prototype.query` -> notifications return 'prompt'
 - Applied automatically in headless mode
 
-### Tests -- 64 passing
+### Tests -- 71 passing
 - 16 unit tests (pruning logic)
 - 7 unit tests (cookie extraction -- 2 skip when Chromium profile locked)
 - 5 unit tests (CDP client + browser launch)
-- 11 integration tests (end-to-end browse pipeline)
+- 13 integration tests (end-to-end browse pipeline + createTab lifecycle)
 - 10 integration tests (CLI session lifecycle: open/snapshot/goto/click/eval/console/network/close)
 - 15 integration tests (real-world interactions: data: URL fixture + live sites)
+- 2 unit tests (MCP saveSnapshot)
 
 ---
 

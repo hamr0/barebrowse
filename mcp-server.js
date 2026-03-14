@@ -312,6 +312,7 @@ async function handleToolCall(name, args) {
               }),
             ]);
             clearTimeout(timer);
+            await tab.close().catch(() => {});
             return JSON.stringify(result, null, 2);
           } catch (err) {
             clearTimeout(timer);
@@ -355,7 +356,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.4' },
+      serverInfo: { name: 'barebrowse', version: '0.5.5' },
     });
   }
 

@@ -4,6 +4,15 @@ Chronological record of what changed and why. For detailed changelogs, see `/CHA
 
 ---
 
+## v0.5.5 (2026-03-14)
+
+Fix assess tab leak + Linux shared memory crash.
+
+- Fixed: successful assess never closed the tab — zombie tabs accumulated until Chromium OOM'd
+- Added `--disable-dev-shm-usage` launch flag for Linux `/dev/shm` resilience
+- New: 2 createTab() integration tests (tab lifecycle + idempotent close)
+- 71 tests passing (was 69)
+
 ## v0.2.1 (2026-02-22)
 
 - README rewritten: no code blocks, obstacle table, two usage paths (MCP vs framework)

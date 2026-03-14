@@ -18,7 +18,7 @@
 - **Protocol:** CDP (Chrome DevTools Protocol) direct — no Playwright
 - **Browser:** Any installed Chromium-based browser (chromium, chrome, brave, edge)
 - **Modules:** 11 files in `src/`, ~2,400 lines, zero required deps
-- **Tests:** 54 passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
+- **Tests:** 71 passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
 - **Docs:** `docs/README.md` (navigation guide to all documentation)
 
 For full development and testing standards, see `.claude/memory/AGENT_RULES.md`.

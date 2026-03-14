@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.4 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.5 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -157,6 +157,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Bot detection | Hybrid fallback: detects challenge pages, error pages, and near-empty responses, then switches to headed | Hybrid |
 | `navigator.webdriver` | Stealth patches in headless (webdriver, plugins, chrome obj) | Headless |
 | Profile locking | Unique temp dir per headless instance | Headless |
+| Shared memory crash (Linux) | `--disable-dev-shm-usage` flag prevents `/dev/shm` exhaustion | Headless |
 | ARIA noise | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
 
 ## bareagent wiring
@@ -242,7 +243,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use. Assess runs in isolated tabs within the session (max 3 concurrent, with retry and CDP crash recovery).
+Session tools share a singleton page, lazy-created on first use. Assess runs in isolated tabs within the session (max 3 concurrent, with retry and CDP crash recovery). Tabs are closed after every assess (success, error, and timeout paths).
 
 ## Architecture
 

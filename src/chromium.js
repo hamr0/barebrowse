@@ -82,6 +82,7 @@ export async function launch(opts = {}) {
     '--use-fake-device-for-media-stream',
     '--use-fake-ui-for-media-stream',
     '--disable-features=MediaRouter',
+    '--disable-dev-shm-usage',
   ];
 
   if (opts.proxy) {

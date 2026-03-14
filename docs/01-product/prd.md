@@ -153,6 +153,7 @@ The agent doesn't have to think about any of this:
 | **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
 | **Profile locking** | Unique temp dir per headless instance | Headless |
+| **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
 | **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
 
 ---

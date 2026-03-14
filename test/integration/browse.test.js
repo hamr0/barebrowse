@@ -136,3 +136,45 @@ describe('connect()', () => {
     }
   });
 });
+
+describe('createTab()', () => {
+  it('creates and closes tabs without leaking', async () => {
+    const page = await connect();
+    try {
+      const before = await page.tabs();
+
+      // Open 5 tabs, navigate each, then close
+      const tabs = [];
+      for (let i = 0; i < 5; i++) {
+        const tab = await page.createTab();
+        await tab.goto('https://example.com');
+        tabs.push(tab);
+      }
+
+      const during = await page.tabs();
+      assert.equal(during.length, before.length + 5, 'should have 5 extra tabs open');
+
+      for (const tab of tabs) {
+        await tab.close();
+      }
+
+      const after = await page.tabs();
+      assert.equal(after.length, before.length, 'all tabs should be closed — no zombies');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('tab close is idempotent', async () => {
+    const page = await connect();
+    try {
+      const tab = await page.createTab();
+      await tab.goto('https://example.com');
+      await tab.close();
+      // Second close should not throw
+      await tab.close().catch(() => {});
+    } finally {
+      await page.close();
+    }
+  });
+});
