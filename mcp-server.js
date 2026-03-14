@@ -54,26 +54,18 @@ async function getPage() {
   }
 }
 
-// Concurrency limiter for assess — max 3 tabs at once
-const ASSESS_MAX = 3;
-let _assessRunning = 0;
-const _assessQueue = [];
+// Concurrency limiter — one assess at a time.
+// Headless tabs are fast, but headed fallback uses the user's single browser.
+// Running multiple headed navigations simultaneously hangs the browser.
+let _assessLock = Promise.resolve();
 
 function acquireAssessSlot() {
-  if (_assessRunning < ASSESS_MAX) {
-    _assessRunning++;
-    return Promise.resolve();
-  }
-  return new Promise((resolve) => _assessQueue.push(resolve));
+  let release;
+  const prev = _assessLock;
+  _assessLock = new Promise((r) => { release = r; });
+  return prev.then(() => release);
 }
 
-function releaseAssessSlot() {
-  if (_assessQueue.length > 0) {
-    _assessQueue.shift()();
-  } else {
-    _assessRunning--;
-  }
-}
 
 const TOOLS = [
   {
@@ -292,7 +284,7 @@ async function handleToolCall(name, args) {
     }
     case 'assess': {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
-      await acquireAssessSlot();
+      const releaseSlot = await acquireAssessSlot();
       try {
         const runAssess = async (headed) => {
           let tab;
@@ -351,7 +343,7 @@ async function handleToolCall(name, args) {
           }
         }
       } finally {
-        releaseAssessSlot();
+        releaseSlot();
       }
     }
     default:
@@ -374,7 +366,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.8' },
+      serverInfo: { name: 'barebrowse', version: '0.5.9' },
     });
   }
 
