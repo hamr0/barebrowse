@@ -71,6 +71,13 @@ export async function createCDP(wsUrl) {
     }
   };
 
+  ws.onclose = () => {
+    for (const [id, handler] of pending) {
+      handler.reject(new Error('CDP WebSocket closed'));
+      pending.delete(id);
+    }
+  };
+
   const client = {
     /**
      * Send a CDP command and wait for the response.

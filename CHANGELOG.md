@@ -1,5 +1,31 @@
 # Changelog
 
+## 0.5.4
+
+Assess tool hardened: session reuse, concurrency, self-healing.
+
+### Assess handler (`mcp-server.js`)
+- Session reuse: assess now opens tabs in the existing session browser via `createTab()` instead of spawning a new browser per scan
+- Concurrency: semaphore limits to 3 concurrent assess tabs, queues the rest
+- 30s hard timeout per scan with force tab close on expiry
+- Auto-retry once on failure with 2s backoff; resets session on CDP crash
+- Removed debug logging added during development
+
+### CDP resilience (`src/cdp.js`)
+- `ws.onclose` handler rejects all pending CDP promises — prevents zombie promises on browser crash
+
+### Library API (`src/index.js`)
+- `createTab()` added to `connect()` return object — creates new tab in same browser session
+- Returns `{ goto, injectCookies, waitForNetworkIdle, cdp, close }`, tab close doesn't affect main page
+
+### Message loop (`mcp-server.js`)
+- `getPage()` is concurrency-safe with promise dedup (prevents duplicate browser launches)
+- Message loop changed from sequential `await` to concurrent `.then()` fire-and-forget — multiple tool calls no longer block each other
+
+### Tests
+- 69/69 passing
+- Verified: 10 concurrent assess calls through MCP client, all succeed (3-at-a-time semaphore confirmed)
+
 ## 0.5.3
 
 Improved bot detection for hybrid mode fallback.

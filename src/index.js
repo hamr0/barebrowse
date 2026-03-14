@@ -365,6 +365,26 @@ export async function connect(opts = {}) {
     /** Raw CDP session for escape hatch */
     cdp: page.session,
 
+    async createTab() {
+      const tab = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
+      await suppressPermissions(cdp);
+      return {
+        async goto(url, timeout = 30000) {
+          await navigate(tab, url, timeout);
+        },
+        async injectCookies(url, cookieOpts) {
+          await authenticate(tab.session, url, { browser: cookieOpts?.browser });
+        },
+        waitForNetworkIdle(idleOpts = {}) {
+          return waitForNetworkIdle(tab.session, idleOpts);
+        },
+        cdp: tab.session,
+        async close() {
+          await cdp.send('Target.closeTarget', { targetId: tab.targetId });
+        },
+      };
+    },
+
     async close() {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       cdp.close();

@@ -20,6 +20,11 @@ try {
 } catch {}
 
 
+function isCdpDead(err) {
+  const m = err.message || '';
+  return m.includes('WebSocket') || m.includes('Target closed') || m.includes('Session closed') || m.includes('CDP');
+}
+
 const MAX_CHARS_DEFAULT = 30000;
 const OUTPUT_DIR = join(process.cwd(), '.barebrowse');
 
@@ -32,10 +37,42 @@ function saveSnapshot(text) {
 }
 
 let _page = null;
+let _pageConnecting = null;
 
 async function getPage() {
-  if (!_page) _page = await connect({ mode: 'hybrid' });
-  return _page;
+  if (_page) return _page;
+  if (_pageConnecting) return _pageConnecting;
+  _pageConnecting = connect({ mode: 'hybrid' });
+  try {
+    _page = await _pageConnecting;
+    return _page;
+  } catch (err) {
+    _page = null;
+    throw err;
+  } finally {
+    _pageConnecting = null;
+  }
+}
+
+// Concurrency limiter for assess — max 3 tabs at once
+const ASSESS_MAX = 3;
+let _assessRunning = 0;
+const _assessQueue = [];
+
+function acquireAssessSlot() {
+  if (_assessRunning < ASSESS_MAX) {
+    _assessRunning++;
+    return Promise.resolve();
+  }
+  return new Promise((resolve) => _assessQueue.push(resolve));
+}
+
+function releaseAssessSlot() {
+  if (_assessQueue.length > 0) {
+    _assessQueue.shift()();
+  } else {
+    _assessRunning--;
+  }
 }
 
 const TOOLS = [
@@ -255,15 +292,47 @@ async function handleToolCall(name, args) {
     }
     case 'assess': {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
-      const page = await connect({ mode: 'hybrid' });
+      await acquireAssessSlot();
       try {
-        const result = await assessFn(page, args.url, {
-          timeout: args.timeout,
-          settle: args.settle,
-        });
-        return JSON.stringify(result, null, 2);
+        const runAssess = async () => {
+          const page = await getPage();
+          const tab = await page.createTab();
+          let timer;
+          try {
+            const result = await Promise.race([
+              (async () => {
+                await tab.injectCookies(args.url).catch(() => {});
+                return await assessFn(tab, args.url, { timeout: args.timeout, settle: args.settle });
+              })(),
+              new Promise((_, reject) => {
+                timer = setTimeout(() => {
+                  tab.close().catch(() => {});
+                  reject(new Error('assess timeout'));
+                }, 30000);
+              }),
+            ]);
+            clearTimeout(timer);
+            return JSON.stringify(result, null, 2);
+          } catch (err) {
+            clearTimeout(timer);
+            await tab.close().catch(() => {});
+            throw err;
+          }
+        };
+        try {
+          return await runAssess();
+        } catch (err) {
+          if (isCdpDead(err)) _page = null;
+          await new Promise((r) => setTimeout(r, 2000));
+          try {
+            return await runAssess();
+          } catch (retryErr) {
+            if (isCdpDead(retryErr)) _page = null;
+            throw retryErr;
+          }
+        }
       } finally {
-        await page.close().catch(() => {});
+        releaseAssessSlot();
       }
     }
     default:
@@ -286,7 +355,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.5.3' },
+      serverInfo: { name: 'barebrowse', version: '0.5.4' },
     });
   }
 
@@ -321,8 +390,9 @@ async function handleMessage(msg) {
 let buffer = '';
 
 process.stdin.setEncoding('utf8');
-process.stdin.on('data', async (chunk) => {
+process.stdin.on('data', (chunk) => {
   buffer += chunk;
+
   let newlineIdx;
   while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
     const line = buffer.slice(0, newlineIdx).trim();
@@ -331,11 +401,19 @@ process.stdin.on('data', async (chunk) => {
 
     try {
       const msg = JSON.parse(line);
-      const response = await handleMessage(msg);
-      if (response) {
-        process.stdout.write(response + '\n');
-      }
+
+      handleMessage(msg).then((response) => {
+        if (response) {
+
+          process.stdout.write(response + '\n');
+
+        }
+      }).catch((err) => {
+
+        process.stdout.write(jsonrpcError(msg.id, -32700, `Error: ${err.message}`) + '\n');
+      });
     } catch (err) {
+
       process.stdout.write(jsonrpcError(null, -32700, `Parse error: ${err.message}`) + '\n');
     }
   }

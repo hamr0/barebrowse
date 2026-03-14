@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.5.3 | Node.js >= 22 | 0 required deps | MIT
+> v0.5.4 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -78,6 +78,7 @@ const snapshot = await browse('https://example.com', {
 | `injectCookies(url, opts?)` | url: string, { browser?: string } | void | Extract cookies from user's browser and inject via CDP |
 | `dialogLog` | -- | Array<{type, message, timestamp}> | Auto-dismissed JS dialog history |
 | `cdp` | -- | object | Raw CDP session for escape hatch: `page.cdp.send(method, params)` |
+| `createTab()` | -- | tab handle | New tab in same browser. Returns `{ goto, injectCookies, waitForNetworkIdle, cdp, close }`. Tab close doesn't affect session. |
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless) |
 
 **connect() options** (in addition to mode/port/consent):
@@ -241,7 +242,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use.
+Session tools share a singleton page, lazy-created on first use. Assess runs in isolated tabs within the session (max 3 concurrent, with retry and CDP crash recovery).
 
 ## Architecture
 
@@ -271,7 +272,7 @@ URL -> chromium.js (find/launch browser, permission flags)
 | `src/consent.js` | 200 | Auto-dismiss cookie consent dialogs across languages |
 | `src/stealth.js` | ~40 | Navigator patches for headless anti-detection |
 | `src/bareagent.js` | ~250 | Tool adapter for bareagent Loop |
-| `mcp-server.js` | ~170 | MCP server (JSON-RPC over stdio) |
+| `mcp-server.js` | ~340 | MCP server (JSON-RPC over stdio, assess session reuse + concurrency) |
 
 ## Privacy assessment (optional)
 
@@ -281,7 +282,7 @@ Install `wearehere` to add an `assess` tool to both the MCP server and bareagent
 npm install wearehere
 ```
 
-The `assess` tool navigates to a URL in an isolated browser page, scans for 10 privacy categories (cookies, trackers, fingerprinting, dark patterns, data brokers, form surveillance, link tracking, toxic terms, stored data, network traffic), and returns a compact JSON assessment:
+The `assess` tool opens a new tab in the session browser via `createTab()` (reusing cookies and headed fallback), scans for 10 privacy categories (cookies, trackers, fingerprinting, dark patterns, data brokers, form surveillance, link tracking, toxic terms, stored data, network traffic), and returns a compact JSON assessment. Max 3 concurrent scans (queued beyond that), 30s hard timeout per scan, auto-retry once on failure with 2s backoff (session reset on CDP crash):
 
 ```json
 {

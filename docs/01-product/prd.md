@@ -255,7 +255,7 @@ This section exists so we don't re-debate settled decisions.
 - **Screenshot capture** — `Page.captureScreenshot` via CDP. Useful for visual verification and multimodal agents.
 - **Network interception** — `Network.requestWillBeSent` / `Network.responseReceived` for monitoring page loads. Detect redirects, blocked resources, API calls.
 - **Wait strategies** — `waitForNavigation()` done (Page.loadEventFired). Still needed: network idle, element presence polling.
-- **Tab management** — Multiple pages in one browser session. CDP `Target.createTarget` / `Target.attachToTarget`.
+- **Tab management** — Multiple pages in one browser session. CDP `Target.createTarget` / `Target.attachToTarget`. *(Done: `createTab()` in v0.5.4, used by assess for session reuse)*
 - **MCP server wrapper** — Expose browse/click/type as MCP tools. Replaces Playwright MCP + mcprune combo.
 
 ### Medium-term

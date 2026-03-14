@@ -139,7 +139,7 @@ Everything the agent can do through barebrowse:
 | **Upload** | Set files on a file input element |
 | **Screenshot** | Page capture as base64 PNG/JPEG/WebP |
 | **PDF** | Export page as PDF |
-| **Assess** | Privacy scan: score (0-100), risk level, 10-category breakdown. Requires `npm install wearehere`. |
+| **Assess** | Privacy scan: score (0-100), risk level, 10-category breakdown. Reuses session browser via tabs (max 3 concurrent), auto-retries on CDP crash, 30s timeout per scan. Requires `npm install wearehere`. |
 | **Tabs** | List open tabs, switch between them |
 | **Wait for content** | Poll for text or CSS selector to appear on page |
 | **Wait for navigation** | SPA-aware: works for full page loads and pushState |
