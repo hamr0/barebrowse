@@ -87,7 +87,7 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-12 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Session runs in hybrid mode with automatic cookie injection.
+12 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Session runs in hybrid mode with automatic cookie injection. All tools have timeouts (30s/60s) and auto-retry on transient failures.
 
 ### 3. Library -- for agentic automation
 
@@ -129,10 +129,10 @@ Everything the agent can do through barebrowse:
 | **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
 | **Back / Forward** | Browser history navigation |
 | **Snapshot** | Pruned ARIA tree with `[ref=N]` markers. Two modes: `act` (buttons, links, inputs) and `read` (full text). 40-90% token reduction. |
-| **Click** | Scroll into view + mouse click at element center |
+| **Click** | Scroll into view + mouse click at element center, JS fallback for hidden elements |
 | **Type** | Focus + insert text, with option to clear existing content first |
 | **Press** | Special keys: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
-| **Scroll** | Mouse wheel up or down |
+| **Scroll** | Mouse wheel up or down (accepts direction or pixels) |
 | **Hover** | Move mouse to element center (triggers tooltips, hover states) |
 | **Select** | Set dropdown value (native select or custom dropdown) |
 | **Drag** | Drag one element to another (Kanban boards, sliders) |

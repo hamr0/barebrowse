@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.7.0
+
+MCP resilience: timeouts, auto-retry, LLM-friendly scroll, and click fallback for hidden elements.
+
+### Timeouts (`mcp-server.js`)
+- All MCP tool calls now have a hard timeout: 30s for session tools, 60s for `browse` and `assess`
+- Returns a structured error (`Tool "X" timed out after Ns`) instead of hanging silently
+- Previously: a hung browser or slow page caused `[Tool result missing due to internal error]` — opaque and unrecoverable
+
+### Auto-retry (`mcp-server.js`)
+- `withRetry()` wrapper on all session tools (goto, snapshot, click, type, press, scroll, back, forward, drag, upload, pdf)
+- On transient CDP failure (WebSocket closed, target/session closed), resets the session and retries once automatically
+- Non-CDP errors (validation, unknown tool) are not retried
+
+### LLM-friendly scroll (`mcp-server.js`, `src/bareagent.js`)
+- Scroll tool now accepts `direction: "up"/"down"` in addition to numeric `deltaY`
+- LLMs naturally say `scroll(direction: "down")` — this now works instead of crashing with `deltaX/deltaY expected for mouseWheel event`
+- `"down"` → `deltaY: 900`, `"up"` → `deltaY: -900`. Numeric `deltaY` still works and takes precedence.
+- Clear validation error if neither `direction` nor `deltaY` is provided
+
+### Click JS fallback (`src/interact.js`)
+- Click now falls back to JS `element.click()` when `DOM.scrollIntoViewIfNeeded` fails with "Node does not have a layout object"
+- This error occurs on elements that exist in the ARIA tree but have no visual layout (display:none, zero-size, collapsed sections, detached nodes)
+- Resolves the node via `DOM.requestNode` → `DOM.resolveNode` → `Runtime.callFunctionOn`
+- Other click errors still throw normally
+
+### Docs
+- Updated barebrowse.context.md, README.md, prd.md with resilience features
+- MCP server version string updated to 0.7.0
+
+### Tests
+- 71/71 passing — no test changes needed
+
 ## 0.6.1
 
 Headed fallback is now a per-navigation escape hatch, not a permanent mode switch. Graceful degradation when headed is unavailable.

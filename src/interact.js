@@ -46,13 +46,27 @@ async function getCenter(session, backendNodeId) {
  * @param {number} backendNodeId - Backend DOM node ID
  */
 export async function click(session, backendNodeId) {
-  const { x, y } = await getCenter(session, backendNodeId);
-  await session.send('Input.dispatchMouseEvent', {
-    type: 'mousePressed', x, y, button: 'left', clickCount: 1,
-  });
-  await session.send('Input.dispatchMouseEvent', {
-    type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
-  });
+  try {
+    const { x, y } = await getCenter(session, backendNodeId);
+    await session.send('Input.dispatchMouseEvent', {
+      type: 'mousePressed', x, y, button: 'left', clickCount: 1,
+    });
+    await session.send('Input.dispatchMouseEvent', {
+      type: 'mouseReleased', x, y, button: 'left', clickCount: 1,
+    });
+  } catch (err) {
+    // Element has no layout (display:none, zero-size, detached) — fall back to JS click
+    if (err.message && err.message.includes('layout object')) {
+      const { nodeId } = await session.send('DOM.requestNode', { backendNodeId });
+      const { object } = await session.send('DOM.resolveNode', { nodeId });
+      await session.send('Runtime.callFunctionOn', {
+        objectId: object.objectId,
+        functionDeclaration: 'function() { this.click(); }',
+      });
+    } else {
+      throw err;
+    }
+  }
 }
 
 /**

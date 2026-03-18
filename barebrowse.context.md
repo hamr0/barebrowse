@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.6.1 | Node.js >= 22 | 0 required deps | MIT
+> v0.7.0 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -59,7 +59,7 @@ const snapshot = await browse('https://example.com', {
 | `click(ref)` | ref: string | void | Scroll into view + mouse press+release at center |
 | `type(ref, text, opts?)` | ref: string, text: string, opts: { clear?, keyEvents? } | void | Focus + insert text. `clear: true` replaces existing. |
 | `press(key)` | key: string | void | Special key: Enter, Tab, Escape, Backspace, Delete, arrows, Home, End, PageUp, PageDown, Space |
-| `scroll(deltaY)` | deltaY: number | void | Mouse wheel. Positive = down, negative = up. |
+| `scroll(deltaY)` | deltaY: number | void | Mouse wheel. Positive = down, negative = up. MCP/bareagent also accept `direction: "up"/"down"`. |
 | `hover(ref)` | ref: string | void | Move mouse to element center |
 | `select(ref, value)` | ref: string, value: string | void | Set `<select>` value or click custom dropdown option |
 | `drag(fromRef, toRef)` | fromRef: string, toRef: string | void | Drag from one element to another |
@@ -149,7 +149,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Media autoplay blocked | `--autoplay-policy=no-user-gesture-required` | Both |
 | Login walls | Cookie extraction from Firefox/Chromium + CDP injection | Both |
 | Pre-filled form inputs | `type({ clear: true })` selects all + deletes first | Both |
-| Off-screen elements | `DOM.scrollIntoViewIfNeeded` before every click | Both |
+| Off-screen elements | `DOM.scrollIntoViewIfNeeded` before every click, JS `.click()` fallback for no-layout elements | Both |
 | Form submission | `press('Enter')` triggers onsubmit | Both |
 | SPA navigation | `waitForNavigation()` uses loadEventFired + frameNavigated | Both |
 | Bot detection | ARIA node count (<50 = bot-blocked) + text heuristics. `botBlocked` flag set after every `goto()`. Hybrid fallback switches to headed. Snapshot shows `[BOT CHALLENGE DETECTED]` warning. | Hybrid |
@@ -241,7 +241,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use. Assess tries headless first; if bot-blocked (score ≤5 with all zeros), retries with a separate headed session. Tabs dismissed for consent and closed after every scan. Max 3 concurrent. Browser OOM/crash auto-recovers (session resets, server stays alive).
+Session tools share a singleton page, lazy-created on first use. All session tools have auto-retry on transient CDP failures (browser crash, WebSocket close) — session resets and retries once automatically. 30s timeout on all tools (60s for `browse`/`assess`). Scroll accepts `direction: "up"/"down"` in addition to numeric `deltaY`. Click falls back to JS `.click()` when elements have no layout. Assess tries headless first; if bot-blocked, retries headed. Browser OOM/crash auto-recovers (session resets, server stays alive).
 
 ## Architecture
 

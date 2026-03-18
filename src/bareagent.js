@@ -116,15 +116,20 @@ export function createBrowseTools(opts = {}) {
     },
     {
       name: 'scroll',
-      description: 'Scroll the page. Returns the updated snapshot.',
+      description: 'Scroll the page up or down. Pass direction ("up"/"down") or a numeric deltaY. Returns the updated snapshot.',
       parameters: {
         type: 'object',
         properties: {
-          deltaY: { type: 'number', description: 'Pixels to scroll (positive=down, negative=up)' },
+          direction: { type: 'string', enum: ['up', 'down'], description: 'Scroll direction — "up" or "down" (scrolls ~3 screen-heights)' },
+          deltaY: { type: 'number', description: 'Pixels to scroll (positive=down, negative=up). Overrides direction if both given.' },
         },
-        required: ['deltaY'],
       },
-      execute: async ({ deltaY }) => actionAndSnapshot((page) => page.scroll(deltaY)),
+      execute: async ({ direction, deltaY }) => {
+        let dy = deltaY;
+        if (dy == null && direction) dy = direction === 'up' ? -900 : 900;
+        if (dy == null || typeof dy !== 'number') throw new Error('scroll requires "direction" or numeric "deltaY"');
+        return actionAndSnapshot((page) => page.scroll(dy));
+      },
     },
     {
       name: 'select',

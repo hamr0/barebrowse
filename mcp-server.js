@@ -25,6 +25,18 @@ function isCdpDead(err) {
   return m.includes('WebSocket') || m.includes('Target closed') || m.includes('Session closed') || m.includes('CDP');
 }
 
+/** Retry-once wrapper for transient CDP failures. Resets session and retries. */
+async function withRetry(fn) {
+  try {
+    return await fn();
+  } catch (err) {
+    if (!isCdpDead(err)) throw err;
+    // CDP died — reset session and retry once
+    _page = null;
+    return await fn();
+  }
+}
+
 const MAX_CHARS_DEFAULT = 30000;
 const OUTPUT_DIR = join(process.cwd(), '.barebrowse');
 
@@ -139,13 +151,13 @@ const TOOLS = [
   },
   {
     name: 'scroll',
-    description: 'Scroll the page. Positive deltaY scrolls down, negative scrolls up. Returns ok.',
+    description: 'Scroll the page up or down. Pass direction ("up"/"down") or a numeric deltaY. Returns ok.',
     inputSchema: {
       type: 'object',
       properties: {
-        deltaY: { type: 'number', description: 'Pixels to scroll (positive=down, negative=up)' },
+        direction: { type: 'string', enum: ['up', 'down'], description: 'Scroll direction — "up" or "down" (scrolls ~3 screen-heights)' },
+        deltaY: { type: 'number', description: 'Pixels to scroll (positive=down, negative=up). Overrides direction if both given.' },
       },
-      required: ['deltaY'],
     },
   },
   {
@@ -222,13 +234,13 @@ async function handleToolCall(name, args) {
       }
       return text;
     }
-    case 'goto': {
+    case 'goto': return withRetry(async () => {
       const page = await getPage();
       try { await page.injectCookies(args.url); } catch {}
       await page.goto(args.url);
       return 'ok';
-    }
-    case 'snapshot': {
+    });
+    case 'snapshot': return withRetry(async () => {
       const page = await getPage();
       const text = await page.snapshot();
       const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
@@ -237,51 +249,58 @@ async function handleToolCall(name, args) {
         return `Snapshot (${text.length} chars) saved to ${file}`;
       }
       return text;
-    }
-    case 'click': {
+    });
+    case 'click': return withRetry(async () => {
       const page = await getPage();
       await page.click(args.ref);
       return 'ok';
-    }
-    case 'type': {
+    });
+    case 'type': return withRetry(async () => {
       const page = await getPage();
       await page.type(args.ref, args.text, { clear: args.clear });
       return 'ok';
-    }
-    case 'press': {
+    });
+    case 'press': return withRetry(async () => {
       const page = await getPage();
       await page.press(args.key);
       return 'ok';
-    }
-    case 'scroll': {
+    });
+    case 'scroll': return withRetry(async () => {
       const page = await getPage();
-      await page.scroll(args.deltaY);
+      let dy = args.deltaY;
+      if (dy == null && args.direction) {
+        dy = args.direction === 'up' ? -900 : 900;
+      }
+      if (dy == null || typeof dy !== 'number') {
+        throw new Error('scroll requires "direction" ("up"/"down") or numeric "deltaY"');
+      }
+      await page.scroll(dy);
       return 'ok';
-    }
-    case 'back': {
+    });
+    case 'back': return withRetry(async () => {
       const page = await getPage();
       await page.goBack();
       return 'ok';
-    }
-    case 'forward': {
+    });
+    case 'forward': return withRetry(async () => {
       const page = await getPage();
       await page.goForward();
       return 'ok';
-    }
-    case 'drag': {
+    });
+    case 'drag': return withRetry(async () => {
       const page = await getPage();
       await page.drag(args.fromRef, args.toRef);
       return 'ok';
-    }
-    case 'upload': {
+    });
+    case 'upload': return withRetry(async () => {
       const page = await getPage();
       await page.upload(args.ref, args.files);
       return 'ok';
-    }
-    case 'pdf': {
+    });
+    case 'pdf': return withRetry(async () => {
       const page = await getPage();
       return await page.pdf({ landscape: args.landscape });
-    }
+    });
     case 'assess': {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
       const releaseSlot = await acquireAssessSlot();
@@ -350,7 +369,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.6.0' },
+      serverInfo: { name: 'barebrowse', version: '0.7.0' },
     });
   }
 
@@ -364,12 +383,19 @@ async function handleMessage(msg) {
 
   if (method === 'tools/call') {
     const { name, arguments: args } = params;
+    const TOOL_TIMEOUT = name === 'browse' || name === 'assess' ? 60000 : 30000;
     try {
-      const result = await handleToolCall(name, args || {});
+      let timer;
+      const result = await Promise.race([
+        handleToolCall(name, args || {}),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`Tool "${name}" timed out after ${TOOL_TIMEOUT / 1000}s`)), TOOL_TIMEOUT); }),
+      ]);
+      clearTimeout(timer);
       return jsonrpcResponse(id, {
         content: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }],
       });
     } catch (err) {
+      if (isCdpDead(err)) _page = null;
       return jsonrpcResponse(id, {
         content: [{ type: 'text', text: `Error: ${err.message}` }],
         isError: true,

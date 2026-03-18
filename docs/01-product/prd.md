@@ -145,7 +145,7 @@ The agent doesn't have to think about any of this:
 | **Media autoplay blocked** | Autoplay policy flag on launch | Both |
 | **Login walls** | Cookie extraction from all browsers (Firefox + Chromium merged), injected via CDP | Both |
 | **Pre-filled form inputs** | Select-all + delete before typing | Both |
-| **Off-screen elements** | Scrolled into view before every click | Both |
+| **Off-screen elements** | Scrolled into view before every click, JS `.click()` fallback for no-layout elements | Both |
 | **Form submission** | Enter key triggers onsubmit | Both |
 | **Tab between fields** | Tab key moves focus correctly | Both |
 | **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
