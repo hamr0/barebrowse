@@ -20,20 +20,37 @@ try {
 } catch {}
 
 
-function isCdpDead(err) {
+function isTransient(err) {
   const m = err.message || '';
-  return m.includes('WebSocket') || m.includes('Target closed') || m.includes('Session closed') || m.includes('CDP');
+  return m.includes('WebSocket') || m.includes('Target closed') || m.includes('Session closed')
+    || m.includes('CDP') || m.includes('Timeout waiting for CDP event') || m.includes('timed out');
 }
 
-/** Retry-once wrapper for transient CDP failures. Resets session and retries. */
-async function withRetry(fn) {
+/**
+ * Retry-once wrapper with per-attempt timeout.
+ * On transient failure (CDP death OR timeout), resets session and retries once.
+ * @param {Function} fn - async function to execute
+ * @param {number} timeoutMs - per-attempt timeout in ms
+ */
+async function withRetry(fn, timeoutMs) {
+  async function attempt() {
+    if (!timeoutMs) return await fn();
+    let timer;
+    const result = await Promise.race([
+      fn(),
+      new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`timed out after ${timeoutMs / 1000}s`)), timeoutMs); }),
+    ]);
+    clearTimeout(timer);
+    return result;
+  }
+
   try {
-    return await fn();
+    return await attempt();
   } catch (err) {
-    if (!isCdpDead(err)) throw err;
-    // CDP died — reset session and retry once
+    if (!isTransient(err)) throw err;
+    // Transient failure — reset session and retry once
     _page = null;
-    return await fn();
+    return await attempt();
   }
 }
 
@@ -226,7 +243,12 @@ if (assessFn) {
 async function handleToolCall(name, args) {
   switch (name) {
     case 'browse': {
-      const text = await browse(args.url, { mode: args.mode });
+      let timer;
+      const text = await Promise.race([
+        browse(args.url, { mode: args.mode }),
+        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('browse timed out after 60s')), 60000); }),
+      ]);
+      clearTimeout(timer);
       const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
       if (text.length > limit) {
         const file = saveSnapshot(text);
@@ -239,7 +261,7 @@ async function handleToolCall(name, args) {
       try { await page.injectCookies(args.url); } catch {}
       await page.goto(args.url);
       return 'ok';
-    });
+    }, 30000);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
       const text = await page.snapshot();
@@ -249,22 +271,22 @@ async function handleToolCall(name, args) {
         return `Snapshot (${text.length} chars) saved to ${file}`;
       }
       return text;
-    });
+    }, 30000);
     case 'click': return withRetry(async () => {
       const page = await getPage();
       await page.click(args.ref);
       return 'ok';
-    });
+    }, 30000);
     case 'type': return withRetry(async () => {
       const page = await getPage();
       await page.type(args.ref, args.text, { clear: args.clear });
       return 'ok';
-    });
+    }, 30000);
     case 'press': return withRetry(async () => {
       const page = await getPage();
       await page.press(args.key);
       return 'ok';
-    });
+    }, 30000);
     case 'scroll': return withRetry(async () => {
       const page = await getPage();
       let dy = args.deltaY;
@@ -276,31 +298,31 @@ async function handleToolCall(name, args) {
       }
       await page.scroll(dy);
       return 'ok';
-    });
+    }, 30000);
     case 'back': return withRetry(async () => {
       const page = await getPage();
       await page.goBack();
       return 'ok';
-    });
+    }, 30000);
     case 'forward': return withRetry(async () => {
       const page = await getPage();
       await page.goForward();
       return 'ok';
-    });
+    }, 30000);
     case 'drag': return withRetry(async () => {
       const page = await getPage();
       await page.drag(args.fromRef, args.toRef);
       return 'ok';
-    });
+    }, 30000);
     case 'upload': return withRetry(async () => {
       const page = await getPage();
       await page.upload(args.ref, args.files);
       return 'ok';
-    });
+    }, 30000);
     case 'pdf': return withRetry(async () => {
       const page = await getPage();
       return await page.pdf({ landscape: args.landscape });
-    });
+    }, 30000);
     case 'assess': {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
       const releaseSlot = await acquireAssessSlot();
@@ -342,7 +364,7 @@ async function handleToolCall(name, args) {
         } catch (err) {
           clearTimeout(timer);
           await tab.close().catch(() => {});
-          if (isCdpDead(err)) _page = null;
+          if (isTransient(err)) _page = null;
           throw err;
         }
       } finally {
@@ -369,7 +391,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.7.0' },
+      serverInfo: { name: 'barebrowse', version: '0.7.1' },
     });
   }
 
@@ -383,19 +405,13 @@ async function handleMessage(msg) {
 
   if (method === 'tools/call') {
     const { name, arguments: args } = params;
-    const TOOL_TIMEOUT = name === 'browse' || name === 'assess' ? 60000 : 30000;
     try {
-      let timer;
-      const result = await Promise.race([
-        handleToolCall(name, args || {}),
-        new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`Tool "${name}" timed out after ${TOOL_TIMEOUT / 1000}s`)), TOOL_TIMEOUT); }),
-      ]);
-      clearTimeout(timer);
+      const result = await handleToolCall(name, args || {});
       return jsonrpcResponse(id, {
         content: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }],
       });
     } catch (err) {
-      if (isCdpDead(err)) _page = null;
+      if (isTransient(err)) _page = null;
       return jsonrpcResponse(id, {
         content: [{ type: 'text', text: `Error: ${err.message}` }],
         isError: true,

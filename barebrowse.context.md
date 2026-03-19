@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.7.0 | Node.js >= 22 | 0 required deps | MIT
+> v0.7.1 | Node.js >= 22 | 0 required deps | MIT
 
 ## What this is
 
@@ -241,7 +241,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use. All session tools have auto-retry on transient CDP failures (browser crash, WebSocket close) — session resets and retries once automatically. 30s timeout on all tools (60s for `browse`/`assess`). Scroll accepts `direction: "up"/"down"` in addition to numeric `deltaY`. Click falls back to JS `.click()` when elements have no layout. Assess tries headless first; if bot-blocked, retries headed. Browser OOM/crash auto-recovers (session resets, server stays alive).
+Session tools share a singleton page, lazy-created on first use. All session tools have auto-retry on transient failures (browser crash, WebSocket close, navigation timeout) — each attempt gets its own 30s deadline, session resets between attempts, retries once automatically. Scroll accepts `direction: "up"/"down"` in addition to numeric `deltaY`. Click falls back to JS `.click()` when elements have no layout. `browse` has a 60s timeout (no retry — stateless). Assess tries headless first; if bot-blocked, retries headed. Browser OOM/crash auto-recovers (session resets, server stays alive).
 
 ## Architecture
 

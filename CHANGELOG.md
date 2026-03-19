@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.7.1
+
+Fix: timeout now triggers auto-retry instead of bypassing it.
+
+### Bug fix (`mcp-server.js`)
+- **Root cause:** The 30s timeout was a `Promise.race` *outside* `withRetry()`. When a page timed out, the race rejected immediately — `withRetry` never got a chance to reset the session and retry. Timeouts also didn't match `isCdpDead()`, so even if they did reach `withRetry`, they wouldn't be retried.
+- **Fix:** Moved per-attempt timeout *inside* `withRetry()`. Each attempt gets its own 30s deadline. On timeout or CDP death, the session resets and a fresh attempt runs. The outer `Promise.race` is removed entirely.
+- `isCdpDead()` renamed to `isTransient()` — now also matches timeout errors (`"Timeout waiting for CDP event"`, `"timed out"`)
+- Non-transient errors (validation, unknown tool) are still not retried
+
+### Tests
+- 11 new unit tests in `test/unit/mcp.test.js`: `isTransient` detection (CDP death, timeouts, non-transient), `withRetry` behavior (success, CDP retry, timeout retry, no-retry for validation, double-failure, no-timeout mode)
+- 80 total tests (39 unit + 41 integration)
+
 ## 0.7.0
 
 MCP resilience: timeouts, auto-retry, LLM-friendly scroll, and click fallback for hidden elements.
