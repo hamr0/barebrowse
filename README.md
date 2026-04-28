@@ -207,4 +207,4 @@ Three vanilla JS modules. Zero dependencies. Same API patterns.
 
 ## License
 
-MIT
+Apache-2.0 — see [LICENSE](LICENSE).
