@@ -185,15 +185,17 @@ URL -> find/launch browser (chromium.js)
 
 ## The bare ecosystem
 
-Three vanilla JS modules. Zero dependencies. Same API patterns.
+Four vanilla JS modules. Zero deps where possible (bareguard has one). Same API patterns.
 
-| | [**bareagent**](https://npmjs.com/package/bare-agent) | [**barebrowse**](https://npmjs.com/package/barebrowse) | [**baremobile**](https://npmjs.com/package/baremobile) |
-|---|---|---|---|
-| **Does** | Gives agents a think→act loop | Gives agents a real browser | Gives agents an Android device |
-| **How** | Goal in → coordinated actions out | URL in → pruned snapshot out | Screen in → pruned snapshot out |
-| **Replaces** | LangChain, CrewAI, AutoGen | Playwright, Selenium, Puppeteer | Appium, Espresso, UIAutomator2 |
-| **Interfaces** | Library · CLI · subprocess | Library · CLI · MCP | Library · CLI · MCP |
-| **Solo or together** | Orchestrates both as tools | Works standalone | Works standalone |
+| | [**bareagent**](https://npmjs.com/package/bare-agent) | [**barebrowse**](https://npmjs.com/package/barebrowse) | [**baremobile**](https://npmjs.com/package/baremobile) | [**bareguard**](https://npmjs.com/package/bareguard) |
+|---|---|---|---|---|
+| **Does** | Gives agents a think→act loop | Gives agents a real browser | Gives agents an Android device | Gates everything an agent does |
+| **How** | Goal in → coordinated actions out | URL in → pruned snapshot out | Screen in → pruned snapshot out | Action in → allow / deny / human-asked out |
+| **Replaces** | LangChain, CrewAI, AutoGen | Playwright, Selenium, Puppeteer | Appium, Espresso, UIAutomator2 | Hand-rolled allowlists, scattered policy code |
+| **Interfaces** | Library · CLI · subprocess | Library · CLI · MCP | Library · CLI · MCP | Library |
+| **Solo or together** | Orchestrates the others as tools | Works standalone | Works standalone | Embedded in bareagent's loop; usable by any runner |
+
+> **Reach 50+ messengers with one Docker container via [beeperbox](https://github.com/hamr0/beeperbox)** — a headless Beeper Desktop that exposes WhatsApp, iMessage, Signal, Telegram, Slack, Discord, RCS, SMS and more as a single MCP server. Wire it through bareagent's MCP bridge; bareguard policies the invocations like any other tool (per-chat allowlists, ask patterns on destructive sends, all the usual layered defense).
 
 **What you can build:**
 
