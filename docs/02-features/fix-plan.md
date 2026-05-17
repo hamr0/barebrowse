@@ -216,6 +216,35 @@ Ranked by leverage. Each lands as its own commit + tests.
 
 ---
 
+## Follow-ups noted during Phase B
+
+### MCP Config Diagnostics
+
+- **Observed:** Claude Code surfaces a "Conflicting scopes" warning when the
+  same MCP server name is registered in two scopes pointing at two
+  absolute paths — e.g. `barebrowse` registered in *user* scope at
+  `~/PycharmProjects/barebrowse/mcp-server.js` AND in *project* scope at
+  `~/Documents/PycharmProjects/barebrowse/mcp-server.js`. OAuth tokens are
+  stored per endpoint, so a token issued to one path does not carry over
+  to the other; this silently splits sessions and confuses agents.
+- **What the user sees today:** Only Claude Code's own warning, which
+  points at `claude mcp remove barebrowse -s user|project`. barebrowse
+  itself says nothing.
+- **What barebrowse could do:**
+  - `barebrowse install` (and `claude mcp add` flow) could detect the
+    name collision against `~/.claude.json` / project `.mcp.json` and
+    refuse to clobber, or prompt to pick a scope.
+  - `barebrowse mcp` startup could log to stderr the absolute path it's
+    serving from, so a stuck agent is debuggable from the MCP log.
+  - Add `barebrowse doctor` (or extend `barebrowse status`) that
+    inspects user + project + local scope config files for duplicate
+    `barebrowse` entries and prints a one-line remediation.
+- **Why this matters:** Two-directory clones (work tree vs. installed
+  copy) is the common case for contributors. Today it silently breaks
+  auth/persistence; a one-line warning at install time would prevent it.
+- **Priority:** Low — Claude Code's warning already gets users unblocked.
+  But worth catching at install rather than at first-use.
+
 ## Out of scope (noted, not planned)
 
 - Tests/style nits, TypeScript migration, build tooling — intentionally
