@@ -8,7 +8,7 @@
  *   const snapshot = await browse('https://example.com');
  */
 
-import { launch, cleanupBrowser } from './chromium.js';
+import { launch, attach, cleanupBrowser } from './chromium.js';
 import { createCDP } from './cdp.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
@@ -126,17 +126,28 @@ export async function browse(url, opts = {}) {
  *
  * @param {object} [opts]
  * @param {'headless'|'headed'|'hybrid'} [opts.mode='headless'] - Browser mode
+ * @param {number} [opts.port] - Attach to an already-running Chromium at this
+ *   CDP port instead of launching a new one. The browser keeps running on
+ *   close(); only the tab we created is torn down. Use this to drive a
+ *   user's logged-in session (start Chromium with --remote-debugging-port=N).
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
   const mode = opts.mode || 'headless';
+  const attachMode = !!opts.port;
   let browser = null;
   let cdp;
   // Forward caller-supplied launch knobs into every launch() below,
   // including hybrid-fallback re-launches inside goto().
   const launchOpts = { proxy: opts.proxy, binary: opts.binary, userDataDir: opts.userDataDir };
 
-  if (mode === 'headed') {
+  if (attachMode) {
+    // Reuse the user's running browser — do not launch, do not own the
+    // profile. cleanupBrowser() is a no-op on this shape (process: null,
+    // ownedProfileDir: null), which is the whole point.
+    browser = await attach({ port: opts.port });
+    cdp = await createCDP(browser.wsUrl);
+  } else if (mode === 'headed') {
     browser = await launch({ ...launchOpts, headed: true });
     cdp = await createCDP(browser.wsUrl);
   } else {
@@ -144,13 +155,21 @@ export async function connect(opts = {}) {
     cdp = await createCDP(browser.wsUrl);
   }
 
-  let currentlyHeaded = (mode === 'headed');
+  // In attach mode we don't know (and shouldn't assume) the user's headed/
+  // headless state — treat it as headed so stealth patches are skipped
+  // (they'd persist in the user's session via addScriptToEvaluateOnNewDocument)
+  // and the headed→headless rewind in goto() is gated off below.
+  let currentlyHeaded = attachMode || (mode === 'headed');
   let page = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
   let refMap = new Map();
   let botBlocked = false;
 
-  // Suppress permission prompts for all modes
-  await suppressPermissions(cdp);
+  // Suppress permission prompts. Skipped in attach mode — Browser.setPermission
+  // is browser-wide (no origin scope here), so flipping permissions to denied
+  // would leak into the user's other tabs.
+  if (!attachMode) {
+    await suppressPermissions(cdp);
+  }
 
   // Load storage state (cookies + localStorage) from file
   if (opts.storageState) {
@@ -187,8 +206,10 @@ export async function connect(opts = {}) {
       // silently resolving to whatever backendNodeId happens to still be in
       // the map.
       refMap = new Map();
-      // Switch back to headless if we fell back to headed previously
-      if (currentlyHeaded && mode === 'hybrid') {
+      // Switch back to headless if we fell back to headed previously.
+      // Not in attach mode — we never own the browser there, so there's
+      // nothing to rewind.
+      if (currentlyHeaded && mode === 'hybrid' && !attachMode) {
         await cdp.send('Target.closeTarget', { targetId: page.targetId });
         cdp.close();
         await cleanupBrowser(browser); browser = null;
@@ -210,8 +231,10 @@ export async function connect(opts = {}) {
       const { tree, nodeCount } = await ariaTree(page);
       botBlocked = isChallengePage(tree, nodeCount);
 
-      // Hybrid fallback: if bot-blocked, retry with headed browser
-      if (botBlocked && mode === 'hybrid') {
+      // Hybrid fallback: if bot-blocked, retry with headed browser.
+      // Suppressed in attach mode — we can't tear down the user's running
+      // browser and we don't know what mode they started it in.
+      if (botBlocked && mode === 'hybrid' && !attachMode) {
         await cdp.send('Target.closeTarget', { targetId: page.targetId });
         cdp.close();
         await cleanupBrowser(browser); browser = null;

@@ -235,3 +235,18 @@ export async function getDebugUrl(port) {
   const data = await res.json();
   return data.webSocketDebuggerUrl;
 }
+
+/**
+ * Attach to a Chromium already running with --remote-debugging-port=<port>.
+ * Returns the same shape as launch() but with process: null and
+ * ownedProfileDir: null — cleanupBrowser() becomes a no-op so we never
+ * kill a browser we did not start or remove a profile we do not own.
+ * @param {object} opts
+ * @param {number} opts.port - The debug port the running browser is listening on
+ * @returns {Promise<{wsUrl: string, process: null, port: number, ownedProfileDir: null}>}
+ */
+export async function attach({ port }) {
+  if (!port) throw new Error('attach({ port }) requires a port number');
+  const wsUrl = await getDebugUrl(port);
+  return { wsUrl, process: null, port, ownedProfileDir: null };
+}

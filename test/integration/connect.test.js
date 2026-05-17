@@ -119,6 +119,44 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('connect({ port }) attaches to a running browser and leaves it alive on close (H1)', async () => {
+    const { launch, cleanupBrowser } = await import('../../src/chromium.js');
+    // Stand up a "user's browser" that already exists with a debug port.
+    const running = await launch({});
+    try {
+      const page = await connect({ port: running.port });
+      try {
+        await page.goto('data:text/html,<h1>ATTACHED-OK</h1>');
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('ATTACHED-OK'),
+          `attached session must navigate + snapshot the running browser, got:\n${snap}`);
+      } finally {
+        await page.close();
+      }
+
+      // The whole point of H1 — close() on an attached session must NOT
+      // kill the user's browser or wipe their profile. The launched
+      // process must still be running.
+      assert.equal(running.process.exitCode, null,
+        'connect({ port }).close() must not kill the externally-launched browser');
+
+      // Re-attach to prove the browser is still talking CDP after our close.
+      const again = await connect({ port: running.port });
+      try {
+        await again.goto('data:text/html,<h1>RE-ATTACHED-OK</h1>');
+        const snap2 = await again.snapshot();
+        assert.ok(snap2.includes('RE-ATTACHED-OK'),
+          `second attach must also work — the browser kept running, got:\n${snap2}`);
+      } finally {
+        await again.close();
+      }
+      assert.equal(running.process.exitCode, null,
+        'second close() must also leave the externally-launched browser alive');
+    } finally {
+      await cleanupBrowser(running);
+    }
+  });
+
   it('switchTab actually swaps the working session (F4)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

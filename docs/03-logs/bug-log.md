@@ -103,6 +103,15 @@ Also hardened `cleanupBrowser()` profile-dir rm with a brief ENOTEMPTY/EBUSY ret
 **Fix:** Both functions now build a `launchOpts = { proxy, binary, userDataDir }` once and forward to every `launch()` call — including the two hybrid-fallback re-launches inside `goto()`. (The `port` option for attach-to-running-browser is deferred to H1.)
 **Regression test:** `test/integration/connect.test.js` — "connect() forwards binary opt to launch (L2)" (bogus binary path rejects with ENOENT) and "connect() forwards userDataDir opt to launch (L2)" (Chromium populates the caller's dir, proving the option reached launch).
 
+---
+
+## [2026-05-17] connect() spawned a clone instead of driving the user's running browser (H1)
+
+**Symptom:** `connect({ mode: 'headed' })` always launched a fresh Chromium with an empty temp profile. There was no way to attach to a browser the user had already started (e.g. `chromium --remote-debugging-port=9222`), so headed mode could not actually drive the user's logged-in session — defeating the entire promise of headed mode. `getDebugUrl(port)` already existed at `chromium.js:149` but was never imported anywhere.
+**Root cause:** `connect()` had no port path; it ignored `opts.port` (an L2 leftover, deliberately deferred to H1) and hardcoded `launch()` for every mode.
+**Fix:** New `attach({ port })` helper in `src/chromium.js` returns a browser handle with `process: null, ownedProfileDir: null` — `cleanupBrowser()` is intentionally a no-op on that shape so we never kill a browser we didn't start. `connect()` now detects `opts.port` and uses `attach()` instead of `launch()`. In attach mode: stealth is skipped (it would persist via `addScriptToEvaluateOnNewDocument` in the user's session), `Browser.setPermission` is skipped (it's browser-wide here — would leak deny-states into the user's other tabs), and the two hybrid-fallback branches in `goto()` are gated off (we can't tear down a browser we don't own). `close()` still closes the tab we created via `Target.closeTarget` — only the browser process is left alone.
+**Regression test:** `test/integration/connect.test.js` — "connect({ port }) attaches to a running browser and leaves it alive on close (H1)" (launches a Chromium with a known port, attaches via `connect({ port })`, navigates + snapshots, asserts the underlying process's `exitCode` is still `null` after `close()`, then re-attaches and repeats to prove the browser kept running).
+
 
 
 

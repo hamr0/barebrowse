@@ -108,6 +108,24 @@ For code examples, API reference, and wiring instructions, see **[barebrowse.con
 | **Headed** | Auto-launches a visible Chromium window | Bot-detected sites, visual debugging, CAPTCHAs |
 | **Hybrid** | Tries headless first, auto-launches headed if blocked | General-purpose agent browsing |
 
+### Attach to your already-running browser
+
+Start Chromium yourself with a debug port, then drive your real logged-in session:
+
+```bash
+chromium --remote-debugging-port=9222
+```
+
+```js
+import { connect } from 'barebrowse';
+const page = await connect({ port: 9222 });
+await page.goto('https://your-logged-in-app.example.com');
+const snap = await page.snapshot();
+await page.close(); // closes only the tab barebrowse opened — your browser keeps running
+```
+
+No clone profile, no fresh cookies — the agent sees what you see.
+
 ## What it handles automatically
 
 Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (ARIA node count heuristic + stealth patches + automatic headed fallback — snapshot shows `[BOT CHALLENGE DETECTED]` warning when blocked), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
