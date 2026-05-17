@@ -124,6 +124,14 @@ Also added `--site-per-process` to launch flags so every iframe — including sa
 
 **Regression test:** `test/integration/connect.test.js` — "snapshot surfaces iframe content + clicks resolve to the iframe session (H2)" (outer data: URL with an iframe whose button rewrites its own label on click; asserts iframe content is visible in the merged snapshot, pulls the button's ref out, calls `click(ref)`, and re-snapshots to confirm the new label appears — proving the click dispatched in the iframe session, not the parent).
 
+---
+
+## [2026-05-17] connect() had no reload() method (H3)
+
+**Symptom:** No way to refetch the current page short of `goto(currentUrl)` (which loses query state) or dropping to `page.cdp.send('Page.reload')` manually. A trivial gap in the public API.
+**Fix:** New `page.reload({ ignoreCache, timeout })` method on the connect() handle. Subscribes to `Page.loadEventFired` (configurable timeout, default 30s), sends `Page.reload({ ignoreCache })`, awaits the load event with the same SPA-fallback as `goBack`/`goForward` (500ms settle if no load fires), and clears `refMap` so refs captured pre-reload are rejected by `click()`/`type()`/etc — same invalidation contract as `goto`. MCP exposure deferred to H6.
+**Regression test:** `test/integration/connect.test.js` — "reload() refetches the current page and invalidates refMap (H3)" (snapshots, captures a ref, reloads, asserts click(stale-ref) rejects with "No element found", then snapshots again to confirm content is back; runs once with default options and once with `{ ignoreCache: true }`).
+
 
 
 

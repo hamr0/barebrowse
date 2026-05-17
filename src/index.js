@@ -276,6 +276,16 @@ export async function connect(opts = {}) {
       refMap = new Map();
     },
 
+    async reload(reloadOpts = {}) {
+      const timeout = reloadOpts.timeout || 30000;
+      const loadPromise = page.session.once('Page.loadEventFired', timeout);
+      await page.session.send('Page.reload', {
+        ignoreCache: !!reloadOpts.ignoreCache,
+      });
+      try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
+      refMap = new Map(); // refs from the pre-reload page are invalid
+    },
+
     async injectCookies(url, cookieOpts) {
       await authenticate(page.session, url, { browser: cookieOpts?.browser });
     },

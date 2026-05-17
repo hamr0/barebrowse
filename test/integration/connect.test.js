@@ -157,6 +157,42 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('reload() refetches the current page and invalidates refMap (H3)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto('data:text/html,<button>BEFORE-RELOAD</button>');
+      const before = await page.snapshot();
+      const refMatch = before.match(/\[ref=(\d+)\]/);
+      assert.ok(refMatch, `expected a ref pre-reload, got:\n${before}`);
+      const staleRef = refMatch[1];
+
+      await page.reload();
+
+      // Same invalidation contract as goto/goBack: refs captured before
+      // reload must be rejected. Important: do NOT snapshot before this
+      // assertion — snapshot() re-populates refMap and the same ref number
+      // may get reissued on a single-element page.
+      await assert.rejects(
+        () => page.click(staleRef),
+        /No element found for ref/,
+        'a ref captured before reload() must be rejected after reload',
+      );
+
+      // Now confirm reload actually refetched the same URL — content is back.
+      const after = await page.snapshot();
+      assert.ok(after.includes('BEFORE-RELOAD'),
+        `reload must refetch the same URL — expected button still present, got:\n${after}`);
+
+      // ignoreCache: true is also accepted and doesn't blow up.
+      await page.reload({ ignoreCache: true });
+      const afterNoCache = await page.snapshot();
+      assert.ok(afterNoCache.includes('BEFORE-RELOAD'),
+        `reload({ ignoreCache: true }) must also succeed, got:\n${afterNoCache}`);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('snapshot surfaces iframe content + clicks resolve to the iframe session (H2)', async () => {
     const page = await connect({ mode: 'headless' });
     try {
