@@ -24,6 +24,28 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('goBack/goForward await navigation before returning (F8)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto('data:text/html,<h1>UNIQUE-PAGE-A</h1>');
+      await page.goto('data:text/html,<h1>UNIQUE-PAGE-B</h1>');
+
+      await page.goBack();
+      const backSnap = await page.snapshot();
+      assert.ok(backSnap.includes('UNIQUE-PAGE-A'),
+        `after goBack, snapshot should show A, got:\n${backSnap}`);
+      assert.ok(!backSnap.includes('UNIQUE-PAGE-B'),
+        'after goBack, snapshot must not still reflect B');
+
+      await page.goForward();
+      const fwdSnap = await page.snapshot();
+      assert.ok(fwdSnap.includes('UNIQUE-PAGE-B'),
+        `after goForward, snapshot should show B, got:\n${fwdSnap}`);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('createTab wires dialog handler so dialogs do not hang navigation (F7)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

@@ -231,15 +231,19 @@ export async function connect(opts = {}) {
     async goBack() {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       if (currentIndex <= 0) throw new Error('No previous page in history');
+      const loadPromise = page.session.once('Page.loadEventFired', 30000);
       await page.session.send('Page.navigateToHistoryEntry', { entryId: entries[currentIndex - 1].id });
-      await new Promise((r) => setTimeout(r, 500));
+      try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
+      refMap = new Map(); // refs from the previous page are now invalid
     },
 
     async goForward() {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       if (currentIndex >= entries.length - 1) throw new Error('No next page in history');
+      const loadPromise = page.session.once('Page.loadEventFired', 30000);
       await page.session.send('Page.navigateToHistoryEntry', { entryId: entries[currentIndex + 1].id });
-      await new Promise((r) => setTimeout(r, 500));
+      try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
+      refMap = new Map();
     },
 
     async injectCookies(url, cookieOpts) {

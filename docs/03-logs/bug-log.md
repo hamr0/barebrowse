@@ -76,6 +76,16 @@ Also hardened `cleanupBrowser()` profile-dir rm with a brief ENOTEMPTY/EBUSY ret
 **Fix:** Add `setupDialogHandler(tab.session)` after `createPage`/`suppressPermissions` in `createTab()`. The `dialogLog` closure is shared, so dialogs from tabs land in the outer `page.dialogLog`.
 **Regression test:** `test/integration/connect.test.js` — "createTab wires dialog handler so dialogs do not hang navigation (F7)" (creates a tab, navigates to `data:text/html,<script>alert("from-tab")</script>` with a 10s timeout, asserts the alert is captured in `dialogLog`).
 
+---
+
+## [2026-05-17] goBack/goForward used a fixed 500ms sleep instead of awaiting navigation (F8)
+
+**Symptom:** `snapshot()` immediately after `goBack()` could capture the prior page when the back navigation took >500ms; on instant SPA navs the 500ms was wasted latency.
+**Root cause:** Both methods called `Page.navigateToHistoryEntry` then `setTimeout(500)` — no listener on `Page.loadEventFired`.
+**Fix:** Subscribe to `Page.loadEventFired` (30s timeout) before sending the history-nav command; await it after. On timeout (SPA pushState/replaceState — no load event), fall back to the original 500ms settle. Also clear `refMap` (refs from the prior page are now invalid — same reason as F5).
+**Regression test:** `test/integration/connect.test.js` — "goBack/goForward await navigation before returning (F8)" (goto A → goto B → goBack, assert snapshot shows A and not B; goForward, assert snapshot shows B).
+
+
 
 
 
