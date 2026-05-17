@@ -16,6 +16,7 @@ import { prune as pruneTree } from './prune.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
+import { waitForNetworkIdle } from './network-idle.js';
 
 /**
  * Browse a URL and return an ARIA snapshot.
@@ -598,51 +599,6 @@ function extractProps(props) {
   const result = {};
   for (const p of props) result[p.name] = p.value?.value;
   return result;
-}
-
-/**
- * Wait until no network requests are pending for `idle` ms.
- * @param {object} session - Session-scoped CDP handle
- * @param {object} [opts]
- * @param {number} [opts.timeout=30000] - Max wait time
- * @param {number} [opts.idle=500] - Idle threshold in ms
- */
-function waitForNetworkIdle(session, opts = {}) {
-  const timeout = opts.timeout || 30000;
-  const idle = opts.idle || 500;
-
-  return new Promise((resolve, reject) => {
-    let pending = 0;
-    let timer = null;
-    const unsubs = [];
-
-    const done = () => {
-      clearTimeout(timer);
-      clearTimeout(deadlineTimer);
-      for (const unsub of unsubs) unsub();
-      resolve();
-    };
-
-    const check = () => {
-      clearTimeout(timer);
-      if (pending <= 0) {
-        pending = 0;
-        timer = setTimeout(done, idle);
-      }
-    };
-
-    unsubs.push(session.on('Network.requestWillBeSent', () => { pending++; clearTimeout(timer); }));
-    unsubs.push(session.on('Network.loadingFinished', () => { pending--; check(); }));
-    unsubs.push(session.on('Network.loadingFailed', () => { pending--; check(); }));
-
-    const deadlineTimer = setTimeout(() => {
-      for (const unsub of unsubs) unsub();
-      reject(new Error(`waitForNetworkIdle timed out after ${timeout}ms`));
-    }, timeout);
-
-    // Start check immediately (might already be idle)
-    check();
-  });
 }
 
 /**

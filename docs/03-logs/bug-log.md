@@ -85,6 +85,16 @@ Also hardened `cleanupBrowser()` profile-dir rm with a brief ENOTEMPTY/EBUSY ret
 **Fix:** Subscribe to `Page.loadEventFired` (30s timeout) before sending the history-nav command; await it after. On timeout (SPA pushState/replaceState — no load event), fall back to the original 500ms settle. Also clear `refMap` (refs from the prior page are now invalid — same reason as F5).
 **Regression test:** `test/integration/connect.test.js` — "goBack/goForward await navigation before returning (F8)" (goto A → goto B → goBack, assert snapshot shows A and not B; goForward, assert snapshot shows B).
 
+---
+
+## [2026-05-17] waitForNetworkIdle counter could desync and resolve early (F9)
+
+**Symptom:** When `Network.loadingFinished` arrived for a request whose `Network.requestWillBeSent` was never seen by the listener (e.g. request started before `waitForNetworkIdle` attached), the pending-request counter went negative, and the `pending <= 0` guard could resolve before a real in-flight request finished.
+**Root cause:** Plain integer counter in `src/index.js:577-613` had no per-request bookkeeping.
+**Fix:** Extracted to `src/network-idle.js` (matches project's module split pattern). Track requestIds in a `Set` — `pending.add()` on `requestWillBeSent`, `pending.delete()` on `loadingFinished`/`loadingFailed`. `delete()` on an unknown key is a no-op, so orphan finish events are harmless. Resolve only when the set is empty for `idle` ms.
+**Regression test:** `test/unit/network-idle.test.js` — five cases including the load-bearing one: "orphan loadingFinished events do not resolve early (F9)" (fires three orphan finishes then a real request/finish, asserts the wait correctly held until the real request completed).
+
+
 
 
 
