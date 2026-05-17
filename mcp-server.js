@@ -27,12 +27,17 @@ function isTransient(err) {
 }
 
 /**
- * Retry-once wrapper with per-attempt timeout.
- * On transient failure (CDP death OR timeout), resets session and retries once.
+ * Run fn with a per-attempt timeout. On transient failure (CDP death OR
+ * timeout), reset the session. If `retry` is true (default), retry once on
+ * a fresh page; if false, rethrow without retrying — required for
+ * non-idempotent ops (click/type/etc.) where a partial first attempt
+ * shouldn't be replayed against a blank fresh page.
  * @param {Function} fn - async function to execute
  * @param {number} timeoutMs - per-attempt timeout in ms
+ * @param {object} [opts]
+ * @param {boolean} [opts.retry=true] - whether to retry once on transient failure
  */
-async function withRetry(fn, timeoutMs) {
+async function withRetry(fn, timeoutMs, { retry = true } = {}) {
   async function attempt() {
     if (!timeoutMs) return await fn();
     let timer;
@@ -48,8 +53,9 @@ async function withRetry(fn, timeoutMs) {
     return await attempt();
   } catch (err) {
     if (!isTransient(err)) throw err;
-    // Transient failure — reset session and retry once
+    // Transient failure — reset session so the next request gets a fresh page.
     _page = null;
+    if (!retry) throw err;
     return await attempt();
   }
 }
@@ -276,17 +282,17 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       await page.click(args.ref);
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'type': return withRetry(async () => {
       const page = await getPage();
       await page.type(args.ref, args.text, { clear: args.clear });
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'press': return withRetry(async () => {
       const page = await getPage();
       await page.press(args.key);
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'scroll': return withRetry(async () => {
       const page = await getPage();
       let dy = args.deltaY;
@@ -298,27 +304,27 @@ async function handleToolCall(name, args) {
       }
       await page.scroll(dy);
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'back': return withRetry(async () => {
       const page = await getPage();
       await page.goBack();
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'forward': return withRetry(async () => {
       const page = await getPage();
       await page.goForward();
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'drag': return withRetry(async () => {
       const page = await getPage();
       await page.drag(args.fromRef, args.toRef);
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'upload': return withRetry(async () => {
       const page = await getPage();
       await page.upload(args.ref, args.files);
       return 'ok';
-    }, 30000);
+    }, 30000, { retry: false });
     case 'pdf': return withRetry(async () => {
       const page = await getPage();
       return await page.pdf({ landscape: args.landscape });

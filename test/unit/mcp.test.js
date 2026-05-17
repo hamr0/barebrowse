@@ -16,7 +16,7 @@ function isTransient(err) {
     || m.includes('CDP') || m.includes('Timeout waiting for CDP event') || m.includes('timed out');
 }
 
-async function withRetry(fn, timeoutMs) {
+async function withRetry(fn, timeoutMs, { retry = true } = {}) {
   async function attempt() {
     if (!timeoutMs) return await fn();
     let timer;
@@ -31,6 +31,7 @@ async function withRetry(fn, timeoutMs) {
     return await attempt();
   } catch (err) {
     if (!isTransient(err)) throw err;
+    if (!retry) throw err;
     _retryCount++;
     return await attempt();
   }
@@ -162,5 +163,31 @@ describe('withRetry', () => {
     const result = await withRetry(async () => 'no-timeout');
     assert.equal(result, 'no-timeout');
     assert.equal(_retryCount, 0);
+  });
+
+  it('with retry:false runs the fn exactly once on transient failure (F6)', async () => {
+    _retryCount = 0;
+    let calls = 0;
+    await assert.rejects(
+      withRetry(async () => {
+        calls++;
+        throw new Error('WebSocket is not open'); // transient
+      }, 5000, { retry: false }),
+      { message: /WebSocket is not open/ },
+    );
+    assert.equal(calls, 1, 'non-idempotent ops must not retry — first-attempt side effects could double-submit on a fresh page');
+  });
+
+  it('with retry:false still throws non-transient errors normally (F6)', async () => {
+    _retryCount = 0;
+    let calls = 0;
+    await assert.rejects(
+      withRetry(async () => {
+        calls++;
+        throw new Error('No element found for ref "8"');
+      }, 5000, { retry: false }),
+      { message: /No element found/ },
+    );
+    assert.equal(calls, 1);
   });
 });
