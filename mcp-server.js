@@ -99,7 +99,7 @@ function acquireAssessSlot() {
 const TOOLS = [
   {
     name: 'browse',
-    description: 'Browse a URL in a real browser. Use instead of web fetch when the page needs JavaScript, login cookies, consent dismissal, or bot detection. Returns a pruned ARIA snapshot with [ref=N] markers for interaction. Stateless — does not use the session page.',
+    description: 'One-shot headless browse — fetches a URL through a real browser (executes JS, injects cookies, dismisses consent, evades bot detection). Only when plain HTTP fetch can\'t render the page. Returns a pruned ARIA snapshot with [ref=N] markers. Stateless — for multi-step interaction use goto.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -112,7 +112,7 @@ const TOOLS = [
   },
   {
     name: 'goto',
-    description: 'Navigate the session page to a URL. Injects cookies from the user\'s browser for authenticated access. Returns ok — call snapshot to observe.',
+    description: 'Open URL in a persistent interactive browser session (pair with snapshot/click/type/press for multi-step flows). Use when the task needs clicking, typing, or form submission. Injects auth cookies. Returns ok — call snapshot to observe.',
     inputSchema: {
       type: 'object',
       properties: {
