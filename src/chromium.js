@@ -8,6 +8,46 @@
 import { execSync, spawn } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
 
+// Track launched browsers so we can clean them up if the parent crashes.
+// Registered exit handlers (one-time) iterate this set on shutdown.
+const activeBrowsers = new Set();
+let exitHandlersRegistered = false;
+
+function reapAllSync() {
+  const toReap = [...activeBrowsers];
+  activeBrowsers.clear();
+  // Send SIGKILL to everything first so the kernel reaps in parallel
+  for (const b of toReap) {
+    try { if (!b.process.killed) b.process.kill('SIGKILL'); } catch {}
+  }
+  // Then poll each for actual death before removing its profile dir —
+  // Chromium can hold file handles briefly even after SIGKILL, which would
+  // race rmSync. Cap the wait so a stuck process can't hang shutdown.
+  for (const b of toReap) {
+    for (let i = 0; i < 20; i++) {
+      try { process.kill(b.process.pid, 0); } catch { break; }
+      try { execSync('sleep 0.05'); } catch {}
+    }
+    if (b.ownedProfileDir) {
+      try { rmSync(b.ownedProfileDir, { recursive: true, force: true }); } catch {}
+    }
+  }
+}
+
+function registerExitHandlers() {
+  if (exitHandlersRegistered) return;
+  exitHandlersRegistered = true;
+  // 'exit' is sync-only — must use synchronous APIs (SIGKILL, rmSync)
+  process.once('exit', reapAllSync);
+  for (const sig of ['SIGINT', 'SIGTERM', 'SIGHUP']) {
+    process.once(sig, () => {
+      reapAllSync();
+      // Re-raise default behavior so the parent's exit code matches the signal
+      process.kill(process.pid, sig);
+    });
+  }
+}
+
 // Common Chromium binary paths by platform (Linux focus for POC)
 const CANDIDATES = [
   // Linux
@@ -140,7 +180,15 @@ export async function launch(opts = {}) {
   // Extract port from wsUrl
   const actualPort = parseInt(new URL(wsUrl).port, 10);
 
-  return { wsUrl, process: child, port: actualPort, ownedProfileDir };
+  const browser = { wsUrl, process: child, port: actualPort, ownedProfileDir };
+
+  // Register for parent-crash reaping. Auto-untrack on natural exit so
+  // a normally-exited browser doesn't leave a stale entry around.
+  registerExitHandlers();
+  activeBrowsers.add(browser);
+  child.once('exit', () => activeBrowsers.delete(browser));
+
+  return browser;
 }
 
 /**
@@ -152,6 +200,7 @@ export async function launch(opts = {}) {
  */
 export async function cleanupBrowser(browser) {
   if (!browser) return;
+  activeBrowsers.delete(browser);
   if (browser.process && !browser.process.killed && browser.process.exitCode === null) {
     const exited = new Promise((resolve) => {
       const timer = setTimeout(resolve, 2000);

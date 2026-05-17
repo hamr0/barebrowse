@@ -44,6 +44,53 @@ describe('launch()', () => {
     assert.ok(!existsSync(dir), `profile dir should be removed after cleanup, still at ${dir}`);
   });
 
+  it('reaps the browser when the parent process is signaled (F3)', async () => {
+    const { spawn } = await import('node:child_process');
+    const { existsSync } = await import('node:fs');
+    const { fileURLToPath } = await import('node:url');
+    const { dirname, join } = await import('node:path');
+
+    const here = dirname(fileURLToPath(import.meta.url));
+    const fixture = join(here, '..', 'fixtures', 'launch-and-wait.mjs');
+
+    const child = spawn('node', [fixture], { stdio: ['ignore', 'pipe', 'inherit'] });
+
+    // Read BROWSER_PID + PROFILE_DIR from the fixture's stdout
+    const { browserPid, profileDir } = await new Promise((resolve, reject) => {
+      let buf = '';
+      const timer = setTimeout(() => reject(new Error('fixture did not report PID within 15s')), 15000);
+      child.stdout.on('data', (chunk) => {
+        buf += chunk.toString();
+        const pidMatch = buf.match(/BROWSER_PID:(\d+)/);
+        const dirMatch = buf.match(/PROFILE_DIR:(\S+)/);
+        if (pidMatch && dirMatch) {
+          clearTimeout(timer);
+          resolve({ browserPid: parseInt(pidMatch[1], 10), profileDir: dirMatch[1] });
+        }
+      });
+      child.on('exit', (code) => {
+        clearTimeout(timer);
+        reject(new Error(`fixture exited prematurely with code ${code}`));
+      });
+    });
+
+    assert.ok(browserPid > 0);
+    // Confirm browser is alive (kill with signal 0 = existence check)
+    assert.doesNotThrow(() => process.kill(browserPid, 0), 'browser should be running');
+
+    // SIGTERM the parent — our exit handler should reap the browser
+    child.kill('SIGTERM');
+    await new Promise((resolve) => child.once('exit', resolve));
+
+    // Give the kernel a beat for SIGKILL to propagate + dir to unlink
+    await new Promise((r) => setTimeout(r, 500));
+
+    let stillAlive = false;
+    try { process.kill(browserPid, 0); stillAlive = true; } catch {}
+    assert.equal(stillAlive, false, `browser PID ${browserPid} should be reaped after parent SIGTERM`);
+    assert.ok(!existsSync(profileDir), `profile dir ${profileDir} should be removed by exit handler`);
+  });
+
   it('cleanupBrowser leaves user-supplied profile dirs alone (F2)', async () => {
     const { existsSync, mkdtempSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
