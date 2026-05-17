@@ -23,4 +23,31 @@ describe('connect() — page handle contract', () => {
       await page.close();
     }
   });
+
+  it('switchTab actually swaps the working session (F4)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto('data:text/html,<title>TAB-ONE</title><h1>page one</h1>');
+
+      // Open a second tab from within the page (window.open is suppressed in
+      // headless, so use Target.createTarget directly via the escape hatch).
+      const { targetId } = await page.cdp.send('Target.createTarget',
+        { url: 'data:text/html,<title>TAB-TWO</title><h1>page two</h1>' });
+      // Give the new tab a moment to load its data: URL
+      await new Promise((r) => setTimeout(r, 300));
+
+      const tabs = await page.tabs();
+      const newIdx = tabs.findIndex((t) => t.targetId === targetId);
+      assert.ok(newIdx >= 0, 'new tab should be in tabs() list');
+
+      await page.switchTab(newIdx);
+      const snap = await page.snapshot();
+      assert.ok(snap.includes('page two'),
+        `snapshot after switchTab should show new tab content, got:\n${snap}`);
+      assert.ok(!snap.includes('page one'),
+        'snapshot must NOT still reflect the original tab');
+    } finally {
+      await page.close();
+    }
+  });
 });

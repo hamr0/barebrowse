@@ -320,7 +320,17 @@ export async function connect(opts = {}) {
       const { targetInfos } = await cdp.send('Target.getTargets');
       const pages = targetInfos.filter((t) => t.type === 'page');
       if (index < 0 || index >= pages.length) throw new Error(`Tab index ${index} out of range (0-${pages.length - 1})`);
-      await cdp.send('Target.activateTarget', { targetId: pages[index].targetId });
+      const target = pages[index];
+      await cdp.send('Target.activateTarget', { targetId: target.targetId });
+      if (target.targetId === page.targetId) return; // already on this tab
+      // Detach from old session, attach to new — the page variable is the
+      // closure handle used by every method below, so swapping it makes
+      // snapshot/click/type/etc. operate on the new tab.
+      const oldSessionId = page.sessionId;
+      page = await attachToExistingTarget(cdp, target.targetId);
+      refMap = new Map(); // refs from the previous tab are no longer valid
+      setupDialogHandler(page.session);
+      try { await cdp.send('Target.detachFromTarget', { sessionId: oldSessionId }); } catch {}
     },
 
     async waitFor(waitOpts = {}) {
@@ -486,6 +496,19 @@ async function createPage(cdp, stealth = false, pageOpts = {}) {
     }
   }
 
+  return { session, targetId, sessionId };
+}
+
+/**
+ * Attach a CDP session to an existing target (e.g. a tab opened by window.open).
+ * Enables the same domains as createPage so snapshot/click/type work uniformly.
+ */
+async function attachToExistingTarget(cdp, targetId) {
+  const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
+  const session = cdp.session(sessionId);
+  await session.send('Page.enable');
+  await session.send('Network.enable');
+  await session.send('DOM.enable');
   return { session, targetId, sessionId };
 }
 
