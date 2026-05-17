@@ -24,6 +24,29 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('goto invalidates refMap so stale refs error clearly (F5)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto('data:text/html,<button>BUTTON-ON-PAGE-A</button>');
+      const snapA = await page.snapshot();
+      // Pull any ref from page A's snapshot
+      const m = snapA.match(/\[ref=([^\]]+)\]/);
+      assert.ok(m, `expected at least one [ref=N] marker, got:\n${snapA}`);
+      const refFromA = m[1];
+
+      await page.goto('data:text/html,<p>different page B with no buttons</p>');
+      // The ref from page A must no longer resolve — clear error, not a
+      // silent wrong-element click or a CDP "Node was destroyed" leak.
+      await assert.rejects(
+        () => page.click(refFromA),
+        /No element found for ref/,
+        'a ref captured before goto() must be rejected after navigation',
+      );
+    } finally {
+      await page.close();
+    }
+  });
+
   it('switchTab actually swaps the working session (F4)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

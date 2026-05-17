@@ -210,7 +210,17 @@ export async function cleanupBrowser(browser) {
     await exited;
   }
   if (browser.ownedProfileDir) {
-    try { rmSync(browser.ownedProfileDir, { recursive: true, force: true }); } catch {}
+    // Chromium can still flush files for ~hundreds of ms after exit;
+    // retry briefly on ENOTEMPTY/EBUSY before giving up.
+    for (let i = 0; i < 10; i++) {
+      try {
+        rmSync(browser.ownedProfileDir, { recursive: true, force: true });
+        break;
+      } catch (err) {
+        if (err.code !== 'ENOTEMPTY' && err.code !== 'EBUSY') break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+    }
   }
 }
 

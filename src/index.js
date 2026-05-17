@@ -175,6 +175,11 @@ export async function connect(opts = {}) {
 
   return {
     async goto(url, timeout = 30000) {
+      // Refs from the previous page are about to become invalid — clear
+      // before navigating so a stale click(ref) errors clearly instead of
+      // silently resolving to whatever backendNodeId happens to still be in
+      // the map.
+      refMap = new Map();
       // Switch back to headless if we fell back to headed previously
       if (currentlyHeaded && mode === 'hybrid') {
         await cdp.send('Target.closeTarget', { targetId: page.targetId });
