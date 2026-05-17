@@ -8,6 +8,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
+import { TIMEOUTS } from '../../mcp-server.js';
 
 // Re-implement isTransient + withRetry locally (not exported from mcp-server.js)
 function isTransient(err) {
@@ -189,5 +190,40 @@ describe('withRetry', () => {
       { message: /No element found/ },
     );
     assert.equal(calls, 1);
+  });
+});
+
+describe('per-tool MCP timeouts (H5)', () => {
+  // Pin the H5 contract: pre-H5 every tool used a blanket 30s. That was too
+  // short for goto on SPA cold loads and overkill for instant ops. If any of
+  // these regress, callers either see new spurious timeouts or wait longer
+  // than necessary for fast tools — both user-visible.
+  it('goto + reload + wait_for get 60s (SPA cold loads exceed 30s)', () => {
+    assert.equal(TIMEOUTS.goto, 60000);
+    assert.equal(TIMEOUTS.reload, 60000);
+    assert.equal(TIMEOUTS.wait_for, 60000);
+  });
+
+  it('back + forward keep a 30s nav window', () => {
+    assert.equal(TIMEOUTS.back, 30000);
+    assert.equal(TIMEOUTS.forward, 30000);
+  });
+
+  it('interactive ops (click/type/press/scroll/hover/select/drag) cap at 15s', () => {
+    for (const tool of ['click', 'type', 'press', 'scroll', 'hover', 'select', 'drag']) {
+      assert.equal(TIMEOUTS[tool], 15000, `${tool} should cap at 15s`);
+    }
+  });
+
+  it('snapshot + tabs + eval are bounded read-ish ops', () => {
+    assert.equal(TIMEOUTS.snapshot, 15000);
+    assert.equal(TIMEOUTS.tabs, 5000);
+    assert.equal(TIMEOUTS.eval, 15000);
+  });
+
+  it('heavy I/O ops (pdf/screenshot/upload) get 45s', () => {
+    assert.equal(TIMEOUTS.pdf, 45000);
+    assert.equal(TIMEOUTS.screenshot, 45000);
+    assert.equal(TIMEOUTS.upload, 45000);
   });
 });

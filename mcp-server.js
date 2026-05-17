@@ -12,6 +12,40 @@
 import { browse, connect } from './src/index.js';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
+
+/**
+ * Per-tool timeouts (ms). One blanket 30s was too short for SPA cold loads
+ * (goto regularly exceeded it on slow sites) and too long for instant ops
+ * like scroll. The split below is the H5 plan:
+ *   - navigation (goto/reload): 60s
+ *   - browser-history nav (back/forward): 30s
+ *   - interactive ops (click/type/press/scroll/hover/select/drag): 15s
+ *   - read-only ops (snapshot/tabs/eval/wait_for): 15s (wait_for has its own
+ *     internal deadline; this is the outer cap)
+ *   - heavy I/O (pdf/screenshot/upload): 45s
+ * Exported so tests can pin the contract.
+ */
+export const TIMEOUTS = {
+  goto: 60000,
+  reload: 60000,
+  back: 30000,
+  forward: 30000,
+  snapshot: 15000,
+  click: 15000,
+  type: 15000,
+  press: 15000,
+  scroll: 15000,
+  hover: 15000,
+  select: 15000,
+  drag: 15000,
+  tabs: 5000,
+  eval: 15000,
+  wait_for: 60000,
+  upload: 45000,
+  pdf: 45000,
+  screenshot: 45000,
+};
 
 // Optional: privacy assessment via wearehere
 let assessFn = null;
@@ -267,7 +301,7 @@ async function handleToolCall(name, args) {
       try { await page.injectCookies(args.url); } catch {}
       await page.goto(args.url);
       return 'ok';
-    }, 30000);
+    }, TIMEOUTS.goto);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
       const text = await page.snapshot();
@@ -277,22 +311,22 @@ async function handleToolCall(name, args) {
         return `Snapshot (${text.length} chars) saved to ${file}`;
       }
       return text;
-    }, 30000);
+    }, TIMEOUTS.snapshot);
     case 'click': return withRetry(async () => {
       const page = await getPage();
       await page.click(args.ref);
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.click, { retry: false });
     case 'type': return withRetry(async () => {
       const page = await getPage();
       await page.type(args.ref, args.text, { clear: args.clear });
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.type, { retry: false });
     case 'press': return withRetry(async () => {
       const page = await getPage();
       await page.press(args.key);
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.press, { retry: false });
     case 'scroll': return withRetry(async () => {
       const page = await getPage();
       let dy = args.deltaY;
@@ -304,31 +338,31 @@ async function handleToolCall(name, args) {
       }
       await page.scroll(dy);
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.scroll, { retry: false });
     case 'back': return withRetry(async () => {
       const page = await getPage();
       await page.goBack();
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.back, { retry: false });
     case 'forward': return withRetry(async () => {
       const page = await getPage();
       await page.goForward();
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.forward, { retry: false });
     case 'drag': return withRetry(async () => {
       const page = await getPage();
       await page.drag(args.fromRef, args.toRef);
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.drag, { retry: false });
     case 'upload': return withRetry(async () => {
       const page = await getPage();
       await page.upload(args.ref, args.files);
       return 'ok';
-    }, 30000, { retry: false });
+    }, TIMEOUTS.upload, { retry: false });
     case 'pdf': return withRetry(async () => {
       const page = await getPage();
       return await page.pdf({ landscape: args.landscape });
-    }, 30000);
+    }, TIMEOUTS.pdf);
     case 'assess': {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
       const releaseSlot = await acquireAssessSlot();
@@ -429,55 +463,55 @@ async function handleMessage(msg) {
 }
 
 // --- Stdio transport ---
+//
+// Guarded by isMain so tests can `import { TIMEOUTS } from 'mcp-server.js'`
+// without spawning the stdin loop, exit handlers, or signal handlers — the
+// loop would consume stdin meant for the test harness, the signal handlers
+// would intercept Ctrl-C, and process.exit calls would kill the test process.
 
-let buffer = '';
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
-process.stdin.setEncoding('utf8');
-process.stdin.on('data', (chunk) => {
-  buffer += chunk;
+if (isMain) {
+  let buffer = '';
 
-  let newlineIdx;
-  while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
-    const line = buffer.slice(0, newlineIdx).trim();
-    buffer = buffer.slice(newlineIdx + 1);
-    if (!line) continue;
+  process.stdin.setEncoding('utf8');
+  process.stdin.on('data', (chunk) => {
+    buffer += chunk;
 
-    try {
-      const msg = JSON.parse(line);
+    let newlineIdx;
+    while ((newlineIdx = buffer.indexOf('\n')) !== -1) {
+      const line = buffer.slice(0, newlineIdx).trim();
+      buffer = buffer.slice(newlineIdx + 1);
+      if (!line) continue;
 
-      handleMessage(msg).then((response) => {
-        if (response) {
+      try {
+        const msg = JSON.parse(line);
 
-          process.stdout.write(response + '\n');
-
-        }
-      }).catch((err) => {
-
-        process.stdout.write(jsonrpcError(msg.id, -32700, `Error: ${err.message}`) + '\n');
-      });
-    } catch (err) {
-
-      process.stdout.write(jsonrpcError(null, -32700, `Parse error: ${err.message}`) + '\n');
+        handleMessage(msg).then((response) => {
+          if (response) {
+            process.stdout.write(response + '\n');
+          }
+        }).catch((err) => {
+          process.stdout.write(jsonrpcError(msg.id, -32700, `Error: ${err.message}`) + '\n');
+        });
+      } catch (err) {
+        process.stdout.write(jsonrpcError(null, -32700, `Parse error: ${err.message}`) + '\n');
+      }
     }
-  }
-});
+  });
 
-// Prevent unhandled rejections and uncaught exceptions from crashing the server.
-// Browser OOM/crash rejects all pending CDP promises — some may not be awaited.
-process.on('unhandledRejection', (err) => {
-  _page = null;
-});
-process.on('uncaughtException', (err) => {
-  _page = null;
-});
+  // Prevent unhandled rejections and uncaught exceptions from crashing the server.
+  // Browser OOM/crash rejects all pending CDP promises — some may not be awaited.
+  process.on('unhandledRejection', () => { _page = null; });
+  process.on('uncaughtException', () => { _page = null; });
 
-// Clean up on exit
-process.on('SIGINT', async () => {
-  if (_page) await _page.close().catch(() => {});
-  process.exit(0);
-});
-
-process.on('SIGTERM', async () => {
-  if (_page) await _page.close().catch(() => {});
-  process.exit(0);
-});
+  // Clean up on exit
+  process.on('SIGINT', async () => {
+    if (_page) await _page.close().catch(() => {});
+    process.exit(0);
+  });
+  process.on('SIGTERM', async () => {
+    if (_page) await _page.close().catch(() => {});
+    process.exit(0);
+  });
+}
