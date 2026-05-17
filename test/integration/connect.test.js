@@ -24,6 +24,39 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('connect() forwards binary opt to launch (L2)', async () => {
+    await assert.rejects(
+      () => connect({ binary: '/definitely/not/a/real/browser/binary' }),
+      /Failed to launch browser|ENOENT/,
+      'a bogus binary path must reach launch() and fail',
+    );
+  });
+
+  it('connect() forwards userDataDir opt to launch (L2)', async () => {
+    const { mkdtempSync, rmSync, readdirSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const userDir = mkdtempSync(join(tmpdir(), 'bb-connect-l2-'));
+    let page;
+    try {
+      page = await connect({ userDataDir: userDir });
+      await page.goto('data:text/html,<h1>L2-test</h1>');
+      assert.ok(readdirSync(userDir).length > 0,
+        'Chromium must populate the user-supplied profile dir — proves connect() forwarded userDataDir');
+    } finally {
+      if (page) await page.close();
+      // Same post-exit race as cleanupBrowser — Chromium may still hold
+      // files briefly; retry rmSync on ENOTEMPTY/EBUSY.
+      for (let i = 0; i < 10; i++) {
+        try { rmSync(userDir, { recursive: true, force: true }); break; }
+        catch (e) {
+          if (e.code !== 'ENOTEMPTY' && e.code !== 'EBUSY') break;
+          await new Promise((r) => setTimeout(r, 100));
+        }
+      }
+    }
+  });
+
   it('goBack/goForward await navigation before returning (F8)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

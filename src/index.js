@@ -36,15 +36,18 @@ export async function browse(url, opts = {}) {
 
   let browser = null;
   let cdp = null;
+  // Forward caller-supplied launch knobs (binary, userDataDir, proxy) into
+  // every launch() call below, including hybrid-fallback re-launches.
+  const launchOpts = { proxy: opts.proxy, binary: opts.binary, userDataDir: opts.userDataDir };
 
   try {
     // Step 1: Get a CDP connection
     if (mode === 'headed') {
-      browser = await launch({ headed: true, proxy: opts.proxy });
+      browser = await launch({ ...launchOpts, headed: true });
       cdp = await createCDP(browser.wsUrl);
     } else {
       // headless or hybrid (start headless)
-      browser = await launch({ proxy: opts.proxy });
+      browser = await launch(launchOpts);
       cdp = await createCDP(browser.wsUrl);
     }
 
@@ -81,7 +84,7 @@ export async function browse(url, opts = {}) {
       await cleanupBrowser(browser); browser = null;
 
       try {
-        browser = await launch({ headed: true, proxy: opts.proxy });
+        browser = await launch({ ...launchOpts, headed: true });
         cdp = await createCDP(browser.wsUrl);
         page = await createPage(cdp, false, { viewport: opts.viewport });
         await suppressPermissions(cdp);
@@ -129,12 +132,15 @@ export async function connect(opts = {}) {
   const mode = opts.mode || 'headless';
   let browser = null;
   let cdp;
+  // Forward caller-supplied launch knobs into every launch() below,
+  // including hybrid-fallback re-launches inside goto().
+  const launchOpts = { proxy: opts.proxy, binary: opts.binary, userDataDir: opts.userDataDir };
 
   if (mode === 'headed') {
-    browser = await launch({ headed: true, proxy: opts.proxy });
+    browser = await launch({ ...launchOpts, headed: true });
     cdp = await createCDP(browser.wsUrl);
   } else {
-    browser = await launch({ proxy: opts.proxy });
+    browser = await launch(launchOpts);
     cdp = await createCDP(browser.wsUrl);
   }
 
@@ -187,7 +193,7 @@ export async function connect(opts = {}) {
         cdp.close();
         await cleanupBrowser(browser); browser = null;
 
-        browser = await launch({ proxy: opts.proxy });
+        browser = await launch(launchOpts);
         cdp = await createCDP(browser.wsUrl);
         page = await createPage(cdp, true, { viewport: opts.viewport });
         setupDialogHandler(page.session);
@@ -211,7 +217,7 @@ export async function connect(opts = {}) {
         await cleanupBrowser(browser); browser = null;
 
         try {
-          browser = await launch({ headed: true, proxy: opts.proxy });
+          browser = await launch({ ...launchOpts, headed: true });
           cdp = await createCDP(browser.wsUrl);
           page = await createPage(cdp, false, { viewport: opts.viewport });
           setupDialogHandler(page.session);

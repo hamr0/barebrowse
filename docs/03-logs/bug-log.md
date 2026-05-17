@@ -94,6 +94,16 @@ Also hardened `cleanupBrowser()` profile-dir rm with a brief ENOTEMPTY/EBUSY ret
 **Fix:** Extracted to `src/network-idle.js` (matches project's module split pattern). Track requestIds in a `Set` — `pending.add()` on `requestWillBeSent`, `pending.delete()` on `loadingFinished`/`loadingFailed`. `delete()` on an unknown key is a no-op, so orphan finish events are harmless. Resolve only when the set is empty for `idle` ms.
 **Regression test:** `test/unit/network-idle.test.js` — five cases including the load-bearing one: "orphan loadingFinished events do not resolve early (F9)" (fires three orphan finishes then a real request/finish, asserts the wait correctly held until the real request completed).
 
+---
+
+## [2026-05-17] connect()/browse() silently ignored binary + userDataDir opts (L2)
+
+**Symptom:** Documented `binary` and `userDataDir` options on `connect()` (MEMORY.md) had no effect — `findBrowser()` always ran and a random `/tmp/barebrowse-*` profile was always created. Callers wanting a specific browser binary or persistent profile dir had no path.
+**Root cause:** Neither `browse()` (src/index.js:32-118) nor `connect()` (src/index.js:127-138) read these options off `opts`. They built `launch({ proxy, headed })` and dropped everything else.
+**Fix:** Both functions now build a `launchOpts = { proxy, binary, userDataDir }` once and forward to every `launch()` call — including the two hybrid-fallback re-launches inside `goto()`. (The `port` option for attach-to-running-browser is deferred to H1.)
+**Regression test:** `test/integration/connect.test.js` — "connect() forwards binary opt to launch (L2)" (bogus binary path rejects with ENOENT) and "connect() forwards userDataDir opt to launch (L2)" (Chromium populates the caller's dir, proving the option reached launch).
+
+
 
 
 
