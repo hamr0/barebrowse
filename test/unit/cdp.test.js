@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { findBrowser, launch } from '../../src/chromium.js';
+import { findBrowser, launch, cleanupBrowser } from '../../src/chromium.js';
 import { createCDP } from '../../src/cdp.js';
 
 describe('findBrowser()', () => {
@@ -27,7 +27,39 @@ describe('launch()', () => {
       assert.ok(browser.port > 0, 'should have a port');
       assert.ok(browser.process.pid > 0, 'should have a process');
     } finally {
-      browser.process.kill();
+      await cleanupBrowser(browser);
+    }
+  });
+
+  it('cleanupBrowser removes the owned temp profile dir (F2)', async () => {
+    const { existsSync } = await import('node:fs');
+    const browser = await launch();
+    const dir = browser.ownedProfileDir;
+    assert.ok(dir && dir.startsWith('/tmp/barebrowse-'),
+      'launch should record the temp profile dir it created');
+    assert.ok(existsSync(dir), 'profile dir should exist while browser runs');
+    await cleanupBrowser(browser);
+    // Give the kernel a beat to release files (Chromium may still hold handles momentarily)
+    await new Promise((r) => setTimeout(r, 200));
+    assert.ok(!existsSync(dir), `profile dir should be removed after cleanup, still at ${dir}`);
+  });
+
+  it('cleanupBrowser leaves user-supplied profile dirs alone (F2)', async () => {
+    const { existsSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const userDir = mkdtempSync(join(tmpdir(), 'user-profile-'));
+    const browser = await launch({ userDataDir: userDir });
+    try {
+      assert.equal(browser.ownedProfileDir, null,
+        'caller-supplied dirs must not be marked as owned');
+    } finally {
+      await cleanupBrowser(browser);
+      await new Promise((r) => setTimeout(r, 200));
+      assert.ok(existsSync(userDir), 'user-supplied dir must survive cleanup');
+      // Test cleanup
+      const { rmSync } = await import('node:fs');
+      rmSync(userDir, { recursive: true, force: true });
     }
   });
 });
@@ -46,7 +78,7 @@ describe('createCDP()', () => {
         cdp.close();
       }
     } finally {
-      browser.process.kill();
+      await cleanupBrowser(browser);
     }
   });
 
@@ -71,7 +103,7 @@ describe('createCDP()', () => {
         cdp.close();
       }
     } finally {
-      browser.process.kill();
+      await cleanupBrowser(browser);
     }
   });
 });
@@ -104,7 +136,7 @@ describe('ARIA tree via CDP', () => {
         cdp.close();
       }
     } finally {
-      browser.process.kill();
+      await cleanupBrowser(browser);
     }
   });
 });

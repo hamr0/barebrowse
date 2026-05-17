@@ -8,7 +8,7 @@
  *   const snapshot = await browse('https://example.com');
  */
 
-import { launch } from './chromium.js';
+import { launch, cleanupBrowser } from './chromium.js';
 import { createCDP } from './cdp.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
@@ -77,7 +77,7 @@ export async function browse(url, opts = {}) {
     if (mode === 'hybrid' && isChallengePage(tree, nodeCount)) {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       cdp.close();
-      if (browser) { browser.process.kill(); browser = null; }
+      await cleanupBrowser(browser); browser = null;
 
       try {
         browser = await launch({ headed: true, proxy: opts.proxy });
@@ -113,7 +113,7 @@ export async function browse(url, opts = {}) {
     return snapshot;
   } finally {
     if (cdp) cdp.close();
-    if (browser) browser.process.kill();
+    await cleanupBrowser(browser);
   }
 }
 
@@ -179,7 +179,7 @@ export async function connect(opts = {}) {
       if (currentlyHeaded && mode === 'hybrid') {
         await cdp.send('Target.closeTarget', { targetId: page.targetId });
         cdp.close();
-        if (browser) { browser.process.kill(); browser = null; }
+        await cleanupBrowser(browser); browser = null;
 
         browser = await launch({ proxy: opts.proxy });
         cdp = await createCDP(browser.wsUrl);
@@ -202,7 +202,7 @@ export async function connect(opts = {}) {
       if (botBlocked && mode === 'hybrid') {
         await cdp.send('Target.closeTarget', { targetId: page.targetId });
         cdp.close();
-        if (browser) { browser.process.kill(); browser = null; }
+        await cleanupBrowser(browser); browser = null;
 
         try {
           browser = await launch({ headed: true, proxy: opts.proxy });
@@ -389,8 +389,8 @@ export async function connect(opts = {}) {
       return waitForNetworkIdle(page.session, idleOpts);
     },
 
-    /** Raw CDP session for escape hatch */
-    cdp: page.session,
+    /** Raw CDP session for escape hatch — getter so it survives hybrid fallback / tab swaps */
+    get cdp() { return page.session; },
 
     async createTab() {
       const tab = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
@@ -422,7 +422,7 @@ export async function connect(opts = {}) {
     async close() {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       cdp.close();
-      if (browser) browser.process.kill();
+      await cleanupBrowser(browser);
     },
   };
 }

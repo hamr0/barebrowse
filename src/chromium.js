@@ -6,7 +6,7 @@
  */
 
 import { execSync, spawn } from 'node:child_process';
-import { existsSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 
 // Common Chromium binary paths by platform (Linux focus for POC)
 const CANDIDATES = [
@@ -90,12 +90,14 @@ export async function launch(opts = {}) {
     args.push(`--proxy-server=${opts.proxy}`);
   }
 
+  // Track the temp profile dir only when we create one — caller-supplied dirs
+  // are the caller's to manage. ownedProfileDir gets rm'd in cleanupBrowser.
+  let ownedProfileDir = null;
   if (opts.userDataDir) {
     args.push(`--user-data-dir=${opts.userDataDir}`);
   } else {
-    // Use a unique temp profile so we don't lock the user's profile
-    // or conflict with parallel instances
-    args.push(`--user-data-dir=/tmp/barebrowse-${process.pid}-${Date.now()}`);
+    ownedProfileDir = `/tmp/barebrowse-${process.pid}-${Date.now()}`;
+    args.push(`--user-data-dir=${ownedProfileDir}`);
   }
 
   // about:blank as initial page
@@ -138,7 +140,29 @@ export async function launch(opts = {}) {
   // Extract port from wsUrl
   const actualPort = parseInt(new URL(wsUrl).port, 10);
 
-  return { wsUrl, process: child, port: actualPort };
+  return { wsUrl, process: child, port: actualPort, ownedProfileDir };
+}
+
+/**
+ * Kill a launched browser and remove its temp profile dir (if we created one).
+ * Waits up to 2s for the process to actually exit before unlinking the dir —
+ * Chromium can still hold files briefly after SIGTERM, which races rmSync.
+ * Safe to call on partially-failed launches or already-dead processes.
+ * @returns {Promise<void>}
+ */
+export async function cleanupBrowser(browser) {
+  if (!browser) return;
+  if (browser.process && !browser.process.killed && browser.process.exitCode === null) {
+    const exited = new Promise((resolve) => {
+      const timer = setTimeout(resolve, 2000);
+      browser.process.once('exit', () => { clearTimeout(timer); resolve(); });
+    });
+    try { browser.process.kill(); } catch {}
+    await exited;
+  }
+  if (browser.ownedProfileDir) {
+    try { rmSync(browser.ownedProfileDir, { recursive: true, force: true }); } catch {}
+  }
 }
 
 /**
