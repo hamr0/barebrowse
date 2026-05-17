@@ -157,6 +157,52 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('snapshot surfaces iframe content + clicks resolve to the iframe session (H2)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      // Outer page hosts an iframe whose body contains a button. With
+      // --site-per-process the iframe becomes OOPIF and gets its own CDP
+      // session; pre-H2 we never read that session's AX tree, so the iframe
+      // was invisible to snapshot and unreachable to click. The button
+      // rewrites its own label on click so we can verify the click landed
+      // inside the iframe via a re-snapshot (cross-origin DOM access is
+      // blocked from the parent, so we can't peek through contentDocument).
+      const inner = encodeURIComponent('<html><body><button id="b">CLICK-ME-IN-IFRAME</button>'
+        + '<script>document.getElementById("b").addEventListener("click",'
+        + '()=>{document.getElementById("b").textContent="CLICKED-IN-IFRAME"})</script>'
+        + '</body></html>');
+      const outer = encodeURIComponent(`<html><body><h1>OUTER-PAGE</h1>`
+        + `<iframe id="f" src="data:text/html,${inner}" width="400" height="200"></iframe>`
+        + `</body></html>`);
+      await page.goto(`data:text/html,${outer}`);
+      // Iframes can finish loading slightly after the outer page's load event;
+      // give Target.attachedToTarget a beat to register the child session.
+      await new Promise((r) => setTimeout(r, 500));
+
+      const snap = await page.snapshot();
+      assert.ok(snap.includes('OUTER-PAGE'),
+        `snapshot should include outer page content, got:\n${snap}`);
+      assert.ok(snap.includes('CLICK-ME-IN-IFRAME'),
+        `snapshot must surface iframe content (H2 — without merge, iframe is invisible), got:\n${snap}`);
+
+      // Pull the button's ref out of the merged snapshot and click it. If the
+      // refMap entry's session is wrong (parent vs iframe), the click either
+      // hits the wrong element or DOM.getBoxModel returns frame-local coords
+      // that don't map to anything in the parent viewport.
+      const refMatch = snap.match(/button[^[]*CLICK-ME-IN-IFRAME[^[]*\[ref=(\d+)\]/);
+      assert.ok(refMatch, `expected a [ref=N] for the iframe button, got:\n${snap}`);
+      await page.click(refMatch[1]);
+
+      // Re-snapshot — the iframe button should now show its post-click label.
+      // This proves the click dispatched into the OOPIF (not the parent doc).
+      const snap2 = await page.snapshot();
+      assert.ok(snap2.includes('CLICKED-IN-IFRAME'),
+        `click(ref) must dispatch in the iframe session — expected "CLICKED-IN-IFRAME" in re-snapshot, got:\n${snap2}`);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('switchTab actually swaps the working session (F4)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

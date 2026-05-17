@@ -115,6 +115,14 @@ export async function launch(opts = {}) {
     '--disable-sync',
     '--disable-translate',
     '--mute-audio',
+    // Force every iframe (same-origin included) into its own renderer so it
+    // gets a dedicated CDP session via Target.setAutoAttach. Without this,
+    // same-origin iframes stay in the parent process — getFullAXTree still
+    // works via frameId, but Input.dispatchMouseEvent on the parent session
+    // uses parent-viewport coords while DOM.getBoxModel for iframe-internal
+    // nodes returns frame-local coords, so clicks land off-target. The OOPIF
+    // path side-steps that: each frame has its own Input domain.
+    '--site-per-process',
     // Headless-only flags
     ...(!opts.headed ? ['--headless=new', '--hide-scrollbars'] : []),
     // Suppress permission prompts (location, notifications, camera, mic, etc.)

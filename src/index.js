@@ -295,15 +295,15 @@ export async function connect(opts = {}) {
     },
 
     async click(ref) {
-      const backendNodeId = refMap.get(ref);
-      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
-      await cdpClick(page.session, backendNodeId);
+      const entry = refMap.get(ref);
+      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      await cdpClick(entry.session, entry.backendNodeId);
     },
 
     async type(ref, text, typeOpts) {
-      const backendNodeId = refMap.get(ref);
-      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
-      await cdpType(page.session, backendNodeId, text, typeOpts);
+      const entry = refMap.get(ref);
+      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      await cdpType(entry.session, entry.backendNodeId, text, typeOpts);
     },
 
     async scroll(deltaY) {
@@ -315,29 +315,34 @@ export async function connect(opts = {}) {
     },
 
     async hover(ref) {
-      const backendNodeId = refMap.get(ref);
-      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
-      await cdpHover(page.session, backendNodeId);
+      const entry = refMap.get(ref);
+      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      await cdpHover(entry.session, entry.backendNodeId);
     },
 
     async select(ref, value) {
-      const backendNodeId = refMap.get(ref);
-      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
-      await cdpSelect(page.session, backendNodeId, value);
+      const entry = refMap.get(ref);
+      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      await cdpSelect(entry.session, entry.backendNodeId, value);
     },
 
     async drag(fromRef, toRef) {
-      const fromId = refMap.get(fromRef);
-      const toId = refMap.get(toRef);
-      if (!fromId) throw new Error(`No element found for ref "${fromRef}"`);
-      if (!toId) throw new Error(`No element found for ref "${toRef}"`);
-      await cdpDrag(page.session, fromId, toId);
+      const from = refMap.get(fromRef);
+      const to = refMap.get(toRef);
+      if (!from) throw new Error(`No element found for ref "${fromRef}"`);
+      if (!to) throw new Error(`No element found for ref "${toRef}"`);
+      // Drag across different frames isn't physically meaningful — bail
+      // rather than mix sessions and produce nonsense coordinates.
+      if (from.session !== to.session) {
+        throw new Error('drag() between elements in different frames is not supported');
+      }
+      await cdpDrag(from.session, from.backendNodeId, to.backendNodeId);
     },
 
     async upload(ref, files) {
-      const backendNodeId = refMap.get(ref);
-      if (!backendNodeId) throw new Error(`No element found for ref "${ref}"`);
-      await cdpUpload(page.session, backendNodeId, files);
+      const entry = refMap.get(ref);
+      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      await cdpUpload(entry.session, entry.backendNodeId, files);
     },
 
     async pdf(pdfOpts = {}) {
@@ -536,7 +541,55 @@ async function createPage(cdp, stealth = false, pageOpts = {}) {
     }
   }
 
-  return { session, targetId, sessionId };
+  // Track child frame sessions (OOPIF) so ariaTree() can read across frame
+  // boundaries. Same-origin iframes don't get their own session and stay
+  // queryable via the main session with a frameId param — see ariaTree().
+  const framesByFrameId = await attachFrameTracking(cdp, session);
+
+  return { session, targetId, sessionId, framesByFrameId };
+}
+
+/**
+ * Wire Target.setAutoAttach on a page session so every OOPIF child target gets
+ * its own CDP session, enabled and registered. Returns a live Map<frameId,
+ * { session, sessionId, targetId }> that updates as frames attach/detach.
+ */
+async function attachFrameTracking(cdp, mainSession) {
+  const framesByFrameId = new Map();
+
+  mainSession.on('Target.attachedToTarget', async (params) => {
+    if (params.targetInfo?.type !== 'iframe') return;
+    const childSessionId = params.sessionId;
+    const childSession = cdp.session(childSessionId);
+    // For OOPIF, targetId === frameId — see CDP Target domain docs.
+    const frameId = params.targetInfo.targetId;
+    framesByFrameId.set(frameId, { session: childSession, sessionId: childSessionId, targetId: frameId });
+    // Enable domains on the child so we can read its AX tree.
+    // Recursively auto-attach so nested OOPIF iframes also get sessions.
+    try { await childSession.send('Page.enable'); } catch {}
+    try { await childSession.send('DOM.enable'); } catch {}
+    try {
+      await childSession.send('Target.setAutoAttach', {
+        autoAttach: true, flatten: true, waitForDebuggerOnStart: false,
+      });
+    } catch {}
+    try { await childSession.send('Runtime.runIfWaitingForDebugger'); } catch {}
+  });
+
+  mainSession.on('Target.detachedFromTarget', (params) => {
+    for (const [frameId, entry] of framesByFrameId) {
+      if (entry.sessionId === params.sessionId) {
+        framesByFrameId.delete(frameId);
+        return;
+      }
+    }
+  });
+
+  await mainSession.send('Target.setAutoAttach', {
+    autoAttach: true, flatten: true, waitForDebuggerOnStart: false,
+  });
+
+  return framesByFrameId;
 }
 
 /**
@@ -549,7 +602,8 @@ async function attachToExistingTarget(cdp, targetId) {
   await session.send('Page.enable');
   await session.send('Network.enable');
   await session.send('DOM.enable');
-  return { session, targetId, sessionId };
+  const framesByFrameId = await attachFrameTracking(cdp, session);
+  return { session, targetId, sessionId, framesByFrameId };
 }
 
 /**
@@ -565,37 +619,111 @@ async function navigate(page, url, timeout = 30000) {
 
 /**
  * Get the ARIA accessibility tree for a page as a nested object.
+ *
+ * Walks every frame (main + iframes) via Page.getFrameTree, queries each
+ * frame's AX tree on the right session (child session for OOPIF, main
+ * session with frameId param for same-origin), and splices child frame
+ * trees under their iframe placeholders in the parent. Refs are assigned
+ * by a flat global counter so click/type/etc can resolve the right session
+ * without the agent having to think about frames at all.
  */
 async function ariaTree(page) {
-  await page.session.send('Accessibility.enable');
-  const { nodes } = await page.session.send('Accessibility.getFullAXTree');
-  const tree = buildTree(nodes);
+  const main = page.session;
+  await main.send('Accessibility.enable');
 
-  // Build ref → backendDOMNodeId map in one pass over raw CDP nodes
+  // 1. Linearize the frame tree depth-first: index 0 is the main frame.
+  const { frameTree } = await main.send('Page.getFrameTree');
+  const frames = [];
+  (function walk(node, parentId) {
+    frames.push({ frame: node.frame, parentId });
+    for (const child of node.childFrames || []) walk(child, node.frame.id);
+  })(frameTree, null);
+
+  // 2. For each frame, fetch its AX nodes and build a tree. refMap value is
+  //    { session, backendNodeId } so click(ref) routes to the right CDP
+  //    session (essential for cross-process iframes). refCounter is shared
+  //    across all frames in one snapshot — refs stay flat integers, so the
+  //    visible [ref=N] format and existing agent prompts don't change.
   const refMap = new Map();
-  for (const node of nodes) {
-    if (node.backendDOMNodeId) {
-      refMap.set(node.nodeId, node.backendDOMNodeId);
+  const treesByFrameId = new Map();
+  const sessionByFrameId = new Map();
+  const refCounter = { value: 1 };
+  let totalNodes = 0;
+
+  for (let i = 0; i < frames.length; i++) {
+    const { frame } = frames[i];
+    const childEntry = page.framesByFrameId?.get(frame.id);
+    const frameSession = childEntry ? childEntry.session : main;
+    sessionByFrameId.set(frame.id, frameSession);
+
+    let nodes = [];
+    try {
+      if (childEntry) {
+        // OOPIF — use the child session, no frameId param needed.
+        try { await frameSession.send('Accessibility.enable'); } catch {}
+        const res = await frameSession.send('Accessibility.getFullAXTree');
+        nodes = res.nodes;
+      } else {
+        // Main frame or same-origin child — query main session, scoping by
+        // frameId for children (Accessibility.getFullAXTree without frameId
+        // would just return the top frame, dropping same-origin iframe content).
+        const params = i === 0 ? {} : { frameId: frame.id };
+        const res = await main.send('Accessibility.getFullAXTree', params);
+        nodes = res.nodes;
+      }
+    } catch {
+      // Frame may have navigated mid-snapshot — skip it rather than fail
+      // the whole snapshot. The placeholder iframe node will simply have
+      // no children in the merged tree.
+      continue;
+    }
+
+    totalNodes += nodes.length;
+    const tree = buildTree(nodes, frameSession, refMap, refCounter);
+    if (tree) treesByFrameId.set(frame.id, tree);
+  }
+
+  // 3. Splice each child frame's tree under its iframe placeholder node in
+  //    the parent. DOM.getFrameOwner gives the iframe element's
+  //    backendNodeId in the parent's view; we match it against AX nodes.
+  for (const { frame, parentId } of frames) {
+    if (parentId === null) continue;
+    const parentTree = treesByFrameId.get(parentId);
+    const childTree = treesByFrameId.get(frame.id);
+    if (!parentTree || !childTree) continue;
+    const parentSession = sessionByFrameId.get(parentId);
+    try {
+      const { backendNodeId } = await parentSession.send('DOM.getFrameOwner', { frameId: frame.id });
+      const placeholder = findNodeByBackend(parentTree, backendNodeId);
+      if (placeholder) placeholder.children = [childTree];
+    } catch {
+      // Frame owner lookup failed — leave the iframe placeholder as-is.
     }
   }
 
-  return { tree, refMap, nodeCount: nodes.length };
+  const root = treesByFrameId.get(frames[0].frame.id) || null;
+  return { tree: root, refMap, nodeCount: totalNodes };
 }
 
 /**
- * Transform CDP's flat AXNode array into a nested tree.
+ * Transform CDP's flat AXNode array into a nested tree. Every tree node gets
+ * a globally unique flat ref string from `refCounter` (shared across all
+ * frames in one snapshot), and refMap is populated with ref → { session,
+ * backendNodeId } so click/type can route to the right CDP session even when
+ * the element lives in an iframe.
  * CDP nodes have parentId — we use that exclusively to avoid double-linking.
  */
-function buildTree(nodes) {
+function buildTree(nodes, session, refMap, refCounter) {
   if (!nodes || nodes.length === 0) return null;
 
   const nodeMap = new Map();
-  const linked = new Set(); // track which nodes have been linked to a parent
+  const linked = new Set();
 
-  // First pass: create tree nodes
+  // First pass: create tree nodes + populate refMap with flat global refs
   for (const node of nodes) {
+    const ref = String(refCounter.value++);
     nodeMap.set(node.nodeId, {
-      nodeId: node.nodeId,
+      nodeId: ref,
       backendDOMNodeId: node.backendDOMNodeId,
       role: node.role?.value || '',
       name: node.name?.value || '',
@@ -603,6 +731,9 @@ function buildTree(nodes) {
       ignored: node.ignored || false,
       children: [],
     });
+    if (node.backendDOMNodeId && refMap) {
+      refMap.set(ref, { session, backendNodeId: node.backendDOMNodeId });
+    }
   }
 
   // Second pass: link via parentId only (avoids duplicates from childIds)
@@ -621,6 +752,16 @@ function buildTree(nodes) {
   }
 
   return root;
+}
+
+function findNodeByBackend(node, backendNodeId) {
+  if (!node) return null;
+  if (node.backendDOMNodeId === backendNodeId) return node;
+  for (const child of node.children || []) {
+    const found = findNodeByBackend(child, backendNodeId);
+    if (found) return found;
+  }
+  return null;
 }
 
 function extractProps(props) {
