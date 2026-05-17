@@ -290,14 +290,9 @@ function findAcceptButton(dialogId, nodes, nodeMap, parentMap) {
  * Only matches strong patterns (not single-word fallbacks) to avoid false positives.
  */
 function tryGlobalConsentButton(nodes, session) {
-  // Only use the specific multi-word patterns for global search
-  const strictPatterns = ACCEPT_PATTERNS.filter((p) => {
-    const src = p.source;
-    return src.includes('\\s') || src.includes('\\b.*\\b.*\\b');
-  });
-
-  // Actually, let's just use all non-single-word patterns
-  const safePatterns = ACCEPT_PATTERNS.slice(0, -3); // exclude ^accept$, ^agree$, ^ok$
+  // Multi-word patterns only — exclude the bare ^accept$/^agree$/^ok$ from
+  // ACCEPT_PATTERNS so we don't false-match unrelated buttons page-wide.
+  const safePatterns = ACCEPT_PATTERNS.slice(0, -3);
 
   for (const pattern of safePatterns) {
     for (const node of nodes) {
