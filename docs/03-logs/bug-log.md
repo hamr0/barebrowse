@@ -67,6 +67,16 @@ Also hardened `cleanupBrowser()` profile-dir rm with a brief ENOTEMPTY/EBUSY ret
 **Fix:** `withRetry` now accepts `{ retry = true }`. Idempotent tools (`goto`, `snapshot`, `pdf`) keep the default; state-mutating tools (`click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`) pass `{ retry: false }`. The session is still nulled on transient failure so the next request gets a fresh page.
 **Regression test:** `test/unit/mcp.test.js` — "with retry:false runs the fn exactly once on transient failure (F6)" and "with retry:false still throws non-transient errors normally (F6)"
 
+---
+
+## [2026-05-17] createTab() skipped the dialog handler (F7)
+
+**Symptom:** A JS dialog (alert/confirm/prompt) fired inside a sub-tab hung navigation forever — `Page.loadEventFired` never fired because the script that triggered the dialog blocked, and nothing was there to handle/dismiss it.
+**Root cause:** `setupDialogHandler()` was wired on the main page's session (and on every hybrid-fallback session) but `createTab()` (src/index.js) created a new target/session without calling it.
+**Fix:** Add `setupDialogHandler(tab.session)` after `createPage`/`suppressPermissions` in `createTab()`. The `dialogLog` closure is shared, so dialogs from tabs land in the outer `page.dialogLog`.
+**Regression test:** `test/integration/connect.test.js` — "createTab wires dialog handler so dialogs do not hang navigation (F7)" (creates a tab, navigates to `data:text/html,<script>alert("from-tab")</script>` with a 10s timeout, asserts the alert is captured in `dialogLog`).
+
+
 
 
 

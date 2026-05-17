@@ -24,6 +24,23 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('createTab wires dialog handler so dialogs do not hang navigation (F7)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      const tab = await page.createTab();
+      const url = 'data:text/html,<html><body>hi<script>alert("from-tab")</script></body></html>';
+      // Without the dialog handler the alert() blocks script execution and
+      // Page.loadEventFired never fires — navigate() would hang to timeout.
+      // 10s gives us a clear failure rather than the integration suite's full hang.
+      await tab.goto(url, 10000);
+      assert.ok(page.dialogLog.some((d) => d.message === 'from-tab'),
+        `tab's alert should be captured in dialogLog, got: ${JSON.stringify(page.dialogLog)}`);
+      await tab.close();
+    } finally {
+      await page.close();
+    }
+  });
+
   it('goto invalidates refMap so stale refs error clearly (F5)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

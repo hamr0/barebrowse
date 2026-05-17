@@ -410,6 +410,7 @@ export async function connect(opts = {}) {
     async createTab() {
       const tab = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
       await suppressPermissions(cdp);
+      setupDialogHandler(tab.session);
       let tabBotBlocked = false;
       return {
         async goto(url, timeout = 30000) {
