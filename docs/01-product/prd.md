@@ -1,8 +1,8 @@
 # barebrowse — Product Requirements Document
 
-**Version:** 1.0
-**Date:** 2026-02-22
-**Status:** POC
+**Version:** 1.1
+**Date:** 2026-05-17
+**Status:** Phase A (stability fixes) complete @ v0.8.0; Phase B (headed enhancements) queued — see `docs/02-features/fix-plan.md`
 
 ---
 
@@ -253,11 +253,13 @@ This section exists so we don't re-debate settled decisions.
 ## Future Features (Post-POC)
 
 ### Near-term
-- **Screenshot capture** — `Page.captureScreenshot` via CDP. Useful for visual verification and multimodal agents.
-- **Network interception** — `Network.requestWillBeSent` / `Network.responseReceived` for monitoring page loads. Detect redirects, blocked resources, API calls.
-- **Wait strategies** — `waitForNavigation()` done (Page.loadEventFired). Still needed: network idle, element presence polling.
-- **Tab management** — Multiple pages in one browser session. CDP `Target.createTarget` / `Target.attachToTarget`. *(Done: `createTab()` in v0.5.4, used by assess for session reuse. Tabs get consent dismissal + proper cleanup since v0.5.6)*
-- **MCP server wrapper** — Expose browse/click/type as MCP tools. Replaces Playwright MCP + mcprune combo.
+- **Screenshot capture** — *(Done: `page.screenshot()` returns base64 PNG/JPEG/WebP.)*
+- **Wait strategies** — *(Done: `waitForNavigation`, `waitForNetworkIdle`, `waitFor({text|selector})`. F9 in v0.8.0 made network-idle resilient to orphan finish events.)*
+- **Tab management** — *(Done: `createTab()`, `tabs()`. F4 in v0.8.0 made `switchTab()` actually swap the working session; F7 wired the dialog handler on sub-tabs.)*
+- **MCP server wrapper** — *(Done: `mcp-server.js`, 12 tools, raw JSON-RPC 2.0 over stdio. v0.8.0 reworded `browse`/`goto` descriptions and split retry semantics per F6.)*
+- **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Queued as Phase B / H7.
+- **Attach to a running browser** — `connect({ port })` reuses the user's already-running Chrome session (no profile clone, no re-injected cookies). Helper (`getDebugUrl`) exists but unwired. Queued as Phase B / H1.
+- **iframe / OOPIF support** — `Accessibility.getFullAXTree` does NOT cross frame boundaries; Stripe / reCAPTCHA / embedded forms are invisible. Queued as Phase B / H2 — biggest blocker to real-world automation.
 
 ### Medium-term
 - **Firefox support** — Via WebDriver BiDi protocol (cross-browser standard, still maturing). Second protocol adapter alongside CDP.

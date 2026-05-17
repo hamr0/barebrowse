@@ -1,5 +1,64 @@
 # Changelog
 
+## 0.8.0
+
+Stability release — 11 fixes from the QA review of 2026-05-17. Adds a
+new module (`network-idle.js`), introduces `cleanupBrowser()` helper,
+and forwards `binary`/`userDataDir` opts through `connect()`/`browse()`.
+17 new regression tests. 97/97 tests pass.
+
+See `docs/02-features/fix-plan.md` for the full scope and the per-fix
+entries in `docs/03-logs/bug-log.md`. Headlines:
+
+### Lifecycle & cleanup
+- **F2/F3:** Temp profile dirs no longer leak. New `cleanupBrowser()` helper
+  awaits process exit, retries `rmSync` on ENOTEMPTY/EBUSY. On parent
+  crash, module-level `process.on('exit'|'SIGINT'|'SIGTERM'|'SIGHUP')`
+  handlers SIGKILL all tracked browsers and reap their dirs.
+- **F1:** `page.cdp` escape hatch is now a getter — survives hybrid
+  fallback / `switchTab` swapping the underlying session. Previously
+  `daemon.js` console + network listeners silently died after any
+  fallback.
+
+### Correctness fixes
+- **F4:** `switchTab(idx)` now actually swaps the working CDP session
+  (re-attaches and rebinds the closure). Was only foregrounding the tab.
+- **F5:** `goto()` invalidates `refMap` so stale refs from the prior page
+  error clearly instead of resolving wrong-element clicks.
+- **F8:** `goBack()`/`goForward()` await `Page.loadEventFired` instead of
+  a fixed 500ms sleep — snapshots taken immediately after now reliably
+  reflect the new page. Also invalidate `refMap`.
+- **F9:** `waitForNetworkIdle` extracted to `src/network-idle.js`; uses a
+  Set of requestIds so orphan finish events can't drive the tracker
+  negative and resolve early.
+
+### MCP server
+- **F6:** `withRetry({ retry: false })` for state-mutating tools
+  (`click`/`type`/`press`/`scroll`/`back`/`forward`/`drag`/`upload`).
+  Idempotent tools (`goto`/`snapshot`/`pdf`) keep the retry default.
+  Mutating ops no longer double-submit on a fresh blank page after a
+  partial first attempt.
+- `browse`/`goto` tool descriptions reworded to position `browse` as the
+  headless fallback (not a competitor to WebFetch) and `goto` as the
+  explicit interactive-session entrypoint.
+
+### Tab handling
+- **F7:** `createTab()` wires the dialog handler on the new tab's
+  session — JS dialogs in sub-tabs no longer hang navigation forever.
+
+### API
+- **L2:** `connect()`/`browse()` now honor `binary` and `userDataDir`
+  opts (forwarded through all `launch()` calls including hybrid
+  fallback). `port` opt for attach-to-running-browser is queued for the
+  next release (H1 in `fix-plan.md`).
+- **L1:** Dropped dead `strictPatterns` block in `consent.js`.
+
+### Tests
+- 17 new regression tests across `cdp.test.js`, `mcp.test.js`,
+  `network-idle.test.js`, `connect.test.js` + a subprocess fixture
+  (`test/fixtures/launch-and-wait.mjs`). Total: 97 (44 unit + 53
+  integration).
+
 ## 0.7.1
 
 Fix: timeout now triggers auto-retry instead of bypassing it.

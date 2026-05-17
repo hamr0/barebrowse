@@ -1,11 +1,11 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.7.1 | Node.js >= 22 | 0 required deps | MIT
+> v0.8.0 | Node.js >= 22 | 0 required deps | Apache-2.0
 
 ## What this is
 
-barebrowse is a CDP-direct browsing library for autonomous agents (~1,800 lines). URL in, pruned ARIA snapshot out. It launches the user's installed Chromium browser, navigates, handles consent/permissions/cookies, and returns a token-efficient ARIA tree with `[ref=N]` markers for interaction.
+barebrowse is a CDP-direct browsing library for autonomous agents (~3,300 lines in `src/` across 14 modules). URL in, pruned ARIA snapshot out. It launches the user's installed Chromium browser, navigates, handles consent/permissions/cookies, and returns a token-efficient ARIA tree with `[ref=N]` markers for interaction.
 
 No Playwright. No bundled browser. No build step. Vanilla JS, ES modules.
 
