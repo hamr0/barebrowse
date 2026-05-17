@@ -140,6 +140,17 @@ Also added `--site-per-process` to launch flags so every iframe — including sa
 **Fix:** `applyStealth()` now also runs `Network.setUserAgentOverride` with the real UA returned by `Browser.getVersion`, just with `HeadlessChrome` rewritten to `Chrome` — keeps the version + platform fields accurate across Chromium releases instead of hardcoding a stale UA. The injected `STEALTH_SCRIPT` now also patches: `WebGLRenderingContext.prototype.getParameter` (and `WebGL2`) to return `Intel Inc.` / `Intel Iris OpenGL Engine` for parameters 37445 and 37446; `navigator.hardwareConcurrency` and `navigator.deviceMemory` to 8; the full `chrome.runtime` enum shape (PlatformOs, OnInstalledReason, …) that real Chrome ships even with no extensions; and the Notification API — when missing entirely we fake the constructor + `permission: 'default'` + a no-op `requestPermission()`; when present we just override the `permission` getter. `Permissions.query` for notifications now reflects `Notification.permission` instead of returning a hardcoded `'prompt'` (which was itself a tell).
 **Regression test:** `test/integration/stealth.test.js` — new file. Spins up a localhost HTTP server (`127.0.0.1` is a "potentially trustworthy" origin per the Secure Contexts spec, so `Notification` is observable from there — `data:`/`about:blank` are insecure and the API is hidden) and asserts `navigator.webdriver`, the cleaned UA, `hardwareConcurrency`, `deviceMemory`, `Notification.permission`, `chrome.runtime.PlatformOs`, both WebGL UNMASKED params, plugin count, and languages all read as the spoofed values.
 
+---
+
+## [2026-05-17] Blanket 30s MCP timeout was wrong in both directions (H5)
+
+**Symptom:** Every MCP tool shared a single 30s `withRetry` deadline. `goto` regularly exceeded it on SPA cold loads (the v0.7.0 fix surfaced this — see "Timeout bypasses auto-retry" above), while `scroll`/`press`/`click` waited 30s before failing on dead sessions when they should give up in <15s.
+**Fix:** New `TIMEOUTS` table in `mcp-server.js`, exported so tests can pin it. Split: `goto`/`reload`/`wait_for` get 60s (SPA cold loads); `back`/`forward` get 30s (navigation); `click`/`type`/`press`/`scroll`/`hover`/`select`/`drag`/`snapshot`/`eval` get 15s (interactive/read ops); `tabs` gets 5s (instant); `pdf`/`screenshot`/`upload` get 45s (heavy I/O). Every `handleToolCall` site now reads `TIMEOUTS[name]` instead of a hardcoded literal.
+
+Also wrapped the stdin transport + `unhandledRejection` / `uncaughtException` / `SIGINT` / `SIGTERM` handlers in an `if (isMain)` block (URL match between `import.meta.url` and `pathToFileURL(process.argv[1])`). Without this, `import { TIMEOUTS } from 'mcp-server.js'` from a test would attach a stdin reader that consumes the test runner's stdin, install signal handlers that intercept Ctrl-C, and register `process.exit(0)` callbacks. Same isMain pattern baremobile uses for its MCP server.
+
+**Regression test:** `test/unit/mcp.test.js` — new "per-tool MCP timeouts (H5)" describe block with five assertions pinning each timeout. Reverts to the blanket 30s fail loudly.
+
 
 
 
