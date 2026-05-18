@@ -178,6 +178,14 @@ Also wrapped the stdin transport + `unhandledRejection` / `uncaughtException` / 
 **Fix:** `setupDialogHandler` now checks a closure variable `onDialogHandler` after pushing the log entry. If set, calls it with `{ type, message, defaultPrompt }`, awaits the result, and uses `{ accept, promptText }` to override the defaults. Handler exceptions are swallowed back to defaults so a buggy handler doesn't hang the page on a never-replied dialog. New `page.onDialog(handler)` method on the connect() return — pass `null` to restore the default. Handler is persistent across hybrid fallback, switchTab, createTab (every `setupDialogHandler` call reads the same closure variable).
 **Regression test:** `test/integration/connect.test.js` — "onDialog handler overrides the default auto-accept (H8)" (installs a handler that rejects confirm and supplies a custom string to prompt; the page writes both results back into the DOM via `document.getElementById('c').textContent = 'CONFIRM-' + c`; snapshot proves the dialog replies reached the JS context; then removes the handler with `page.onDialog(null)` and confirms a fresh dialog auto-accepts again).
 
+---
+
+## [2026-05-18] isChallengePage flagged legitimate small + error pages as bot challenges (H9)
+
+**Symptom:** The hybrid-fallback gate `isChallengePage(tree, nodeCount)` had two false-positive classes: (1) `nodeCount < 50` alone triggered on any minimal legitimate page — 404s, simple landings, status pages, single-button consent pages — kicking hybrid mode into a costly headed-browser launch for nothing; (2) generic phrases `'access denied'`, `'permission denied'`, `'unknown error'`, `'file a ticket'` in the always-fire list flagged real HTTP 4xx/5xx error pages as challenges, again forcing the headed fallback on legitimate errors.
+**Fix:** Split into STRONG_PHRASES (essentially-unambiguous challenge UI like Cloudflare's "Just a moment", "Attention Required", "verify you are human", "checking your browser") that fire alone regardless of page size, and WEAK_PHRASES (the previously over-eager phrases) that only fire when the page is ALSO tiny (`nodeCount < 30` OR `text.length < 50`). Pure low-node-count without any phrase no longer flags — that path was the noisiest source of false fallbacks. `tree === null` still flags as a sentinel for "AX tree fetch failed". Exported `isChallengePage` so the unit tests can pin the contract.
+**Regression test:** `test/unit/challenge.test.js` — new file, nine tests. Three sections: strong phrases fire on content-rich pages (Just-a-moment, verify-you-are-human, Attention-Required); generic phrases do NOT flag a real 403 with "access denied" body or a real 500 with "unknown error" body (the load-bearing pre-H9 false positives) but DO still flag when on a near-empty page; small legitimate pages (5-node landing, 4-node 404) no longer auto-flag; null tree still flags.
+
 
 
 

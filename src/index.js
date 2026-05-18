@@ -881,34 +881,58 @@ function extractProps(props) {
 }
 
 /**
- * Detect if a page is a bot-challenge page (Cloudflare, etc.).
- * Heuristic: low ARIA node count, short text, or known challenge phrases.
+ * Detect if a page is a bot-challenge page (Cloudflare, hCaptcha, etc.).
+ *
+ * Pre-H9 this was over-aggressive: `nodeCount < 50` alone fired on any
+ * legitimate small page (404s, simple landings, error pages), and generic
+ * phrases like "access denied" / "unknown error" / "permission denied"
+ * triggered on real HTTP 4xx/5xx pages, kicking hybrid mode into a costly
+ * headed fallback for nothing.
+ *
+ * H9 split: STRONG_PHRASES are essentially-unambiguous challenge UI and
+ * fire regardless of page size; WEAK_PHRASES only fire when the page is
+ * ALSO tiny (so a legitimate-looking error page with "access denied" in
+ * its body doesn't trip the fallback).
+ *
  * @param {object} tree - Nested ARIA tree (from buildTree)
  * @param {number} [nodeCount] - Raw CDP node count (from Accessibility.getFullAXTree)
  */
-function isChallengePage(tree, nodeCount) {
-  if (!tree) return true;
-  // Real pages have 50+ ARIA nodes. Bot challenges have <20.
-  if (nodeCount !== undefined && nodeCount < 50) return true;
+export function isChallengePage(tree, nodeCount) {
+  if (!tree) return true; // truly empty AX tree — something went wrong fetching the page
+
   const text = flattenTreeText(tree);
-  // Near-empty pages are almost certainly blocks
-  if (text.trim().length < 50) return true;
-  const challengePhrases = [
-    'just a moment',
-    'checking if the site connection is secure',
-    'checking your browser',
-    'please wait',
-    'verify you are human',
+  const lower = text.toLowerCase();
+
+  // Strong phrases — distinctive enough to identify the challenge product
+  // by name. Fire on their own regardless of node count.
+  const STRONG_PHRASES = [
+    'just a moment',                            // Cloudflare interstitial
+    'checking if the site connection is secure', // Cloudflare
+    'checking your browser',                     // Various JS challenges
+    'verify you are human',                      // hCaptcha / reCAPTCHA
     'prove your humanity',
-    'attention required',
-    'file a ticket',
-    'unknown error',
+    'attention required',                        // Cloudflare block page
+    'enable javascript and cookies to continue', // Cloudflare
+    'please complete the security check',        // Cloudflare/Akamai
+  ];
+  if (STRONG_PHRASES.some((p) => lower.includes(p))) return true;
+
+  // Weak phrases — show up on real challenge pages but ALSO on legitimate
+  // small error pages. Only count when the page is itself tiny (low node
+  // count or near-empty text), which is the corroborating signal that
+  // separates a real error UI from a challenge skeleton.
+  const WEAK_PHRASES = [
+    'please wait',
+    'request blocked',
     'access denied',
     'permission denied',
-    'request blocked',
+    'unknown error',
+    'file a ticket',
   ];
-  const lower = text.toLowerCase();
-  return challengePhrases.some((p) => lower.includes(p));
+  const tinyPage = (nodeCount !== undefined && nodeCount < 30) || text.trim().length < 50;
+  if (tinyPage && WEAK_PHRASES.some((p) => lower.includes(p))) return true;
+
+  return false;
 }
 
 function flattenTreeText(node) {
