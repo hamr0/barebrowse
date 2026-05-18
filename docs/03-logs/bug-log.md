@@ -151,6 +151,17 @@ Also wrapped the stdin transport + `unhandledRejection` / `uncaughtException` / 
 
 **Regression test:** `test/unit/mcp.test.js` — new "per-tool MCP timeouts (H5)" describe block with five assertions pinning each timeout. Reverts to the blanket 30s fail loudly.
 
+---
+
+## [2026-05-18] MCP was missing half its surface — screenshot/eval/wait_for/tabs/select/hover/reload (H6)
+
+**Symptom:** `connect()` API, daemon, CLI, and `bareagent` adapter all exposed `screenshot`/`wait_for`/`tabs`/`select`/`hover`/`reload` (and the powerful `eval` escape hatch in CLI/daemon), but the MCP server only registered 12 tools — none of these. Claude Desktop / Cursor / Code agents couldn't reach them at all, forcing snapshot-only workflows and round-trips through `back`/`forward` instead of `reload`.
+**Fix:** Added all six as MCP tools in `mcp-server.js` with matching schemas, hooked into the `TIMEOUTS` table from H5 (`reload`: 60s; `screenshot`: 45s; `wait_for`: 60s; `tabs`: 5s; `select`/`hover`: 15s). `screenshot` saves the image to `.barebrowse/screenshot-*.{png,jpeg,webp}` and returns the file path (consistent with the snapshot save-to-file convention; raw base64 in a JSON-RPC response would blow `maxChars`). `tabs` either returns the JSON list or accepts `switchTo: N` to switch — one tool, two behaviors. Mutating tools use `{ retry: false }` since `withRetry` would replay them on a fresh page.
+
+**eval is gated behind `BAREBROWSE_MCP_EVAL=1`** — default off. Per the H6 discussion, `Runtime.evaluate` in the user's authenticated session is the load-bearing risk: an LLM agent with eval can read cookies/`localStorage`, hit any same-origin endpoint, post on the user's behalf. CLI/connect() keep it because the developer is the caller; MCP exposes the same primitive to an agent acting with less judgment. The opt-in env var makes the operator make a deliberate choice. The tool is registered conditionally at module load, AND the handler re-checks the env var as a second line of defense.
+
+**Regression test:** `test/unit/mcp.test.js` — new "MCP tool surface (H6)" describe block. (1) Asserts every new tool name is in the exported `TOOLS` array. (2) Asserts `eval` is absent when `BAREBROWSE_MCP_EVAL` is unset (the normal test run). (3) Spawns a child node with `BAREBROWSE_MCP_EVAL=1` set and a one-shot probe that imports `mcp-server.js` and stdouts whether `eval` is registered — proves the opt-in actually flips the registration.
+
 
 
 

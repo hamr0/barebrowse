@@ -136,7 +136,7 @@ function acquireAssessSlot() {
 }
 
 
-const TOOLS = [
+export const TOOLS = [
   {
     name: 'browse',
     description: 'One-shot headless browse — fetches a URL through a real browser (executes JS, injects cookies, dismisses consent, evades bot detection). Only when plain HTTP fetch can\'t render the page. Returns a pruned ARIA snapshot with [ref=N] markers. Stateless — for multi-step interaction use goto.',
@@ -261,7 +261,91 @@ const TOOLS = [
       },
     },
   },
+  {
+    name: 'reload',
+    description: 'Reload the current page in the session. Returns ok — call snapshot to observe.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ignoreCache: { type: 'boolean', description: 'Bypass HTTP cache (hard reload). Default: false.' },
+      },
+    },
+  },
+  {
+    name: 'screenshot',
+    description: 'Capture a screenshot of the current page. Saves to .barebrowse/screenshot-*.png (or .jpeg/.webp) and returns the file path. Use the file with your image tools.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        format: { type: 'string', enum: ['png', 'jpeg', 'webp'], description: 'Image format (default: png)' },
+        quality: { type: 'number', description: 'JPEG/WebP quality 0-100 (default: 80, ignored for PNG)' },
+      },
+    },
+  },
+  {
+    name: 'wait_for',
+    description: 'Wait for visible text or a CSS selector to appear on the current page. Returns ok when found, throws on timeout.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        text: { type: 'string', description: 'Substring that must appear in document.body.innerText' },
+        selector: { type: 'string', description: 'CSS selector that must match document.querySelector' },
+        timeout: { type: 'number', description: 'Timeout in ms (default: 30000)' },
+      },
+    },
+  },
+  {
+    name: 'tabs',
+    description: 'List open tabs in the session, or switch to one by index. Returns JSON array of { index, url, title } or "ok" after switch.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        switchTo: { type: 'number', description: 'Tab index to activate. Omit to just list tabs.' },
+      },
+    },
+  },
+  {
+    name: 'select',
+    description: 'Set the value of a <select> dropdown (or custom listbox) by ref. Returns ok.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Element ref from snapshot' },
+        value: { type: 'string', description: 'Option value or visible text to select' },
+      },
+      required: ['ref', 'value'],
+    },
+  },
+  {
+    name: 'hover',
+    description: 'Hover over an element by ref (triggers tooltips, hover menus). Returns ok.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Element ref from snapshot' },
+      },
+      required: ['ref'],
+    },
+  },
 ];
+
+// Powerful escape hatch — guarded behind an explicit env-var opt-in.
+// Runtime.evaluate in the user's authenticated session lets an agent read
+// cookies/localStorage, dispatch arbitrary events, hit any endpoint, etc.
+// Off by default; flip BAREBROWSE_MCP_EVAL=1 to enable.
+if (process.env.BAREBROWSE_MCP_EVAL === '1') {
+  TOOLS.push({
+    name: 'eval',
+    description: 'Run a JavaScript expression in the current page and return the result. POWERFUL: full access to the authenticated session — DOM, cookies, localStorage, fetch. Enabled because BAREBROWSE_MCP_EVAL=1 is set.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        expression: { type: 'string', description: 'JavaScript expression to evaluate' },
+      },
+      required: ['expression'],
+    },
+  });
+}
 
 // Add assess tool if wearehere is installed
 if (assessFn) {
@@ -363,6 +447,65 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       return await page.pdf({ landscape: args.landscape });
     }, TIMEOUTS.pdf);
+    case 'reload': return withRetry(async () => {
+      const page = await getPage();
+      await page.reload({ ignoreCache: !!args.ignoreCache });
+      return 'ok';
+    }, TIMEOUTS.reload);
+    case 'screenshot': return withRetry(async () => {
+      const page = await getPage();
+      const format = args.format || 'png';
+      const b64 = await page.screenshot({ format, quality: args.quality });
+      mkdirSync(OUTPUT_DIR, { recursive: true });
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const file = join(OUTPUT_DIR, `screenshot-${ts}.${format}`);
+      writeFileSync(file, Buffer.from(b64, 'base64'));
+      return file;
+    }, TIMEOUTS.screenshot);
+    case 'wait_for': return withRetry(async () => {
+      const page = await getPage();
+      await page.waitFor({ text: args.text, selector: args.selector, timeout: args.timeout });
+      return 'ok';
+    }, TIMEOUTS.wait_for, { retry: false });
+    case 'tabs': return withRetry(async () => {
+      const page = await getPage();
+      if (typeof args.switchTo === 'number') {
+        await page.switchTab(args.switchTo);
+        return 'ok';
+      }
+      const list = await page.tabs();
+      return JSON.stringify(list, null, 2);
+    }, TIMEOUTS.tabs, { retry: false });
+    case 'select': return withRetry(async () => {
+      const page = await getPage();
+      await page.select(args.ref, args.value);
+      return 'ok';
+    }, TIMEOUTS.select, { retry: false });
+    case 'hover': return withRetry(async () => {
+      const page = await getPage();
+      await page.hover(args.ref);
+      return 'ok';
+    }, TIMEOUTS.hover, { retry: false });
+    case 'eval': {
+      // Only reachable when BAREBROWSE_MCP_EVAL=1 — the tool isn't registered
+      // otherwise, but this guard is the second line of defense in case the
+      // env var changes between tools/list and tools/call.
+      if (process.env.BAREBROWSE_MCP_EVAL !== '1') {
+        throw new Error('eval is disabled. Set BAREBROWSE_MCP_EVAL=1 to enable.');
+      }
+      return withRetry(async () => {
+        const page = await getPage();
+        const { result, exceptionDetails } = await page.cdp.send('Runtime.evaluate', {
+          expression: args.expression,
+          returnByValue: true,
+          awaitPromise: true,
+        });
+        if (exceptionDetails) {
+          throw new Error(exceptionDetails.text + (exceptionDetails.exception?.description ? `: ${exceptionDetails.exception.description}` : ''));
+        }
+        return result.value === undefined ? 'undefined' : JSON.stringify(result.value);
+      }, TIMEOUTS.eval, { retry: false });
+    }
     case 'assess': {
       if (!assessFn) throw new Error('wearehere is not installed. Run: npm install wearehere');
       const releaseSlot = await acquireAssessSlot();

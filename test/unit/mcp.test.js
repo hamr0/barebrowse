@@ -8,7 +8,12 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { TIMEOUTS } from '../../mcp-server.js';
+import { TIMEOUTS, TOOLS } from '../../mcp-server.js';
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { dirname, join as joinPath } from 'node:path';
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const MCP_SERVER = joinPath(__dirname, '../../mcp-server.js');
 
 // Re-implement isTransient + withRetry locally (not exported from mcp-server.js)
 function isTransient(err) {
@@ -225,5 +230,44 @@ describe('per-tool MCP timeouts (H5)', () => {
     assert.equal(TIMEOUTS.pdf, 45000);
     assert.equal(TIMEOUTS.screenshot, 45000);
     assert.equal(TIMEOUTS.upload, 45000);
+  });
+});
+
+describe('MCP tool surface (H6)', () => {
+  const toolNames = TOOLS.map((t) => t.name);
+
+  it('exposes the new H6 tools to MCP clients', () => {
+    // These existed in the connect() API + daemon + bareagent but weren't
+    // wired through the MCP server until H6. Each gap meant Claude Desktop /
+    // Cursor / Code agents couldn't reach them at all.
+    for (const tool of ['screenshot', 'wait_for', 'tabs', 'select', 'hover', 'reload']) {
+      assert.ok(toolNames.includes(tool),
+        `MCP TOOLS must include "${tool}" — H6 added it; if absent it's not reachable from MCP clients`);
+    }
+  });
+
+  it('eval is gated behind BAREBROWSE_MCP_EVAL=1 (default off)', () => {
+    // The test runner inherits a clean env; eval must NOT be registered here.
+    // Powerful primitive: Runtime.evaluate in an authenticated session can
+    // read cookies/localStorage, post on user's behalf, exfiltrate. Default
+    // off, opt-in via env var.
+    assert.ok(!toolNames.includes('eval'),
+      'eval must be absent when BAREBROWSE_MCP_EVAL is unset — opt-in only');
+  });
+
+  it('eval IS registered when BAREBROWSE_MCP_EVAL=1', () => {
+    // Spawn a one-shot node child with the env var set so a fresh module
+    // graph evaluates the gating code path.
+    const probe = `
+      import('${MCP_SERVER}').then(({ TOOLS }) => {
+        const names = TOOLS.map(t => t.name);
+        process.stdout.write(names.includes('eval') ? 'yes' : 'no');
+      });
+    `;
+    const out = execFileSync(process.execPath,
+      ['--input-type=module', '-e', probe],
+      { env: { ...process.env, BAREBROWSE_MCP_EVAL: '1' }, encoding: 'utf8' });
+    assert.equal(out, 'yes',
+      'with BAREBROWSE_MCP_EVAL=1 the eval tool must be registered');
   });
 });
