@@ -270,4 +270,47 @@ describe('MCP tool surface (H6)', () => {
     assert.equal(out, 'yes',
       'with BAREBROWSE_MCP_EVAL=1 the eval tool must be registered');
   });
+
+  it('the JSON-RPC loop actually starts when invoked via cli.js mcp (regression)', async () => {
+    // Regression test: my first H5 commit auto-started the stdin loop only
+    // when import.meta.url === pathToFileURL(process.argv[1]).href. cli.js
+    // launches the server via `await import('./mcp-server.js')`, so argv[1]
+    // is cli.js → isMain false → loop never starts → `npx barebrowse mcp`
+    // (the documented Claude Code install path) hangs silently forever.
+    // Now cli.js calls runStdio() explicitly; this test spawns the real
+    // invocation and confirms a tools/list response comes back.
+    const { spawn } = await import('node:child_process');
+    const cliPath = joinPath(__dirname, '../../cli.js');
+    const proc = spawn(process.execPath, [cliPath, 'mcp'], {
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    try {
+      let buf = '';
+      const response = await new Promise((resolve, reject) => {
+        const deadline = setTimeout(
+          () => reject(new Error('no JSON-RPC response within 5s — stdin loop probably never started')),
+          5000,
+        );
+        proc.stdout.on('data', (d) => {
+          buf += d;
+          const i = buf.indexOf('\n');
+          if (i !== -1) {
+            clearTimeout(deadline);
+            try { resolve(JSON.parse(buf.slice(0, i))); } catch (e) { reject(e); }
+          }
+        });
+        proc.on('error', (e) => { clearTimeout(deadline); reject(e); });
+        proc.stdin.write(JSON.stringify({
+          jsonrpc: '2.0', id: 1, method: 'tools/list', params: {},
+        }) + '\n');
+      });
+      assert.equal(response.id, 1, 'response must echo request id');
+      assert.ok(Array.isArray(response.result?.tools),
+        'tools/list must return a tools array');
+      assert.ok(response.result.tools.length > 10,
+        `expected the full tool surface, got ${response.result.tools.length}`);
+    } finally {
+      proc.kill();
+    }
+  });
 });

@@ -104,6 +104,23 @@ describe('CLI session', () => {
     assert.ok(out.includes('.json'), `expected .json path, got: ${out}`);
   });
 
+  it('reload subcommand round-trips through daemon (H3 via CLI)', () => {
+    // Daemon was opened on about:blank — reload should be a no-op success.
+    // Tests the new `reload` daemon handler + cli subcommand end-to-end.
+    const out = cli(['reload'], { cwd: tmpDir });
+    assert.equal(out, 'ok', `reload should print ok, got: ${out}`);
+    const outNoCache = cli(['reload', '--no-cache'], { cwd: tmpDir });
+    assert.equal(outNoCache, 'ok', `reload --no-cache should print ok, got: ${outNoCache}`);
+  });
+
+  it('downloads subcommand returns the downloads array (H7 via CLI)', () => {
+    // No download has been triggered in this test session, so the array
+    // should be empty JSON. This pins the wiring — daemon handler exists,
+    // cli subcommand exists, cmdProxy serializes the value through.
+    const out = cli(['downloads'], { cwd: tmpDir });
+    assert.equal(out, '[]', `downloads should print empty JSON array, got: ${out}`);
+  });
+
   it('close shuts down the daemon', () => {
     const out = cli(['close'], { cwd: tmpDir });
     assert.ok(out.includes('Session closed'), `expected closed, got: ${out}`);

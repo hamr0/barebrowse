@@ -39,6 +39,7 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   if (opts.proxy) args.push('--proxy', opts.proxy);
   if (opts.viewport) args.push('--viewport', opts.viewport);
   if (opts.storageState) args.push('--storage-state', opts.storageState);
+  if (opts.downloadPath) args.push('--download-path', opts.downloadPath);
 
   const child = spawn(process.execPath, args, {
     detached: true,
@@ -77,6 +78,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     proxy: opts.proxy,
     viewport: opts.viewport,
     storageState: opts.storageState,
+    downloadPath: opts.downloadPath,
   });
 
   // Console log capture
@@ -206,6 +208,17 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     async forward() {
       await page.goForward();
       return { ok: true };
+    },
+
+    async reload({ ignoreCache }) {
+      await page.reload({ ignoreCache: !!ignoreCache });
+      return { ok: true };
+    },
+
+    async downloads() {
+      // Snapshot the array — callers want a static view at the moment of
+      // the request, not a reference that mutates under them.
+      return { ok: true, value: page.downloads.map((d) => ({ ...d })) };
     },
 
     async drag({ fromRef, toRef }) {

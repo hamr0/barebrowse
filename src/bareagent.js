@@ -244,6 +244,39 @@ export function createBrowseTools(opts = {}) {
         return await page.screenshot({ format });
       },
     },
+    {
+      name: 'reload',
+      description: 'Reload the current page. Returns the updated snapshot.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ignoreCache: { type: 'boolean', description: 'Bypass HTTP cache (hard reload). Default: false.' },
+        },
+      },
+      execute: async ({ ignoreCache } = {}) => actionAndSnapshot((page) => page.reload({ ignoreCache })),
+    },
+    {
+      name: 'wait_for',
+      description: 'Wait for visible text or a CSS selector to appear on the current page. Returns the updated snapshot once found.',
+      parameters: {
+        type: 'object',
+        properties: {
+          text: { type: 'string', description: 'Substring that must appear in document.body.innerText' },
+          selector: { type: 'string', description: 'CSS selector that must match document.querySelector' },
+          timeout: { type: 'number', description: 'Timeout in ms (default: 30000)' },
+        },
+      },
+      execute: async ({ text, selector, timeout } = {}) => actionAndSnapshot((page) => page.waitFor({ text, selector, timeout })),
+    },
+    {
+      name: 'downloads',
+      description: 'List files captured via Content-Disposition: attachment downloads during this session. Returns JSON array of { url, suggestedFilename, savedPath, state, totalBytes, receivedBytes } per file.',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => {
+        const page = await getPage();
+        return JSON.stringify(page.downloads.map((d) => ({ ...d })), null, 2);
+      },
+    },
   ];
 
   // Add assess tool if wearehere is installed

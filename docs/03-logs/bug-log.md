@@ -186,6 +186,25 @@ Also wrapped the stdin transport + `unhandledRejection` / `uncaughtException` / 
 **Fix:** Split into STRONG_PHRASES (essentially-unambiguous challenge UI like Cloudflare's "Just a moment", "Attention Required", "verify you are human", "checking your browser") that fire alone regardless of page size, and WEAK_PHRASES (the previously over-eager phrases) that only fire when the page is ALSO tiny (`nodeCount < 30` OR `text.length < 50`). Pure low-node-count without any phrase no longer flags — that path was the noisiest source of false fallbacks. `tree === null` still flags as a sentinel for "AX tree fetch failed". Exported `isChallengePage` so the unit tests can pin the contract.
 **Regression test:** `test/unit/challenge.test.js` — new file, nine tests. Three sections: strong phrases fire on content-rich pages (Just-a-moment, verify-you-are-human, Attention-Required); generic phrases do NOT flag a real 403 with "access denied" body or a real 500 with "unknown error" body (the load-bearing pre-H9 false positives) but DO still flag when on a near-empty page; small legitimate pages (5-node landing, 4-node 404) no longer auto-flag; null tree still flags.
 
+---
+
+## [2026-05-18] `npx barebrowse mcp` silently hung — H5 isMain guard was too strict
+
+**Symptom:** The MCP server never responded to `tools/list` (or anything) when launched via the documented Claude Code install path `claude mcp add barebrowse -- npx barebrowse mcp`. The server appeared to start (Node was running) but stdin was never read; the client hung waiting for `initialize` to come back. Caught by a Phase B code-review pass.
+**Root cause:** My H5 commit guarded the stdio loop with `if (isMain)` where `isMain = import.meta.url === pathToFileURL(process.argv[1]).href`. But `cli.js` line 20 launched the server via `await import('./mcp-server.js')` — `process.argv[1]` is `cli.js`, not `mcp-server.js`, so `isMain` was false and the stdin handler never registered. The H5 unit test only checked that `TIMEOUTS`/`TOOLS` could be imported without spawning the loop, never that the loop actually started in the real invocation.
+**Fix:** Refactored mcp-server.js to export `runStdio()`. `cli.js` now calls it explicitly after `import('./mcp-server.js')`. The original "auto-start on direct `node mcp-server.js`" path is preserved (the isMain check still fires `runStdio()` when this file IS argv[1]).
+**Regression test:** `test/unit/mcp.test.js` — "the JSON-RPC loop actually starts when invoked via cli.js mcp (regression)" spawns `node cli.js mcp` for real, sends a `tools/list` JSON-RPC line on stdin, asserts a response comes back within 5s with the full tool array. This would have caught the bug.
+
+Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-server.js` `serverInfo.version` no longer hardcodes "0.7.1" (reads from `package.json` at startup); `src/index.js` download-event listeners are now registered BEFORE `Browser.setDownloadBehavior` is sent, eliminating a theoretical race (microscopic — about:blank can't initiate a download — but ordering it correctly costs nothing).
+
+---
+
+## [2026-05-18] H3/H7 features unreachable from CLI / daemon / bareagent (Phase B loose end)
+
+**Symptom:** H3 added `page.reload()`, H7 added `page.downloads`, H8 added `page.onDialog()` — all reachable from `connect()` directly, but the CLI session daemon (`src/daemon.js`) had no handlers for them and `cli.js` had no subcommands. `barebrowse open ...` then `barebrowse reload` was a no-op error; downloads triggered during a CLI session were silently lost. `src/bareagent.js` likewise hadn't been extended, so the bareagent Loop adapter was missing 4 tools relative to the MCP server.
+**Fix:** `src/daemon.js` gained `reload({ ignoreCache })` and `downloads()` handlers; `cli.js` gained `barebrowse reload [--no-cache]` and `barebrowse downloads` subcommands plus `--download-path=DIR` flag forwarding through `startDaemon` → `runDaemonInternal` → `connect()`. `src/bareagent.js` gained `reload`, `wait_for`, and `downloads` tools (with the same shape as their MCP counterparts). `onDialog` is a callback-shape primitive that doesn't fit the request/response CLI model — `dialog-log` (read-only history) already covers the CLI use case, and bareagent users wanting to override dialogs should drop to `import { connect }` directly. Usage text updated.
+**Regression test:** `test/integration/cli.test.js` — two new tests: "reload subcommand round-trips through daemon (H3 via CLI)" and "downloads subcommand returns the downloads array (H7 via CLI)".
+
 
 
 

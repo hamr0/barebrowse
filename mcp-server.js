@@ -10,9 +10,14 @@
  */
 
 import { browse, connect } from './src/index.js';
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { pathToFileURL, fileURLToPath } from 'node:url';
+
+// Read version from package.json so serverInfo.version doesn't drift behind
+// release bumps (pre-fix this was hardcoded 0.7.1 while package.json was 0.8.0).
+const _pkgPath = join(dirname(fileURLToPath(import.meta.url)), 'package.json');
+const PKG_VERSION = JSON.parse(readFileSync(_pkgPath, 'utf8')).version;
 
 /**
  * Per-tool timeouts (ms). One blanket 30s was too short for SPA cold loads
@@ -574,7 +579,7 @@ async function handleMessage(msg) {
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
-      serverInfo: { name: 'barebrowse', version: '0.7.1' },
+      serverInfo: { name: 'barebrowse', version: PKG_VERSION },
     });
   }
 
@@ -607,14 +612,15 @@ async function handleMessage(msg) {
 
 // --- Stdio transport ---
 //
-// Guarded by isMain so tests can `import { TIMEOUTS } from 'mcp-server.js'`
-// without spawning the stdin loop, exit handlers, or signal handlers — the
-// loop would consume stdin meant for the test harness, the signal handlers
-// would intercept Ctrl-C, and process.exit calls would kill the test process.
+// Exported as runStdio() so callers (notably cli.js) can explicitly start the
+// JSON-RPC loop. The previous "auto-start when isMain" guard broke the
+// `npx barebrowse mcp` path because cli.js launches the server via
+// `await import('./mcp-server.js')` — process.argv[1] is cli.js, not
+// mcp-server.js, so isMain was false and the loop never started. Both the
+// direct `node mcp-server.js` invocation and the cli.js path now call
+// runStdio() explicitly. Tests import TIMEOUTS/TOOLS without calling it.
 
-const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
-
-if (isMain) {
+export function runStdio() {
   let buffer = '';
 
   process.stdin.setEncoding('utf8');
@@ -657,4 +663,11 @@ if (isMain) {
     if (_page) await _page.close().catch(() => {});
     process.exit(0);
   });
+}
+
+// Direct invocation (`node mcp-server.js`) still works without cli.js — auto-
+// start if this file IS process.argv[1]. The cli.js path imports + calls
+// runStdio() explicitly so we never depend on argv[1] matching.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  runStdio();
 }

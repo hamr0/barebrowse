@@ -203,24 +203,11 @@ export async function connect(opts = {}) {
       ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), 'barebrowse-dl-'));
       downloadPath = ownedDownloadDir;
     }
-    try {
-      // 'allowAndName' names saved files by guid for a stable, predictable
-      // path; the suggested filename is still surfaced on the download record.
-      await cdp.send('Browser.setDownloadBehavior', {
-        behavior: 'allowAndName', downloadPath, eventsEnabled: true,
-      });
-    } catch {
-      // Older Chrome may not accept 'allowAndName' — fall back to 'allow'
-      // which uses the suggested filename verbatim (no GUID).
-      try {
-        await cdp.send('Browser.setDownloadBehavior', {
-          behavior: 'allow', downloadPath, eventsEnabled: true,
-        });
-      } catch {
-        // Download capture unavailable on this Chrome — downloads still
-        // happen, we just can't observe them. page.downloads stays empty.
-      }
-    }
+    // Register listeners BEFORE sending setDownloadBehavior so no
+    // downloadWillBegin / downloadProgress event can fire into a session
+    // without subscribers — about:blank can't initiate a download so the
+    // window is microscopic in practice, but ordering it correctly costs
+    // nothing.
     cdp.on('Browser.downloadWillBegin', (params) => {
       downloads.push({
         guid: params.guid,
@@ -239,6 +226,24 @@ export async function connect(opts = {}) {
       d.totalBytes = params.totalBytes;
       d.receivedBytes = params.receivedBytes;
     });
+    try {
+      // 'allowAndName' names saved files by guid for a stable, predictable
+      // path; the suggested filename is still surfaced on the download record.
+      await cdp.send('Browser.setDownloadBehavior', {
+        behavior: 'allowAndName', downloadPath, eventsEnabled: true,
+      });
+    } catch {
+      // Older Chrome may not accept 'allowAndName' — fall back to 'allow'
+      // which uses the suggested filename verbatim (no GUID).
+      try {
+        await cdp.send('Browser.setDownloadBehavior', {
+          behavior: 'allow', downloadPath, eventsEnabled: true,
+        });
+      } catch {
+        // Download capture unavailable on this Chrome — downloads still
+        // happen, we just can't observe them. page.downloads stays empty.
+      }
+    }
   }
 
   // JS dialog handling (alert, confirm, prompt, beforeunload). Default is

@@ -17,7 +17,11 @@ const cmd = args[0];
 if (args.includes('--daemon-internal')) {
   await runDaemonInternal();
 } else if (cmd === 'mcp') {
-  await import('./mcp-server.js');
+  // Explicitly start the JSON-RPC loop — relying on the previous "isMain
+  // auto-start" guard inside mcp-server.js would silently hang here because
+  // process.argv[1] is cli.js, not mcp-server.js.
+  const { runStdio } = await import('./mcp-server.js');
+  runStdio();
 } else if (cmd === 'install') {
   install();
 } else if (cmd === 'browse' && args[1]) {
@@ -60,6 +64,10 @@ if (args.includes('--daemon-internal')) {
   await cmdProxy('back');
 } else if (cmd === 'forward') {
   await cmdProxy('forward');
+} else if (cmd === 'reload') {
+  await cmdProxy('reload', { ignoreCache: hasFlag('--no-cache') });
+} else if (cmd === 'downloads') {
+  await cmdProxy('downloads');
 } else if (cmd === 'drag' && args[1] && args[2]) {
   await cmdProxy('drag', { fromRef: args[1], toRef: args[2] });
 } else if (cmd === 'upload' && args[1] && args[2]) {
@@ -106,6 +114,7 @@ async function cmdOpen() {
     proxy: parseFlag('--proxy'),
     viewport: parseFlag('--viewport'),
     storageState: parseFlag('--storage-state'),
+    downloadPath: parseFlag('--download-path'),
   };
 
   try {
@@ -206,6 +215,7 @@ async function runDaemonInternal() {
     proxy: parseFlag('--proxy'),
     viewport: parseFlag('--viewport'),
     storageState: parseFlag('--storage-state'),
+    downloadPath: parseFlag('--download-path'),
   };
   const outputDir = parseFlag('--output-dir') || resolve('.barebrowse');
   const url = parseFlag('--url');
@@ -361,11 +371,13 @@ Session:
     --proxy=URL                     HTTP/SOCKS proxy server
     --viewport=WxH                  Viewport size (e.g. 1280x720)
     --storage-state=FILE            Load cookies/localStorage from JSON file
+    --download-path=DIR             Directory for downloaded files (default: per-session temp dir)
 
 Navigation:
   barebrowse goto <url>             Navigate to URL
   barebrowse back                   Go back in history
   barebrowse forward                Go forward in history
+  barebrowse reload [--no-cache]    Reload current page
   barebrowse snapshot [--mode=M]    ARIA snapshot -> .barebrowse/page-*.yml
   barebrowse screenshot [--format]  Screenshot -> .barebrowse/screenshot-*.png
   barebrowse pdf [--landscape]      PDF export -> .barebrowse/page-*.pdf
@@ -395,6 +407,7 @@ Debugging:
   barebrowse console-logs           Console logs -> .barebrowse/console-*.json
   barebrowse network-log            Network log -> .barebrowse/network-*.json
   barebrowse dialog-log             JS dialog log -> .barebrowse/dialogs-*.json
+  barebrowse downloads              List Content-Disposition downloads + savedPath (JSON)
   barebrowse save-state             Cookies + localStorage -> .barebrowse/state-*.json
 
 One-shot:
