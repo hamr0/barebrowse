@@ -121,6 +121,63 @@ describe('CLI session', () => {
     assert.equal(out, '[]', `downloads should print empty JSON array, got: ${out}`);
   });
 
+  it('--block-urls reaches connect() through the daemon (blocks subresource)', async () => {
+    // Plumbing test: cli.js parseFlagAll('--block-urls') → daemon runDaemon
+    // opts → connect({ blockUrls }) → createPage() → Network.setBlockedURLs.
+    // We spawn daemon-internal directly with piped stdio so we can observe
+    // both session.json and child stderr. Going through `bb open` would
+    // detach the child and the parent's 15s startDaemon poll times out
+    // before Chromium-plus-122-blocked-URLs finishes booting — that path
+    // adds nothing this test cares about (parent-child fork ergonomics
+    // aren't what we're verifying), so skip it.
+    const { createServer } = await import('node:http');
+    const { spawn } = await import('node:child_process');
+    const startSrv = async (handler) => {
+      const s = createServer(handler);
+      await new Promise((r) => s.listen(0, '127.0.0.1', r));
+      return { port: s.address().port, close: () => new Promise((r) => s.close(r)) };
+    };
+    let trackerHits = 0;
+    const tracker = await startSrv((_q, res) => { trackerHits++; res.end('window.__t=1;'); });
+    const pageSrv = await startSrv((_q, res) => {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      res.end(`<!doctype html><script src="http://127.0.0.1:${tracker.port}/t.js"></script>ok`);
+    });
+    const subDir = mkdtempSync(join(tmpdir(), 'bb-cli-block-'));
+    const subBareDir = join(subDir, '.barebrowse');
+
+    const child = spawn(NODE, [
+      CLI, '--daemon-internal',
+      '--output-dir', subBareDir,
+      '--url', `http://127.0.0.1:${pageSrv.port}/`,
+      `--block-urls=*://127.0.0.1:${tracker.port}/*`,
+    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d.toString(); });
+
+    try {
+      // Poll for session.json — daemon writes it once connect() + initial
+      // goto land. 20s is generous; observed boot is ~6-8s under no load.
+      const sessionPath = join(subBareDir, 'session.json');
+      const deadline = Date.now() + 20000;
+      while (Date.now() < deadline && !existsSync(sessionPath)) {
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      assert.ok(existsSync(sessionPath),
+        `daemon never wrote session.json — child stderr: ${stderr}`);
+      // The daemon's runDaemon awaited page.goto(initialUrl) before writing
+      // session.json, so by now the navigation is complete and any tracker
+      // request would have fired (or been blocked).
+      assert.equal(trackerHits, 0,
+        `--block-urls did not reach connect(): tracker was hit ${trackerHits} times`);
+    } finally {
+      try { child.kill(); } catch { /* already dead */ }
+      await tracker.close();
+      await pageSrv.close();
+      rmSync(subDir, { recursive: true, force: true });
+    }
+  });
+
   it('close shuts down the daemon', () => {
     const out = cli(['close'], { cwd: tmpDir });
     assert.ok(out.includes('Session closed'), `expected closed, got: ${out}`);

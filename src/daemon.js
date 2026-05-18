@@ -40,6 +40,10 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   if (opts.viewport) args.push('--viewport', opts.viewport);
   if (opts.storageState) args.push('--storage-state', opts.storageState);
   if (opts.downloadPath) args.push('--download-path', opts.downloadPath);
+  if (opts.blockAds === false) args.push('--no-block-ads');
+  if (Array.isArray(opts.blockUrls)) {
+    for (const p of opts.blockUrls) args.push('--block-urls', p);
+  }
 
   const child = spawn(process.execPath, args, {
     detached: true,
@@ -79,6 +83,8 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     viewport: opts.viewport,
     storageState: opts.storageState,
     downloadPath: opts.downloadPath,
+    blockAds: opts.blockAds,
+    blockUrls: opts.blockUrls,
   });
 
   // Console log capture
