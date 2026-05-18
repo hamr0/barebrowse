@@ -24,6 +24,8 @@ if (args.includes('--daemon-internal')) {
   runStdio();
 } else if (cmd === 'install') {
   install();
+} else if (cmd === 'doctor') {
+  doctor();
 } else if (cmd === 'browse' && args[1]) {
   await oneShot();
 } else if (cmd === 'open') {
@@ -267,8 +269,33 @@ function install() {
       if (!config.mcpServers) config.mcpServers = {};
 
       if (config.mcpServers.barebrowse) {
-        console.log(`  ${target.name}: already configured`);
-        installed++;
+        // Detect a stale entry pointing at a different location/command —
+        // common when a contributor has both a global install (`npx`) and
+        // a worktree-local entry (`node /abs/path/mcp-server.js`). OAuth
+        // tokens are stored per endpoint, so leaving the stale one means
+        // auth from one path silently won't carry over to the other.
+        const existing = config.mcpServers.barebrowse;
+        const sameEndpoint =
+          existing.command === mcpEntry.command &&
+          JSON.stringify(existing.args || []) === JSON.stringify(mcpEntry.args);
+        if (!sameEndpoint) {
+          if (hasFlag('--force')) {
+            config.mcpServers.barebrowse = mcpEntry;
+            writeFileSync(target.path, JSON.stringify(config, null, 2) + '\n');
+            console.log(`  ${target.name}: REPLACED stale entry`);
+            console.log(`    was: ${existing.command} ${(existing.args || []).join(' ')}`);
+            console.log(`    now: ${mcpEntry.command} ${mcpEntry.args.join(' ')}`);
+            installed++;
+          } else {
+            console.log(`  ${target.name}: CONFLICT — different endpoint already registered`);
+            console.log(`    existing: ${existing.command} ${(existing.args || []).join(' ')}`);
+            console.log(`    new:      ${mcpEntry.command} ${mcpEntry.args.join(' ')}`);
+            console.log(`    Pass --force to overwrite, or edit ${target.path} by hand.`);
+          }
+        } else {
+          console.log(`  ${target.name}: already configured`);
+          installed++;
+        }
         continue;
       }
 
@@ -349,6 +376,74 @@ function readJsonOrEmpty(path) {
   }
 }
 
+/**
+ * Scan every known MCP config location for a `barebrowse` entry and print
+ * what's there. Built for the Claude Code "Conflicting scopes" warning,
+ * which is generated when the same MCP server name resolves to different
+ * absolute endpoints across scopes — OAuth tokens are stored per-endpoint
+ * so a split silently breaks auth.
+ */
+function doctor() {
+  const home = homedir();
+  const cwd = process.cwd();
+  const os = platform();
+
+  // (label, file path, key) — `key` is the top-level config key that holds
+  // the servers map. Claude Code / Desktop / Cursor use `mcpServers`; VS
+  // Code's .vscode/mcp.json uses `servers`.
+  const locations = [
+    ['Claude Code (user)',    join(home, '.claude.json'),      'mcpServers'],
+    ['Claude Code (project)', join(cwd, '.mcp.json'),          'mcpServers'],
+    ['Claude Code (local)',   join(cwd, '.claude.json'),       'mcpServers'],
+    ['VS Code (project)',     join(cwd, '.vscode', 'mcp.json'), 'servers'],
+    ['Cursor (user)',         join(home, '.cursor', 'mcp.json'), 'mcpServers'],
+  ];
+  // Claude Desktop varies by OS
+  if (os === 'darwin') {
+    locations.push(['Claude Desktop', join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json'), 'mcpServers']);
+  } else if (os === 'linux') {
+    locations.push(['Claude Desktop', join(home, '.config', 'Claude', 'claude_desktop_config.json'), 'mcpServers']);
+  } else if (os === 'win32') {
+    locations.push(['Claude Desktop', join(home, 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'), 'mcpServers']);
+  }
+
+  console.log('barebrowse doctor — scanning known MCP config locations:\n');
+  const findings = [];
+  for (const [label, path, key] of locations) {
+    if (!existsSync(path)) {
+      console.log(`  - ${label.padEnd(22)} ${path}  (not present)`);
+      continue;
+    }
+    const cfg = readJsonOrEmpty(path);
+    const entry = cfg[key]?.barebrowse;
+    if (!entry) {
+      console.log(`  - ${label.padEnd(22)} ${path}  (no barebrowse entry)`);
+      continue;
+    }
+    const sig = `${entry.command || '?'} ${(entry.args || []).join(' ')}`;
+    console.log(`  ✓ ${label.padEnd(22)} ${path}`);
+    console.log(`      endpoint: ${sig}`);
+    findings.push({ label, path, sig });
+  }
+
+  if (findings.length <= 1) {
+    console.log(`\n${findings.length} registration${findings.length === 1 ? '' : 's'} found. No scope conflict.`);
+  } else {
+    const unique = new Set(findings.map((f) => f.sig));
+    if (unique.size === 1) {
+      console.log(`\n${findings.length} registrations found, all pointing at the same endpoint. No conflict.`);
+    } else {
+      console.log(`\n⚠ CONFLICT: ${findings.length} registrations across ${unique.size} different endpoints.`);
+      console.log(`  Claude Code stores OAuth tokens per endpoint — authenticating in one scope`);
+      console.log(`  will not carry over to the other. Recommended fix: keep one, remove the rest.\n`);
+      console.log(`  Claude Code: claude mcp remove barebrowse -s user   (or -s project / -s local)`);
+      console.log(`  Other clients: edit the JSON file shown above and delete the barebrowse key.\n`);
+      console.log(`  Tip: run \`barebrowse mcp\` directly to see the startup banner —`);
+      console.log(`  the absolute serving path it prints to stderr is the one currently in use.`);
+    }
+  }
+}
+
 
 // --- Usage ---
 
@@ -415,6 +510,9 @@ One-shot:
 
 MCP:
   barebrowse mcp                    Start MCP server (JSON-RPC over stdio)
+  barebrowse install [--force]      Add barebrowse to detected MCP clients (--force replaces stale entries)
+  barebrowse install --skill        Install Claude Code skill file
+  barebrowse doctor                 Scan MCP config locations for barebrowse entries + flag scope conflicts
   barebrowse install                Auto-configure MCP for Claude Desktop / Cursor
   barebrowse install --skill        Install SKILL.md for Claude Code
 

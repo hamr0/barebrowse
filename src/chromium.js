@@ -218,15 +218,19 @@ export async function cleanupBrowser(browser) {
     await exited;
   }
   if (browser.ownedProfileDir) {
-    // Chromium can still flush files for ~hundreds of ms after exit;
-    // retry briefly on ENOTEMPTY/EBUSY before giving up.
-    for (let i = 0; i < 10; i++) {
+    // Chromium can still flush files for ~hundreds of ms after exit; with
+    // --site-per-process (added in H2) every iframe is its own renderer
+    // process, each with its own pending file handles, so the old 10×100ms
+    // window (1s) wasn't always enough under parallel test load. Now
+    // 25×100ms (2.5s) plus a polling jitter to avoid every concurrent
+    // cleanup hammering at the same tick.
+    for (let i = 0; i < 25; i++) {
       try {
         rmSync(browser.ownedProfileDir, { recursive: true, force: true });
         break;
       } catch (err) {
         if (err.code !== 'ENOTEMPTY' && err.code !== 'EBUSY') break;
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 100 + Math.floor(Math.random() * 50)));
       }
     }
   }

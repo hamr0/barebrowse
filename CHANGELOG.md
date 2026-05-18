@@ -125,13 +125,34 @@ entries in `docs/03-logs/bug-log.md`. Headlines:
   intentionally stays connect()-only (callback shape doesn't fit
   tool loop).
 
+### MCP config diagnostics (post-Phase-B follow-up)
+- **`barebrowse doctor`** scans every known MCP config location
+  (Claude Code user/project/local, Claude Desktop, Cursor, VS Code)
+  for `barebrowse` entries. Prints CONFLICT + both endpoint paths
+  when scopes diverge. Closes the "Conflicting scopes" warning
+  Claude Code surfaces but barebrowse itself was silent about.
+- **`barebrowse install`** detects existing entries with a different
+  endpoint and refuses to overwrite without `--force` — was
+  silently clobbering, which is how scope conflicts accumulated in
+  the first place.
+- **`barebrowse mcp`** writes a one-line stderr banner at startup
+  (`barebrowse mcp v<X.Y.Z> | serving from <abs path> | pid <N>`)
+  so a stuck agent is diagnosable from the MCP log.
+
+### Test infrastructure
+- **`cleanupBrowser` profile-dir rm hardened** to 25×100ms±jitter
+  (was 10×100ms). `--site-per-process` from H2 spawns a renderer
+  per iframe; under parallel test load the old 1s window wasn't
+  always enough to absorb post-exit file flushing.
+
 ### Tests
-- 23 new regression tests across `connect.test.js` (H1, H2, H3, H7,
+- 27 new regression tests across `connect.test.js` (H1, H2, H3, H7,
   H8), `stealth.test.js` (H4 — new file), `mcp.test.js` (H5 timeouts,
   H6 tool surface + eval env-var gating, npx cli.js mcp regression),
   `challenge.test.js` (H9 — new file, 9 cases), `cli.test.js`
-  (reload + downloads subcommands). Total: 123 (54 unit + 69
-  integration).
+  (reload + downloads subcommands, plus the four MCP-config-
+  diagnostics tests for doctor + install --force + mcp banner).
+  Total: 127 (54 unit + 73 integration).
 
 ## 0.8.0
 

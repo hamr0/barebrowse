@@ -92,7 +92,9 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-12 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Session runs in hybrid mode with automatic cookie injection. All tools have timeouts (30s/60s) and auto-retry on transient failures.
+18 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
+
+Troubleshooting MCP setup: `npx barebrowse doctor` scans every known config location and flags scope conflicts. `npx barebrowse install --force` overwrites an existing entry pointing at a different endpoint.
 
 ### 3. Library -- for agentic automation
 

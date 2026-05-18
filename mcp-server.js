@@ -621,6 +621,14 @@ async function handleMessage(msg) {
 // runStdio() explicitly. Tests import TIMEOUTS/TOOLS without calling it.
 
 export function runStdio() {
+  // One-line startup banner to stderr (stderr because stdout is the JSON-RPC
+  // channel — must not contain non-JSON-RPC bytes). Captured by Claude Code's
+  // MCP log, makes "I added barebrowse twice and got the wrong one" issues
+  // diagnosable: the path here is the absolute file actually being served,
+  // so a scope conflict shows two different paths in two log files.
+  const _selfPath = fileURLToPath(import.meta.url);
+  process.stderr.write(`barebrowse mcp v${PKG_VERSION} | serving from ${_selfPath} | pid ${process.pid}\n`);
+
   let buffer = '';
 
   process.stdin.setEncoding('utf8');

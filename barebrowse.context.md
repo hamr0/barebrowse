@@ -233,7 +233,9 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 
 **Claude Code:** `claude mcp add barebrowse -- npx barebrowse mcp`
 
-**Claude Desktop / Cursor:** `npx barebrowse install` (auto-detects and writes config)
+**Claude Desktop / Cursor:** `npx barebrowse install` (auto-detects and writes config; pass `--force` to overwrite an existing entry pointing at a different endpoint)
+
+**Diagnose scope conflicts:** `npx barebrowse doctor` scans every known MCP config location (Claude Code user/project/local, Claude Desktop, Cursor, VS Code) and prints which `barebrowse` entries are registered + where they point. Flags `CONFLICT` when two scopes point at different paths — OAuth tokens are stored per endpoint, so a split silently breaks auth. The MCP server itself also writes a one-line banner to stderr at startup (`barebrowse mcp v<X.Y.Z> | serving from <abs path> | pid <N>`) so a stuck agent is diagnosable from the MCP client log.
 
 **Manual config** (`claude_desktop_config.json`, `.cursor/mcp.json`):
 ```json

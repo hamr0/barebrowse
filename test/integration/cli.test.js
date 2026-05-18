@@ -11,7 +11,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
 
 const CLI = resolve(import.meta.dirname, '..', '..', 'cli.js');
 const NODE = process.execPath;
@@ -135,5 +135,110 @@ describe('CLI session', () => {
       threw = true;
     }
     assert.ok(threw, 'status should exit with non-zero after close');
+  });
+});
+
+describe('MCP config diagnostics (no daemon)', () => {
+  // These exercise barebrowse doctor + install collision detection without
+  // touching a real browser. Isolated by running with HOME redirected to a
+  // tmpdir so they can't read or modify the developer's actual config.
+
+  it('doctor prints "no scope conflict" on a clean home (MCP-DIAG 3)', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'bb-doctor-clean-'));
+    try {
+      const out = execFileSync(NODE, [CLI, 'doctor'], {
+        cwd: fakeHome, encoding: 'utf8', env: { ...process.env, HOME: fakeHome },
+      });
+      assert.ok(/0 registrations? found/.test(out) || /No conflict/.test(out),
+        `clean home should report no conflict, got:\n${out}`);
+    } finally {
+      try { rmSync(fakeHome, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('doctor flags CONFLICT when two scopes point at different endpoints (MCP-DIAG 3)', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'bb-doctor-conflict-'));
+    try {
+      // Plant two entries pointing at different absolute paths — exactly the
+      // scenario Claude Code's own warning surfaced for the user.
+      writeFileSync(join(fakeHome, '.claude.json'), JSON.stringify({
+        mcpServers: { barebrowse: { command: 'node', args: ['/path/A/mcp-server.js'] } },
+      }));
+      writeFileSync(join(fakeHome, '.mcp.json'), JSON.stringify({
+        mcpServers: { barebrowse: { command: 'node', args: ['/path/B/mcp-server.js'] } },
+      }));
+      const out = execFileSync(NODE, [CLI, 'doctor'], {
+        cwd: fakeHome, encoding: 'utf8', env: { ...process.env, HOME: fakeHome },
+      });
+      assert.ok(out.includes('CONFLICT'),
+        `divergent endpoints must trigger CONFLICT warning, got:\n${out}`);
+      assert.ok(out.includes('/path/A/mcp-server.js') && out.includes('/path/B/mcp-server.js'),
+        `output must surface both endpoint paths so the user can pick which to remove, got:\n${out}`);
+    } finally {
+      try { rmSync(fakeHome, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('install refuses to clobber a different existing endpoint without --force (MCP-DIAG 2)', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'bb-install-conflict-'));
+    try {
+      // Pretend Cursor already has a different barebrowse pointing at a
+      // worktree path. install() must not silently overwrite — that was
+      // exactly how scope conflicts started accumulating.
+      const cursorDir = join(fakeHome, '.cursor');
+      mkdirSync(cursorDir, { recursive: true });
+      const cursorPath = join(cursorDir, 'mcp.json');
+      writeFileSync(cursorPath, JSON.stringify({
+        mcpServers: { barebrowse: { command: 'node', args: ['/old/path/mcp-server.js'] } },
+      }));
+      const out = execFileSync(NODE, [CLI, 'install'], {
+        cwd: fakeHome, encoding: 'utf8', env: { ...process.env, HOME: fakeHome },
+      });
+      assert.ok(/CONFLICT/.test(out),
+        `install must surface CONFLICT instead of silently overwriting, got:\n${out}`);
+      // Existing entry stays untouched without --force
+      const after = JSON.parse(readFileSync(cursorPath, 'utf8'));
+      assert.deepEqual(after.mcpServers.barebrowse.args, ['/old/path/mcp-server.js'],
+        'existing entry must be preserved without --force');
+
+      // With --force, it does overwrite.
+      const out2 = execFileSync(NODE, [CLI, 'install', '--force'], {
+        cwd: fakeHome, encoding: 'utf8', env: { ...process.env, HOME: fakeHome },
+      });
+      assert.ok(/REPLACED/.test(out2), `--force must replace, got:\n${out2}`);
+      const after2 = JSON.parse(readFileSync(cursorPath, 'utf8'));
+      assert.deepEqual(after2.mcpServers.barebrowse, { command: 'npx', args: ['barebrowse', 'mcp'] },
+        'with --force the entry should be the canonical npx one');
+    } finally {
+      try { rmSync(fakeHome, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('mcp startup writes a banner to stderr with version + serving path (MCP-DIAG 1)', async () => {
+    const { spawn } = await import('node:child_process');
+    const proc = spawn(NODE, [CLI, 'mcp'], { stdio: ['pipe', 'pipe', 'pipe'] });
+    try {
+      const banner = await new Promise((resolve, reject) => {
+        const deadline = setTimeout(
+          () => reject(new Error('no stderr banner within 3s — runStdio() probably never started')),
+          3000,
+        );
+        proc.stderr.on('data', (d) => {
+          const line = d.toString().split('\n')[0];
+          if (line.includes('barebrowse mcp')) {
+            clearTimeout(deadline);
+            resolve(line);
+          }
+        });
+      });
+      assert.ok(/barebrowse mcp v\d+\.\d+\.\d+/.test(banner),
+        `banner must include version, got: ${banner}`);
+      assert.ok(banner.includes('mcp-server.js'),
+        `banner must include the absolute serving path, got: ${banner}`);
+      assert.ok(/pid \d+/.test(banner),
+        `banner must include pid, got: ${banner}`);
+    } finally {
+      proc.kill();
+    }
   });
 });
