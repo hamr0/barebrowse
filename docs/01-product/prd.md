@@ -129,6 +129,8 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 - Wrapper collapsing (nested generics, empty groups)
 - Context-aware filtering (search relevance, dedup)
 
+**Modes:** `act` (default) keeps interactive elements and short labels — best for clicking/filling. `read` (alias for `browse`) keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. `navigate` and `full` expose progressively more landmarks. Every public surface — `browse()`, `connect()`'s `page.snapshot()`, the MCP `browse`/`snapshot` tools, the bareagent `browse`/`snapshot` tools, and the CLI's `--mode=` / `--prune-mode=` flags — accepts the same enum. When act mode collapses a content-heavy page well past what a search/e-commerce page would, the snapshot appends a one-line `hint: …` suggesting `pruneMode='read'` so the caller can re-snapshot instead of bailing to a separate HTTP fetch.
+
 **What stays in mcprune:** The Playwright MCP proxy architecture. mcprune can continue to exist as a Playwright-based MCP server for users who want that path. But for barebrowse consumers, pruning is built in.
 
 ### Obstacle Course — What barebrowse handles automatically

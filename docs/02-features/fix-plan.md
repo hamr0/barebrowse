@@ -247,6 +247,42 @@ Ranked by leverage. Each lands as its own commit + tests.
   overwrite with it; the `mcp` startup banner matches the expected
   format with version + path + pid.
 
+### Pruning reach: MCP/bareagent + `read` mode *(shipped — fix landed post-v0.9.0)*
+
+- **Observed:** Agents calling barebrowse via the MCP server (and CLI
+  users following SKILL.md) saw paragraph-heavy pages collapse to near-
+  empty snapshots. Claude commonly fell back to WebFetch after a single
+  barebrowse round-trip on articles/docs/blogs. Two compounding causes:
+  (1) `prune.js` recognised `act|browse|navigate|full` but not the
+  publicly-advertised `read` — passing `mode: 'read'` silently fell back
+  to act-mode pruning; (2) MCP `browse`/`snapshot` and bareagent
+  `browse`/`snapshot` had no `pruneMode` parameter at all, so even if
+  `read` worked it could not be requested from those surfaces.
+- **What barebrowse now does:**
+  - **`prune()`** treats `mode: 'read'` as an alias for `mode: 'browse'`
+    via a one-line normalization at the top of the function.
+  - **MCP `browse` and `snapshot` tools** gained a `pruneMode:
+    'act'|'read'` enum parameter, with tool descriptions that tell the
+    agent when to pick `read` (content-heavy pages — articles, docs,
+    blogs). Handlers forward it to the library.
+  - **bareagent `browse` and `snapshot` tools** gained the same
+    parameter with identical semantics. The `browse` execute defends
+    against clobbering a caller-supplied `opts.pruneMode` when the tool
+    is invoked without the arg.
+  - **Auto-hint** in `page.snapshot()` and `browse()`: when act mode is
+    active and a substantial page (`raw > 5 KB`) collapses to under
+    500 chars AND under 5% of raw, the result includes a single `hint:
+    act mode dropped most of the page — retry with pruneMode='read' …`
+    line between the stats and the tree. Thresholds are conservative so
+    interactive-heavy pages (e-commerce, search results) do not trigger
+    it. Cost of a false positive is one extra tool call; miss cost was
+    the WebFetch fallback.
+- **Regression test:** `test/unit/prune.test.js` — "aliases
+  `mode='read'` to browse mode" asserts `prune(tree, {mode: 'read'})`
+  deep-equals `prune(tree, {mode: 'browse'})` on a paragraph+button
+  fixture and that paragraphs survive. 17 prune tests pass (was 16).
+  Full unit suite 68/68 green; browse integration 16/16 green.
+
 ## Out of scope (noted, not planned)
 
 - Tests/style nits, TypeScript migration, build tooling — intentionally

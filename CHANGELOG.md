@@ -1,5 +1,41 @@
 # Changelog
 
+## Unreleased
+
+### Pruning — `pruneMode` reaches MCP / bareagent and `read` finally works
+
+- **`mode: 'read'` is now a real alias for `mode: 'browse'`** in `prune()`.
+  Previously, the CLI (`barebrowse snapshot --mode=read`) and the SKILL.md
+  advertised a `read` mode that did not exist — `MODE_REGIONS[mode] ||
+  MODE_REGIONS.act` silently fell back to act-mode pruning. Articles, docs,
+  and blog posts therefore came back gutted no matter which mode the agent
+  asked for, which is why Claude tended to give up and fall back to
+  WebFetch. One-line alias at the top of `prune()` fixes it; `act|browse|
+  navigate|full` still behave unchanged.
+- **MCP `browse` and `snapshot` tools gained a `pruneMode: 'act'|'read'`
+  parameter** (mcp-server.js). Before this, the MCP surface had no way to
+  ask for any mode other than `act` — `browse`'s `mode` param was browser
+  mode (headless/headed/hybrid), and `snapshot` accepted only `maxChars`.
+  Tool descriptions now tell the caller when to pick `read` (content-heavy
+  pages: articles, docs, blogs).
+- **bareagent `browse` and `snapshot` tools gained the same `pruneMode`
+  parameter** (`src/bareagent.js`) with identical semantics. The `browse`
+  handler preserves any caller-supplied default `opts.pruneMode` when the
+  tool is called without an arg (`pruneMode ? { ...opts, pruneMode } : opts`).
+- **Auto-hint when act-mode looks suspect.** When `page.snapshot()` or
+  `browse()` is called in act mode against a substantial page (raw > 5 KB)
+  and the pruned output collapses to under 500 chars AND under 5% of raw,
+  the result includes a one-line `hint: act mode dropped most of the page
+  — retry with pruneMode='read' …` directly between the stats line and the
+  tree. Thresholds are deliberately conservative: an e-commerce or
+  search-results page (many interactive elements kept) won't trigger it;
+  a paragraph-heavy article will.
+- **Regression test:** `test/unit/prune.test.js` — "aliases mode='read' to
+  browse mode" pins the alias contract by asserting `prune(tree, {mode:
+  'read'})` deep-equals `prune(tree, {mode: 'browse'})` and that paragraphs
+  survive (the act-mode-style stripping that previously masqueraded as
+  read-mode is gone).
+
 ## 0.9.0
 
 Phase B — every H1–H9 from `docs/02-features/fix-plan.md` shipped one

@@ -150,6 +150,7 @@ export const TOOLS = [
       properties: {
         url: { type: 'string', description: 'URL to browse' },
         mode: { type: 'string', enum: ['headless', 'headed', 'hybrid'], description: 'Browser mode (default: headless)' },
+        pruneMode: { type: 'string', enum: ['act', 'read'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If the page is content-heavy and act-mode returns mostly empty, retry with "read".' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
       required: ['url'],
@@ -172,6 +173,7 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
+        pruneMode: { type: 'string', enum: ['act', 'read'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If a previous snapshot looked empty on a content-heavy page, retry with "read".' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
     },
@@ -374,7 +376,7 @@ async function handleToolCall(name, args) {
     case 'browse': {
       let timer;
       const text = await Promise.race([
-        browse(args.url, { mode: args.mode }),
+        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode }),
         new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('browse timed out after 60s')), 60000); }),
       ]);
       clearTimeout(timer);
@@ -393,7 +395,7 @@ async function handleToolCall(name, args) {
     }, TIMEOUTS.goto);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
-      const text = await page.snapshot();
+      const text = await page.snapshot(args.pruneMode ? { mode: args.pruneMode } : undefined);
       const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
       if (text.length > limit) {
         const file = saveSnapshot(text);

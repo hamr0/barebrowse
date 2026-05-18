@@ -76,6 +76,22 @@ describe('prune()', () => {
     assert.ok(flat.some((n) => n.role === 'paragraph'), 'should keep paragraphs in browse mode');
   });
 
+  it("aliases mode='read' to browse mode", () => {
+    const tree = node('RootWebArea', '', [
+      node('main', '', [
+        node('paragraph', '', [
+          node('StaticText', 'Some article content'),
+        ]),
+        node('button', 'Submit'),
+      ]),
+    ]);
+    const readResult = prune(tree, { mode: 'read' });
+    const browseResult = prune(tree, { mode: 'browse' });
+    assert.deepEqual(readResult, browseResult, "'read' must produce the same output as 'browse'");
+    const flat = flattenTree(readResult);
+    assert.ok(flat.some((n) => n.role === 'paragraph'), "'read' should keep paragraphs (was silently falling back to act before)");
+  });
+
   it('drops InlineTextBox noise', () => {
     const tree = node('RootWebArea', '', [
       node('main', '', [

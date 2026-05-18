@@ -50,10 +50,11 @@ export function createBrowseTools(opts = {}) {
         type: 'object',
         properties: {
           url: { type: 'string', description: 'URL to browse' },
+          pruneMode: { type: 'string', enum: ['act', 'read'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs).' },
         },
         required: ['url'],
       },
-      execute: async ({ url }) => await browse(url, opts),
+      execute: async ({ url, pruneMode }) => await browse(url, pruneMode ? { ...opts, pruneMode } : opts),
     },
     {
       name: 'goto',
@@ -70,10 +71,15 @@ export function createBrowseTools(opts = {}) {
     {
       name: 'snapshot',
       description: 'Get the current ARIA snapshot. Returns a YAML-like tree with [ref=N] markers on interactive elements.',
-      parameters: { type: 'object', properties: {} },
-      execute: async () => {
+      parameters: {
+        type: 'object',
+        properties: {
+          pruneMode: { type: 'string', enum: ['act', 'read'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs).' },
+        },
+      },
+      execute: async ({ pruneMode } = {}) => {
         const page = await getPage();
-        return await page.snapshot();
+        return await page.snapshot(pruneMode ? { mode: pruneMode } : undefined);
       },
     },
     {

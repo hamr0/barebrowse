@@ -65,7 +65,8 @@ const SKIP_ROLES = new Set([
  * @returns {object|null} Pruned tree
  */
 export function prune(tree, options = {}) {
-  const { mode = 'act', context = '' } = options;
+  let { mode = 'act', context = '' } = options;
+  if (mode === 'read') mode = 'browse';
   const allowedRegions = MODE_REGIONS[mode] || MODE_REGIONS.act;
   const isBrowse = mode === 'browse';
   const keywords = context

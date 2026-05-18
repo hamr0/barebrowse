@@ -110,7 +110,11 @@ export async function browse(url, opts = {}) {
       snapshot = raw;
     }
     const stats = `url: ${url}\n${raw.length.toLocaleString()} chars → ${snapshot.length.toLocaleString()} chars (${Math.round((1 - snapshot.length / raw.length) * 100)}% pruned)`;
-    snapshot = stats + '\n' + snapshot;
+    const actMode = !opts.pruneMode || opts.pruneMode === 'act';
+    const hint = (actMode && raw.length > 5000 && snapshot.length < 500 && snapshot.length < raw.length * 0.05)
+      ? `hint: act mode dropped most of the page — retry with pruneMode='read' for paragraphs and long text\n`
+      : '';
+    snapshot = stats + '\n' + hint + snapshot;
 
     // Step 7: Clean up
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
@@ -382,10 +386,14 @@ export async function connect(opts = {}) {
       const pageUrl = entries[currentIndex]?.url || '';
       const warn = botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '';
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
-      const pruned = pruneTree(result.tree, { mode: pruneOpts?.mode || 'act' });
+      const mode = pruneOpts?.mode || 'act';
+      const pruned = pruneTree(result.tree, { mode });
       const out = formatTree(pruned);
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
-      return stats + '\n' + warn + out;
+      const hint = (mode === 'act' && raw.length > 5000 && out.length < 500 && out.length < raw.length * 0.05)
+        ? `hint: act mode dropped most of the page — retry with pruneMode='read' for paragraphs and long text\n`
+        : '';
+      return stats + '\n' + hint + warn + out;
     },
 
     async click(ref) {
