@@ -214,6 +214,64 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('onDialog handler overrides the default auto-accept (H8)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      // Page calls confirm() and prompt(); we install a handler that
+      // (a) rejects the confirm, (b) supplies a custom string to the prompt.
+      // The page writes both results into the document so we can read them
+      // back through a snapshot — proves the dialog reply reached the JS.
+      const html = `
+        <body>
+          <div id="c"></div>
+          <div id="p"></div>
+          <script>
+            window.addEventListener('load', () => {
+              const c = confirm('really?');
+              const p = prompt('name?', 'default');
+              document.getElementById('c').textContent = 'CONFIRM-' + c;
+              document.getElementById('p').textContent = 'PROMPT-' + p;
+            });
+          </script>
+        </body>`;
+
+      // Install handler BEFORE goto — listener wired at connect() time uses
+      // the closure variable so this takes effect immediately.
+      const seen = [];
+      page.onDialog(({ type, message }) => {
+        seen.push({ type, message });
+        if (type === 'confirm') return { accept: false };
+        if (type === 'prompt') return { accept: true, promptText: 'CUSTOM-VALUE' };
+        return undefined; // fall through to defaults
+      });
+
+      await page.goto(`data:text/html,${encodeURIComponent(html)}`);
+
+      const snap = await page.snapshot();
+      assert.ok(snap.includes('CONFIRM-false'),
+        `confirm() must return false when handler returns { accept: false }, got:\n${snap}`);
+      assert.ok(snap.includes('PROMPT-CUSTOM-VALUE'),
+        `prompt() must receive the handler's promptText, got:\n${snap}`);
+      assert.ok(seen.some((d) => d.type === 'confirm' && d.message === 'really?'),
+        `handler should have observed the confirm, got: ${JSON.stringify(seen)}`);
+      assert.ok(seen.some((d) => d.type === 'prompt' && d.message === 'name?'),
+        `handler should have observed the prompt, got: ${JSON.stringify(seen)}`);
+
+      // Removing the handler (null) restores the default auto-accept.
+      page.onDialog(null);
+      const html2 = `<body><div id="r"></div><script>
+        window.addEventListener('load', () => {
+          document.getElementById('r').textContent = 'CONFIRM2-' + confirm('again');
+        });</script></body>`;
+      await page.goto(`data:text/html,${encodeURIComponent(html2)}`);
+      const snap2 = await page.snapshot();
+      assert.ok(snap2.includes('CONFIRM2-true'),
+        `with handler removed, confirm() must auto-accept (return true), got:\n${snap2}`);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('reload() refetches the current page and invalidates refMap (H3)', async () => {
     const page = await connect({ mode: 'headless' });
     try {

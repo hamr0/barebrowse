@@ -241,8 +241,13 @@ export async function connect(opts = {}) {
     });
   }
 
-  // Auto-dismiss JS dialogs (alert, confirm, prompt)
+  // JS dialog handling (alert, confirm, prompt, beforeunload). Default is
+  // auto-accept everything except beforeunload (auto-dismiss). The caller
+  // can install a custom decision via page.onDialog(handler) — the handler
+  // gets { type, message, defaultPrompt } and may return
+  // { accept: bool, promptText: string } to override.
   const dialogLog = [];
+  let onDialogHandler = null;
   function setupDialogHandler(session) {
     session.on('Page.javascriptDialogOpening', async (params) => {
       dialogLog.push({
@@ -250,10 +255,25 @@ export async function connect(opts = {}) {
         message: params.message,
         timestamp: new Date().toISOString(),
       });
-      await session.send('Page.handleJavaScriptDialog', {
-        accept: params.type !== 'beforeunload',
-        promptText: params.defaultPrompt || '',
-      });
+      let accept = params.type !== 'beforeunload';
+      let promptText = params.defaultPrompt || '';
+      if (onDialogHandler) {
+        try {
+          const decision = await onDialogHandler({
+            type: params.type,
+            message: params.message,
+            defaultPrompt: params.defaultPrompt || '',
+          });
+          if (decision && typeof decision === 'object') {
+            if (typeof decision.accept === 'boolean') accept = decision.accept;
+            if (typeof decision.promptText === 'string') promptText = decision.promptText;
+          }
+        } catch {
+          // Handler threw — fall back to defaults so the page doesn't hang
+          // waiting for a never-arriving handleJavaScriptDialog reply.
+        }
+      }
+      await session.send('Page.handleJavaScriptDialog', { accept, promptText });
     });
   }
   setupDialogHandler(page.session);
@@ -485,6 +505,16 @@ export async function connect(opts = {}) {
     get botBlocked() { return botBlocked; },
 
     dialogLog,
+
+    /**
+     * Install a custom JS dialog handler. The handler is called with
+     * `{ type, message, defaultPrompt }` and may return (sync or async)
+     * `{ accept: bool, promptText: string }` to override the auto-accept
+     * default. Pass null to restore the default behavior.
+     */
+    onDialog(handler) {
+      onDialogHandler = handler;
+    },
 
     downloads,
 
