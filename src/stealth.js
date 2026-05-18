@@ -92,6 +92,63 @@ const STEALTH_SCRIPT = `
       return origGetParam2.apply(this, arguments);
     };
   }
+
+  // Canvas fingerprinting — sites render standard text/shapes, then read
+  // pixels via toDataURL or getImageData. The output is stable per machine
+  // (GPU, font rasterizer, anti-aliasing) but unique across machines, which
+  // makes it the second-most-common fingerprint after WebGL. Defense: nudge
+  // a few RGB channels by ±1 per session so the hash changes each visit
+  // while the canvas still looks identical to the human eye. The per-tab
+  // seed keeps reads stable within a session so legitimate canvas use
+  // (image processing, games) doesn't flicker.
+  // crypto.getRandomValues is guaranteed unique per browsing context; using
+  // Math.random alone can collide when two fresh V8 contexts start within
+  // microseconds of each other (real-world: parallel tests, real-world hit:
+  // we observed it). performance.now adds a wall-clock anchor as a belt-and-
+  // braces guard against contexts where crypto is somehow stubbed.
+  const _seedBuf = new Uint32Array(1);
+  crypto.getRandomValues(_seedBuf);
+  const CANVAS_SEED = (_seedBuf[0] ^ ((performance.now() * 1e6) | 0)) >>> 0;
+  function shiftPixels(data) {
+    // Touch ~1 byte per 64-byte stride. The bit we XOR with is taken from a
+    // position-dependent SLICE of a seed-mixed hash, not its low bit — a
+    // naive 'mix & 1' collapses to only two possible outputs per seed
+    // parity because every stride index is even (the position multiplier
+    // is odd, so the low bit only depends on seed parity). Indexing the
+    // hash by (i/64) mod 32 makes every stride position sample a different
+    // bit, so two distinct seeds produce different mask patterns.
+    for (let i = 0; i < data.length; i += 64) {
+      const h = ((CANVAS_SEED * 2654435761) ^ (i * 1597334677)) >>> 0;
+      const bit = (h >>> ((i >>> 6) & 31)) & 1;
+      data[i] = (data[i] ^ bit) & 0xff;
+    }
+    return data;
+  }
+  // Capture originals BEFORE replacing — toDataURL must read pixels via the
+  // native getImageData (not the patched one), otherwise the patch double-
+  // applies and the second XOR cancels the first, leaving output unchanged.
+  const origGetImageData = CanvasRenderingContext2D.prototype.getImageData;
+  const origToDataURL = HTMLCanvasElement.prototype.toDataURL;
+  HTMLCanvasElement.prototype.toDataURL = function() {
+    const ctx = this.getContext('2d');
+    if (ctx && this.width > 0 && this.height > 0) {
+      try {
+        const img = origGetImageData.call(ctx, 0, 0, this.width, this.height);
+        shiftPixels(img.data);
+        ctx.putImageData(img, 0, 0);
+      } catch {
+        // Tainted canvas (cross-origin image) — can't read; skip the nudge
+        // and fall through to the original call so the page sees the
+        // expected SecurityError instead of silent corruption.
+      }
+    }
+    return origToDataURL.apply(this, arguments);
+  };
+  CanvasRenderingContext2D.prototype.getImageData = function() {
+    const img = origGetImageData.apply(this, arguments);
+    shiftPixels(img.data);
+    return img;
+  };
 `;
 
 /**
