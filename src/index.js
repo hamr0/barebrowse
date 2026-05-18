@@ -17,6 +17,7 @@ import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPr
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
 import { waitForNetworkIdle } from './network-idle.js';
+import { join as pathJoin } from 'node:path';
 
 /**
  * Browse a URL and return an ARIA snapshot.
@@ -130,6 +131,10 @@ export async function browse(url, opts = {}) {
  *   CDP port instead of launching a new one. The browser keeps running on
  *   close(); only the tab we created is torn down. Use this to drive a
  *   user's logged-in session (start Chromium with --remote-debugging-port=N).
+ * @param {string} [opts.downloadPath] - Directory to save downloaded files.
+ *   Default: a per-session subdirectory under the OS temp dir. Downloads
+ *   land here as <guid>; check `page.downloads` for { url, suggestedFilename,
+ *   savedPath, state, totalBytes, receivedBytes } per file.
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
@@ -180,6 +185,60 @@ export async function connect(opts = {}) {
         await page.session.send('Network.setCookies', { cookies: state.cookies });
       }
     } catch { /* file not found or invalid — continue without */ }
+  }
+
+  // Download tracking — wire Browser.setDownloadBehavior so files actually
+  // land on disk (default Chromium would route them to ~/Downloads or
+  // nowhere useful in headless), and listen for downloadWillBegin /
+  // downloadProgress so callers can read `page.downloads` to know what
+  // arrived. In attach mode we don't change the user's running browser's
+  // download dir — they almost certainly have an existing preference.
+  const downloads = [];
+  let ownedDownloadDir = null;
+  if (!attachMode) {
+    let downloadPath = opts.downloadPath;
+    if (!downloadPath) {
+      const { mkdtempSync } = await import('node:fs');
+      const { tmpdir } = await import('node:os');
+      ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), 'barebrowse-dl-'));
+      downloadPath = ownedDownloadDir;
+    }
+    try {
+      // 'allowAndName' names saved files by guid for a stable, predictable
+      // path; the suggested filename is still surfaced on the download record.
+      await cdp.send('Browser.setDownloadBehavior', {
+        behavior: 'allowAndName', downloadPath, eventsEnabled: true,
+      });
+    } catch {
+      // Older Chrome may not accept 'allowAndName' — fall back to 'allow'
+      // which uses the suggested filename verbatim (no GUID).
+      try {
+        await cdp.send('Browser.setDownloadBehavior', {
+          behavior: 'allow', downloadPath, eventsEnabled: true,
+        });
+      } catch {
+        // Download capture unavailable on this Chrome — downloads still
+        // happen, we just can't observe them. page.downloads stays empty.
+      }
+    }
+    cdp.on('Browser.downloadWillBegin', (params) => {
+      downloads.push({
+        guid: params.guid,
+        url: params.url,
+        suggestedFilename: params.suggestedFilename,
+        savedPath: pathJoin(downloadPath, params.guid),
+        state: 'inProgress',
+        totalBytes: 0,
+        receivedBytes: 0,
+      });
+    });
+    cdp.on('Browser.downloadProgress', (params) => {
+      const d = downloads.find((x) => x.guid === params.guid);
+      if (!d) return;
+      d.state = params.state; // 'inProgress' | 'completed' | 'canceled'
+      d.totalBytes = params.totalBytes;
+      d.receivedBytes = params.receivedBytes;
+    });
   }
 
   // Auto-dismiss JS dialogs (alert, confirm, prompt)
@@ -427,6 +486,8 @@ export async function connect(opts = {}) {
 
     dialogLog,
 
+    downloads,
+
     async screenshot(screenshotOpts = {}) {
       const format = screenshotOpts.format || 'png';
       const params = { format };
@@ -488,6 +549,14 @@ export async function connect(opts = {}) {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       cdp.close();
       await cleanupBrowser(browser);
+      // If we created the download dir ourselves, clean it up too. Caller-
+      // supplied opts.downloadPath stays — the caller owns the lifecycle.
+      if (ownedDownloadDir) {
+        try {
+          const { rmSync } = await import('node:fs');
+          rmSync(ownedDownloadDir, { recursive: true, force: true });
+        } catch {}
+      }
     },
   };
 }

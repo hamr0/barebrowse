@@ -162,6 +162,14 @@ Also wrapped the stdin transport + `unhandledRejection` / `uncaughtException` / 
 
 **Regression test:** `test/unit/mcp.test.js` — new "MCP tool surface (H6)" describe block. (1) Asserts every new tool name is in the exported `TOOLS` array. (2) Asserts `eval` is absent when `BAREBROWSE_MCP_EVAL` is unset (the normal test run). (3) Spawns a child node with `BAREBROWSE_MCP_EVAL=1` set and a one-shot probe that imports `mcp-server.js` and stdouts whether `eval` is registered — proves the opt-in actually flips the registration.
 
+---
+
+## [2026-05-18] Downloads were silently going nowhere useful (H7)
+
+**Symptom:** Any `Content-Disposition: attachment` response (file downloads from forms, "Export" buttons, etc.) was either dropped (headless Chromium default = no download path configured) or routed to the Chromium default location which is unpredictable from the caller's perspective. There was no way for the agent to know a download happened, let alone where the file landed.
+**Fix:** `connect()` now wires `Browser.setDownloadBehavior({ behavior: 'allowAndName', downloadPath, eventsEnabled: true })` at setup. If the caller doesn't supply `opts.downloadPath`, we create a per-session directory under `/tmp/barebrowse-dl-*` and clean it up on `close()` (caller-supplied paths stay — caller owns the lifecycle). Subscribes to `Browser.downloadWillBegin` and `Browser.downloadProgress`. Exposes a live `page.downloads` array of `{ guid, url, suggestedFilename, savedPath, state, totalBytes, receivedBytes }` — `state` cycles through `inProgress` → `completed`/`canceled`. Falls back to `'allow'` if `'allowAndName'` isn't accepted by older Chrome; falls back to silent if neither works (downloads still happen, we just can't observe them). Skipped entirely in attach mode — we don't override the user's running browser's download preference.
+**Regression test:** `test/integration/connect.test.js` — "downloads array captures Content-Disposition attachments (H7)" (spins up a localhost server that returns `Content-Disposition: attachment; filename="hello.txt"` with a known payload; navigates to it; polls `page.downloads` until a `completed` entry shows up; asserts `suggestedFilename`, `state`, and that the file at `savedPath` contains the exact server payload).
+
 
 
 

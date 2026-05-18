@@ -157,6 +157,63 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('downloads array captures Content-Disposition attachments (H7)', async () => {
+    const { createServer } = await import('node:http');
+    const { existsSync, readFileSync, rmSync, mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join: joinPath } = await import('node:path');
+
+    const PAYLOAD = 'this-is-the-file-body-' + Math.random().toString(36).slice(2);
+    const server = createServer((req, res) => {
+      if (req.url === '/file.txt') {
+        res.writeHead(200, {
+          'Content-Type': 'application/octet-stream',
+          'Content-Disposition': 'attachment; filename="hello.txt"',
+        });
+        res.end(PAYLOAD);
+      } else {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end('<a href="/file.txt" download>get</a>');
+      }
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const port = server.address().port;
+
+    const dlDir = mkdtempSync(joinPath(tmpdir(), 'bb-h7-test-'));
+    const page = await connect({ mode: 'headless', downloadPath: dlDir });
+    try {
+      // Navigate to a page that auto-triggers the download. We just go
+      // straight to the attachment URL — Chromium routes it through the
+      // download path because of Content-Disposition.
+      page.goto(`http://127.0.0.1:${port}/file.txt`).catch(() => {});
+
+      // Poll for the download to complete (no Page.loadEventFired for raw
+      // downloads — page.goto may reject or just stall).
+      const deadline = Date.now() + 5000;
+      while (Date.now() < deadline) {
+        const d = page.downloads.find((x) => x.state === 'completed');
+        if (d) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
+
+      assert.ok(page.downloads.length > 0,
+        'page.downloads must list every Content-Disposition: attachment response');
+      const dl = page.downloads[0];
+      assert.equal(dl.suggestedFilename, 'hello.txt',
+        `suggestedFilename should reflect Content-Disposition; got: ${dl.suggestedFilename}`);
+      assert.equal(dl.state, 'completed',
+        `download must reach completed state, got: ${dl.state}`);
+      assert.ok(existsSync(dl.savedPath),
+        `downloaded file must exist at savedPath=${dl.savedPath}`);
+      assert.equal(readFileSync(dl.savedPath, 'utf8'), PAYLOAD,
+        'downloaded file body must match what the server sent');
+    } finally {
+      await page.close();
+      try { rmSync(dlDir, { recursive: true, force: true }); } catch {}
+      await new Promise((r) => server.close(r));
+    }
+  });
+
   it('reload() refetches the current page and invalidates refMap (H3)', async () => {
     const page = await connect({ mode: 'headless' });
     try {
