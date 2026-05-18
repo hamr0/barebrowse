@@ -1,5 +1,138 @@
 # Changelog
 
+## 0.9.0
+
+Phase B — every H1–H9 from `docs/02-features/fix-plan.md` shipped one
+commit each, plus the post-Phase-B code-review fixes. Two new modules
+of functionality (iframe pipeline, download capture), two new public
+API methods (`reload`, `onDialog`), six new MCP tools, opt-in `eval`,
+per-tool MCP timeouts, full stealth coverage, and a tightened bot-
+detection heuristic. 23 new regression tests. 123/123 tests pass.
+
+See `docs/02-features/fix-plan.md` (Phase B section) and the per-fix
+entries in `docs/03-logs/bug-log.md`. Headlines:
+
+### Iframe / OOPIF support (H2)
+- `Accessibility.getFullAXTree` stops at frame boundaries; pre-H2,
+  Stripe, reCAPTCHA, embedded login forms, and most ads were invisible.
+- `createPage()` now wires `Target.setAutoAttach({autoAttach: true,
+  flatten: true})` and listens for `Target.attachedToTarget` to register
+  every iframe's CDP session in a `framesByFrameId` map (recursive).
+- `ariaTree()` walks `Page.getFrameTree`, fetches each frame's AX tree
+  on the right session (child for OOPIF, main with `frameId` param for
+  same-origin), splices children under iframe placeholders identified
+  via `DOM.getFrameOwner`.
+- Refs are globally unique via a flat counter shared across frames;
+  refMap stores `{session, backendNodeId}` so `click`/`type`/`hover`/
+  `select`/`upload` route to the correct CDP session. Visible
+  `[ref=N]` format unchanged.
+- `--site-per-process` added to launch flags so every iframe (including
+  same-origin) becomes OOPIF with a dedicated session — required
+  because `DOM.getBoxModel` returns frame-local coords while
+  `Input.dispatchMouseEvent` on the parent session uses parent-viewport
+  coords; OOPIF gives each frame its own Input domain.
+- `drag()` between elements in different frames now errors rather than
+  mixing sessions.
+
+### Attach to a running browser (H1)
+- `connect({port: 9222})` attaches to a Chromium the user already
+  started (`chromium --remote-debugging-port=9222`). New
+  `attach({port})` helper in `chromium.js` returns a browser handle
+  with `process: null, ownedProfileDir: null` so `cleanupBrowser` is
+  a no-op — we never kill or clean up a browser we didn't start.
+- Attach mode skips stealth (would persist via
+  `addScriptToEvaluateOnNewDocument`), `Browser.setPermission`
+  (browser-wide — would leak deny-states), download capture (don't
+  override the user's preference), and the two hybrid-fallback rewind
+  branches in `goto()` (we don't own the browser).
+- `close()` still closes the tab we created; the browser keeps running.
+
+### Downloads (H7)
+- `Browser.setDownloadBehavior({behavior: 'allowAndName',
+  downloadPath, eventsEnabled: true})` wired in `connect()`. Falls
+  back to `'allow'` on older Chrome; silent if neither works (downloads
+  still happen, just unobserved).
+- Per-session `mkdtemp('/tmp/barebrowse-dl-*')` cleaned up on `close()`;
+  caller-supplied `opts.downloadPath` left alone.
+- Live `page.downloads` array of `{guid, url, suggestedFilename,
+  savedPath, state, totalBytes, receivedBytes}`. Listeners registered
+  BEFORE `setDownloadBehavior` is sent (event ordering).
+- Skipped entirely in attach mode.
+
+### Stealth completeness (H4)
+- `Network.setUserAgentOverride` strips "HeadlessChrome" from the UA in
+  HTTP request headers AND `navigator.userAgent`. UA read from
+  `Browser.getVersion` so version/platform fields stay accurate across
+  Chromium releases.
+- New JS patches: `WebGLRenderingContext`/`WebGL2` `getParameter`
+  spoofs `UNMASKED_VENDOR_WEBGL` / `UNMASKED_RENDERER_WEBGL` to
+  Intel pair (the single most-used headless fingerprint);
+  `navigator.hardwareConcurrency` = 8; `navigator.deviceMemory` = 8;
+  full `chrome.runtime` enum shape (PlatformOs, OnInstalledReason,
+  etc.); `Notification` constructor + `permission: 'default'`;
+  `Permissions.query('notifications')` mirrors `Notification.permission`
+  instead of returning hardcoded `'prompt'`.
+
+### Bot-detection heuristic tightened (H9)
+- Pre-H9 `nodeCount < 50` alone flagged any minimal legitimate page;
+  generic phrases `access denied`/`unknown error`/`permission denied`
+  flagged real HTTP 4xx/5xx pages, kicking hybrid into a costly
+  headed launch for nothing.
+- Split into STRONG_PHRASES (Cloudflare's "Just a moment", "Attention
+  Required", "verify you are human" etc. — fire alone regardless of
+  size) and WEAK_PHRASES (generic phrases — only fire when ALSO
+  tiny: `nodeCount < 30` or `text.length < 50`). Pure low-node-count
+  without a phrase no longer flags. `isChallengePage` exported so
+  tests can pin the contract.
+
+### New connect() methods
+- **H3** `page.reload({ignoreCache, timeout})` — `Page.reload` wrapper
+  with same SPA-fallback semantics as `goBack`/`goForward`. Clears
+  `refMap` so pre-reload refs reject.
+- **H8** `page.onDialog(handler)` — handler receives
+  `{type, message, defaultPrompt}` and may return `{accept, promptText}`
+  to override the default auto-accept. Pass `null` to restore.
+  Persistent across hybrid fallback / `switchTab` / `createTab` —
+  every `setupDialogHandler` reads the same closure.
+- **H7** `page.downloads` — live array (see above).
+
+### MCP server (H5 + H6)
+- **H5:** new `TIMEOUTS` table replacing the blanket 30s — `goto`/
+  `reload`/`wait_for` 60s; `back`/`forward` 30s; `click`/`type`/
+  `press`/`scroll`/`hover`/`select`/`drag`/`snapshot`/`eval` 15s;
+  `tabs` 5s; `pdf`/`screenshot`/`upload` 45s.
+- **H6:** six new tools — `reload`, `screenshot`, `wait_for`, `tabs`
+  (with optional `switchTo: N`), `select`, `hover`. All wired through
+  the right `TIMEOUTS[name]`; mutating tools use `{retry: false}`.
+- **H6 opt-in:** `eval` tool registered only when
+  `BAREBROWSE_MCP_EVAL=1` is set. `Runtime.evaluate` in an
+  authenticated session is the load-bearing risk (cookies/localStorage
+  exfiltration). CLI/connect()/daemon keep `eval`; MCP gates it.
+- `TIMEOUTS` and `TOOLS` exported; `runStdio()` exported so `cli.js`
+  can launch the JSON-RPC loop explicitly (the earlier auto-start
+  isMain guard broke `npx barebrowse mcp` — caught in code review).
+- `serverInfo.version` now reads from `package.json` (was hardcoded
+  '0.7.1' — drift caught in same review).
+
+### CLI / daemon parity
+- `barebrowse reload [--no-cache]` and `barebrowse downloads`
+  subcommands added.
+- `--download-path=DIR` flag plumbs through `startDaemon` →
+  `runDaemonInternal` → `connect()`.
+
+### bareagent adapter
+- Three new tools: `reload`, `wait_for`, `downloads`. `onDialog`
+  intentionally stays connect()-only (callback shape doesn't fit
+  tool loop).
+
+### Tests
+- 23 new regression tests across `connect.test.js` (H1, H2, H3, H7,
+  H8), `stealth.test.js` (H4 — new file), `mcp.test.js` (H5 timeouts,
+  H6 tool surface + eval env-var gating, npx cli.js mcp regression),
+  `challenge.test.js` (H9 — new file, 9 cases), `cli.test.js`
+  (reload + downloads subcommands). Total: 123 (54 unit + 69
+  integration).
+
 ## 0.8.0
 
 Stability release — 11 fixes from the QA review of 2026-05-17. Adds a

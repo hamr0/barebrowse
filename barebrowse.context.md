@@ -1,11 +1,11 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.8.0 | Node.js >= 22 | 0 required deps | Apache-2.0
+> v0.9.0 | Node.js >= 22 | 0 required deps | Apache-2.0
 
 ## What this is
 
-barebrowse is a CDP-direct browsing library for autonomous agents (~3,300 lines in `src/` across 14 modules). URL in, pruned ARIA snapshot out. It launches the user's installed Chromium browser, navigates, handles consent/permissions/cookies, and returns a token-efficient ARIA tree with `[ref=N]` markers for interaction.
+barebrowse is a CDP-direct browsing library for autonomous agents (~3,600 lines in `src/` across 14 modules). URL in, pruned ARIA snapshot out. It launches the user's installed Chromium browser (or attaches to one already running), navigates, handles consent/permissions/cookies, walks iframes, captures downloads, and returns a token-efficient ARIA tree with `[ref=N]` markers for interaction.
 
 No Playwright. No bundled browser. No build step. Vanilla JS, ES modules.
 
@@ -25,6 +25,9 @@ Three integration paths:
 | `headless` (default) | Launches a fresh Chromium, no UI | Scraping, reading, fast automation |
 | `headed` | Auto-launches a visible Chromium window | Bot-detected sites, debugging, visual tasks |
 | `hybrid` | Tries headless first, headed fallback per-navigation (switches back to headless next time) | General-purpose agent browsing |
+| `connect({ port })` (attach) | Attaches to a Chromium *you* started with `--remote-debugging-port=N` — your real logged-in profile, no clone | When you need the user's real session (auth cookies, localStorage, IndexedDB). `close()` only kills the tab we opened, not the browser. |
+
+Attach mode skips three things vs. spawn modes: stealth patches (would persist via `addScriptToEvaluateOnNewDocument`), `Browser.setPermission` calls (browser-wide — would leak deny-states into the user's other tabs), and `Browser.setDownloadBehavior` (don't override the user's download preference). Stealth is unnecessary anyway because the user's real browser doesn't look headless.
 
 ## Minimal usage: one-shot browse
 
@@ -55,6 +58,7 @@ const snapshot = await browse('https://example.com', {
 | `goto(url, timeout?)` | url: string, timeout: number (default 30000) | void | Navigate + wait for load + dismiss consent |
 | `goBack()` | -- | void | Navigate back in browser history |
 | `goForward()` | -- | void | Navigate forward in browser history |
+| `reload(opts?)` | { ignoreCache?: boolean, timeout?: number } | void | Reload the current page. Clears refMap (refs from pre-reload reject). |
 | `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read' } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. |
 | `click(ref)` | ref: string | void | Scroll into view + mouse press+release at center |
 | `type(ref, text, opts?)` | ref: string, text: string, opts: { clear?, keyEvents? } | void | Focus + insert text. `clear: true` replaces existing. |
@@ -73,16 +77,20 @@ const snapshot = await browse('https://example.com', {
 | `waitForNetworkIdle(opts?)` | { timeout?: number, idle?: number } | void | Wait until no pending requests for `idle` ms (default 500) |
 | `saveState(filePath)` | filePath: string | void | Export cookies + localStorage to JSON file |
 | `injectCookies(url, opts?)` | url: string, { browser?: string } | void | Extract cookies from user's browser and inject via CDP |
-| `botBlocked` | -- | boolean | True if last `goto()` hit a bot challenge (ARIA node count <50). Resets on each navigation. |
+| `botBlocked` | -- | boolean | True if last `goto()` hit a bot challenge. Heuristic tightened in v0.9.0 (H9): Cloudflare-strong phrases fire alone; generic phrases ("access denied"/"unknown error") only fire on near-empty pages. Resets on each navigation. |
 | `dialogLog` | -- | Array<{type, message, timestamp}> | Auto-dismissed JS dialog history |
-| `cdp` | -- | object | Raw CDP session for escape hatch: `page.cdp.send(method, params)` |
+| `onDialog(handler)` | handler: ({type, message, defaultPrompt}) => {accept, promptText} \| undefined, or null to remove | void | Override the auto-accept default. Handler receives the dialog params; return `{accept: false}` to cancel, `{accept: true, promptText: 'x'}` to supply prompt input. Pass `null` to restore defaults. |
+| `downloads` | -- | Array<{guid, url, suggestedFilename, savedPath, state, totalBytes, receivedBytes}> | Live array of every `Content-Disposition: attachment` download captured during this session. `state`: `inProgress` → `completed` \| `canceled`. |
+| `cdp` | -- | object | Raw CDP session (getter — survives hybrid fallback and switchTab) for escape hatch: `page.cdp.send(method, params)` |
 | `createTab()` | -- | tab handle | New tab in same browser. Returns `{ goto, botBlocked, injectCookies, waitForNetworkIdle, cdp, close }`. Tab close doesn't affect session. |
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless) |
 
 **connect() options** (in addition to mode/port/consent):
+- `port: 9222` — Attach to a Chromium already running with `--remote-debugging-port=N` instead of spawning one. The browser keeps running on `close()`. Stealth + permission denial + download capture are skipped to avoid mutating the user's running browser.
 - `proxy: 'http://...'` — HTTP/SOCKS proxy for browser
 - `viewport: '1280x720'` — Set viewport dimensions
 - `storageState: 'file.json'` — Load cookies/localStorage from saved state
+- `downloadPath: '/abs/dir'` — Where downloads land. Default: per-session `mkdtemp` under `/tmp/barebrowse-dl-*` that gets removed on `close()`. Caller-supplied paths are not cleaned up — caller owns the lifecycle.
 
 ## Snapshot format
 
@@ -152,8 +160,10 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Off-screen elements | `DOM.scrollIntoViewIfNeeded` before every click, JS `.click()` fallback for no-layout elements | Both |
 | Form submission | `press('Enter')` triggers onsubmit | Both |
 | SPA navigation | `waitForNavigation()` uses loadEventFired + frameNavigated | Both |
-| Bot detection | ARIA node count (<50 = bot-blocked) + text heuristics. `botBlocked` flag set after every `goto()`. Hybrid fallback switches to headed. Snapshot shows `[BOT CHALLENGE DETECTED]` warning. | Hybrid |
-| `navigator.webdriver` | Stealth patches in headless (webdriver, plugins, chrome obj) | Headless |
+| Bot detection | v0.9.0 (H9): Cloudflare-strong phrases ("Just a moment", "Attention Required", "verify you are human") fire alone; generic phrases ("access denied", "unknown error") only fire on near-empty pages — no more false-positive headed-launches on legitimate 4xx/5xx pages. `botBlocked` flag set after every `goto()`. Hybrid fallback switches to headed. Snapshot shows `[BOT CHALLENGE DETECTED]` warning. | Hybrid |
+| Stealth (headless tells) | v0.9.0 (H4): `Network.setUserAgentOverride` strips "HeadlessChrome" from UA in HTTP headers AND `navigator.userAgent`; JS patches for webdriver, plugins, languages, full `chrome.runtime` enum shape, `Notification` constructor + `permission: 'default'`, `hardwareConcurrency: 8`, `deviceMemory: 8`, WebGL `UNMASKED_VENDOR_WEBGL`/`UNMASKED_RENDERER_WEBGL` spoofed to Intel | Headless |
+| iframe / OOPIF content (Stripe, reCAPTCHA, embedded forms) | v0.9.0 (H2): `Target.setAutoAttach({flatten:true})` registers a CDP session per iframe; `ariaTree()` walks `Page.getFrameTree`, fetches each frame's AX tree on the right session, splices children under iframe placeholders via `DOM.getFrameOwner`. Refs route via `{session, backendNodeId}` so clicks dispatch in the iframe's Input domain. `--site-per-process` launch flag forces every iframe — including same-origin — into OOPIF so coords work. | Both |
+| Downloads | v0.9.0 (H7): `Browser.setDownloadBehavior({behavior:'allowAndName', downloadPath, eventsEnabled:true})` + listeners populate `page.downloads`. Files land at `savedPath` (under `--download-path` if supplied, else per-session `/tmp/barebrowse-dl-*`). | Headless + Headed (skipped in attach mode) |
 | Profile locking | Unique temp dir per headless instance | Headless |
 | Shared memory crash (Linux) | `--disable-dev-shm-usage` flag prevents `/dev/shm` exhaustion | Headless |
 | ARIA noise | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
@@ -184,10 +194,12 @@ try {
 ```
 
 `createBrowseTools(opts)` returns:
-- `tools` -- array of bareagent-compatible tool objects (browse, goto, snapshot, click, type, press, scroll, select, hover, back, forward, drag, upload, tabs, switchTab, pdf, screenshot, plus assess if wearehere installed)
+- `tools` -- array of bareagent-compatible tool objects: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `select`, `hover`, `back`, `forward`, `reload` (v0.9.0), `drag`, `upload`, `tabs`, `switchTab`, `pdf`, `screenshot`, `wait_for` (v0.9.0), `downloads` (v0.9.0), plus `assess` if wearehere installed
 - `close()` -- cleanup function, call when done
 
-Action tools (click, type, press, scroll, hover, goto, back, forward, drag, upload, select, switchTab) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
+Action tools (click, type, press, scroll, hover, goto, back, forward, reload, drag, upload, select, switchTab, wait_for) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
+
+`onDialog` is intentionally not exposed as a tool — it's a callback shape that doesn't fit a request/response tool loop. If your bareagent flow needs to override a confirm/prompt, drop to `import { connect }` directly and pass the page through.
 
 ## CLI session mode
 
@@ -199,6 +211,8 @@ barebrowse snapshot                    # → .barebrowse/page-<timestamp>.yml
 barebrowse click 8                     # Click element ref=8
 barebrowse type 12 hello world         # Type into element ref=12
 barebrowse back                        # Go back in history
+barebrowse reload [--no-cache]         # v0.9.0 — reload current page (bypass cache optional)
+barebrowse downloads                   # v0.9.0 — JSON array of captured downloads (savedPath, state...)
 barebrowse upload 7 /path/to/file.pdf  # Upload file to file input
 barebrowse pdf                         # → .barebrowse/page-<timestamp>.pdf
 barebrowse wait-for --text="Success"   # Wait for content to appear
@@ -207,7 +221,7 @@ barebrowse save-state                  # → .barebrowse/state-<timestamp>.json
 barebrowse close                       # Kill daemon + browser
 ```
 
-**Open flags:** `--mode=headless|headed|hybrid`, `--proxy=URL`, `--viewport=WxH`, `--storage-state=FILE`, `--no-cookies`, `--browser=firefox|chromium`, `--timeout=N`
+**Open flags:** `--mode=headless|headed|hybrid`, `--port=N` (attach to running browser), `--proxy=URL`, `--viewport=WxH`, `--storage-state=FILE`, `--download-path=DIR` (v0.9.0), `--no-cookies`, `--browser=firefox|chromium`, `--timeout=N`
 
 Session lifecycle: `open` spawns a background daemon holding a `connect()` session. Subsequent commands POST to the daemon over HTTP (localhost). `close` shuts everything down. JS dialogs (alert/confirm/prompt) are auto-dismissed and logged.
 
@@ -233,15 +247,15 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 }
 ```
 
-12 core tools: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `back`, `forward`, `drag`, `upload`, `pdf`. Plus `assess` (privacy scan) if `wearehere` is installed (`npm install wearehere`).
+18 core tools as of v0.9.0: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if `wearehere` is installed (`npm install wearehere`). Plus the **opt-in `eval` tool** gated by `BAREBROWSE_MCP_EVAL=1` (default OFF) — `Runtime.evaluate` in the user's authenticated session can read cookies/localStorage and hit any same-origin endpoint, so opt-in only.
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
 
-`browse` and `snapshot` accept a `maxChars` param (default 30000). If the snapshot exceeds the limit, it's saved to `.barebrowse/page-<timestamp>.yml` and a short message with the file path is returned instead.
+`browse` and `snapshot` accept a `maxChars` param (default 30000). If the snapshot exceeds the limit, it's saved to `.barebrowse/page-<timestamp>.yml` and a short message with the file path is returned instead. `screenshot` always saves to `.barebrowse/screenshot-<timestamp>.{png,jpeg,webp}` and returns the file path (raw base64 in a JSON-RPC response would blow `maxChars`). `tabs` returns the JSON array, or with `switchTo: N` it switches and returns `'ok'`.
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
-Session tools share a singleton page, lazy-created on first use. All session tools have auto-retry on transient failures (browser crash, WebSocket close, navigation timeout) — each attempt gets its own 30s deadline, session resets between attempts, retries once automatically. Scroll accepts `direction: "up"/"down"` in addition to numeric `deltaY`. Click falls back to JS `.click()` when elements have no layout. `browse` has a 60s timeout (no retry — stateless). Assess tries headless first; if bot-blocked, retries headed. Browser OOM/crash auto-recovers (session resets, server stays alive).
+Session tools share a singleton page, lazy-created on first use. All session tools have auto-retry on transient failures (browser crash, WebSocket close, navigation timeout) on a per-tool deadline (v0.9.0 H5): `goto`/`reload`/`wait_for` 60s, `back`/`forward` 30s, interactive ops (`click`/`type`/`press`/`scroll`/`hover`/`select`/`drag`/`snapshot`/`eval`) 15s, `tabs` 5s, heavy I/O (`pdf`/`screenshot`/`upload`) 45s — replaces the prior blanket 30s. Session resets between attempts. Idempotent tools retry once; mutating tools (`click`/`type`/`upload`/etc.) `{ retry: false }` so partial first attempts don't replay on a fresh page. Scroll accepts `direction: "up"/"down"` in addition to numeric `deltaY`. Click falls back to JS `.click()` when elements have no layout. `browse` has a 60s timeout (no retry — stateless). Assess tries headless first; if bot-blocked, retries headed. Browser OOM/crash auto-recovers (session resets, server stays alive).
 
 ## Architecture
 
@@ -261,17 +275,18 @@ URL -> chromium.js (find/launch browser, permission flags)
 
 | Module | Lines | Purpose |
 |---|---|---|
-| `src/index.js` | ~370 | Public API: `browse()`, `connect()`, screenshot, network idle, hybrid |
+| `src/index.js` | ~940 | Public API: `browse()`, `connect()`, attach mode, iframe frame-tree walking, downloads, onDialog, isChallengePage |
 | `src/cdp.js` | 148 | WebSocket CDP client, flattened sessions |
-| `src/chromium.js` | 148 | Find/launch Chromium browsers, permission-suppressing flags |
+| `src/chromium.js` | ~160 | Find/launch Chromium browsers, `attach({port})`, `cleanupBrowser`, permission-suppressing flags, `--site-per-process` |
 | `src/aria.js` | 69 | Format ARIA tree as text |
 | `src/auth.js` | 279 | Cookie extraction (Chromium AES + keyring, Firefox), CDP injection |
 | `src/prune.js` | 472 | ARIA pruning pipeline (ported from mcprune) |
 | `src/interact.js` | ~170 | Click, type, press, scroll, hover, select |
 | `src/consent.js` | 200 | Auto-dismiss cookie consent dialogs across languages |
-| `src/stealth.js` | ~40 | Navigator patches for headless anti-detection |
-| `src/bareagent.js` | ~250 | Tool adapter for bareagent Loop |
-| `mcp-server.js` | ~340 | MCP server (JSON-RPC over stdio, assess session reuse + concurrency) |
+| `src/stealth.js` | ~110 | UA override + JS patches (webdriver, WebGL, hardware, Notification, chrome.runtime) |
+| `src/network-idle.js` | ~50 | Set-based network-idle wait (extracted in v0.8.0, F9) |
+| `src/bareagent.js` | ~330 | Tool adapter for bareagent Loop (21 tools) |
+| `mcp-server.js` | ~660 | MCP server (JSON-RPC over stdio, `runStdio()`, `TIMEOUTS`/`TOOLS` exports, opt-in eval, assess session reuse + concurrency) |
 
 ## Privacy assessment (optional)
 
@@ -322,6 +337,14 @@ Useful for agent threshold decisions: "skip sites above score 40", "warn if term
 9. **Screenshot returns base64.** Write to file with `fs.writeFileSync('shot.png', Buffer.from(base64, 'base64'))` or pass directly to a vision model.
 
 10. **Chromium-only.** CDP protocol limits us to Chrome, Chromium, Edge, Brave, Vivaldi (~80% desktop share). Firefox support via WebDriver BiDi is not yet implemented.
+
+11. **`--site-per-process` is on by default (v0.9.0).** Required for iframe support — without it, same-origin iframes stay in the parent process and `Input.dispatchMouseEvent` coords don't match `DOM.getBoxModel` coords for iframe-internal elements. Memory cost: +50-150MB per cross-origin frame. Real Chrome does this for cross-origin by default; we just extend it to all iframes. If you attach via `connect({port})`, the user's browser is whatever they launched it as — for iframe interaction reliability, start it with `--site-per-process` too.
+
+12. **Attach mode (`connect({port})`) skips three things on purpose.** No stealth (would inject persistent JS via `addScriptToEvaluateOnNewDocument`), no `Browser.setPermission` (browser-wide — would leak deny-states into the user's other tabs), no `Browser.setDownloadBehavior` (don't override the user's download preference). The trade-off: `page.downloads` is always empty in attach mode. If you need download capture in an attached session, start the browser with `--remote-debugging-port=N` *and* configure download preferences in the browser UI first.
+
+13. **Refs are globally flat across frames.** v0.9.0 (H2) assigns refs from a shared counter across the merged frame tree, so a `[ref=42]` from an iframe and a `[ref=43]` from the parent come from one address space. The visible `[ref=N]` format is unchanged. refMap stores `{session, backendNodeId}` so `click(ref)` automatically dispatches in the right frame's session.
+
+14. **`eval` MCP tool is opt-in.** Set `BAREBROWSE_MCP_EVAL=1` to register it. Default off because `Runtime.evaluate` in an authenticated session can read cookies/localStorage, post on the user's behalf, hit any same-origin endpoint. CLI/connect()/daemon all keep `eval` because the developer is the caller; MCP gates it because the agent acts with less judgment.
 
 ## Constraints
 

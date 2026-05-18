@@ -1,8 +1,8 @@
 # barebrowse — Product Requirements Document
 
-**Version:** 1.1
-**Date:** 2026-05-17
-**Status:** Phase A (stability fixes) complete @ v0.8.0; Phase B (headed enhancements) queued — see `docs/02-features/fix-plan.md`
+**Version:** 1.2
+**Date:** 2026-05-18
+**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0. All H1–H9 shipped one commit each (see `docs/02-features/fix-plan.md`). Outstanding follow-up: MCP Config Diagnostics (low priority — Claude Code already surfaces the warning).
 
 ---
 
@@ -149,9 +149,11 @@ The agent doesn't have to think about any of this:
 | **Form submission** | Enter key triggers onsubmit | Both |
 | **Tab between fields** | Tab key moves focus correctly | Both |
 | **SPA navigation** (YouTube, GitHub) | SPA-aware wait: frameNavigated + loadEventFired | Both |
-| **Bot detection** (Google, Reddit) | ARIA node count (<50 = blocked) + text heuristics. `botBlocked` flag + snapshot warning. Stealth patches (headless) + automatic headed fallback | Hybrid |
-| **navigator.webdriver leak** | Patched before page scripts run: webdriver, plugins, languages, chrome object | Headless |
-| **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged for inspection | Both |
+| **Bot detection** (Google, Reddit) | Cloudflare-strong phrases fire regardless of size; generic phrases ("access denied", "unknown error") only fire on near-empty pages — H9 stopped false-flagging legitimate 4xx/5xx pages. `botBlocked` flag + snapshot warning. Stealth patches (headless) + automatic headed fallback | Hybrid |
+| **navigator.webdriver / WebGL / hardware / UA leak** | H4 patches: webdriver, plugins, languages, `chrome.runtime` enums, `Notification.permission`/constructor, `hardwareConcurrency=8`, `deviceMemory=8`, WebGL UNMASKED vendor/renderer spoofed to Intel, and `Network.setUserAgentOverride` strips "HeadlessChrome" from the UA in HTTP headers AND `navigator.userAgent` | Headless |
+| **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged in `dialogLog`; H8 added `page.onDialog(handler)` for custom replies | Both |
+| **iframe / OOPIF content** (Stripe, reCAPTCHA, embedded forms) | H2: `Target.setAutoAttach({flatten:true})` + per-frame AX trees merged under iframe placeholders. `--site-per-process` forces every iframe (including same-origin) into OOPIF so click coords work. Refs route to the iframe's session via `{ session, backendNodeId }` lookup | Both |
+| **Download capture** (`Content-Disposition: attachment`) | H7: `Browser.setDownloadBehavior({behavior:'allowAndName', downloadPath, eventsEnabled:true})` + live `page.downloads` array with `{ guid, url, suggestedFilename, savedPath, state, totalBytes, receivedBytes }` per file | Both (skipped in attach mode) |
 | **Profile locking** | Unique temp dir per headless instance | Headless |
 | **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
 | **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
@@ -253,13 +255,16 @@ This section exists so we don't re-debate settled decisions.
 ## Future Features (Post-POC)
 
 ### Near-term
-- **Screenshot capture** — *(Done: `page.screenshot()` returns base64 PNG/JPEG/WebP.)*
-- **Wait strategies** — *(Done: `waitForNavigation`, `waitForNetworkIdle`, `waitFor({text|selector})`. F9 in v0.8.0 made network-idle resilient to orphan finish events.)*
-- **Tab management** — *(Done: `createTab()`, `tabs()`. F4 in v0.8.0 made `switchTab()` actually swap the working session; F7 wired the dialog handler on sub-tabs.)*
-- **MCP server wrapper** — *(Done: `mcp-server.js`, 12 tools, raw JSON-RPC 2.0 over stdio. v0.8.0 reworded `browse`/`goto` descriptions and split retry semantics per F6.)*
-- **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Queued as Phase B / H7.
-- **Attach to a running browser** — `connect({ port })` reuses the user's already-running Chrome session (no profile clone, no re-injected cookies). Helper (`getDebugUrl`) exists but unwired. Queued as Phase B / H1.
-- **iframe / OOPIF support** — `Accessibility.getFullAXTree` does NOT cross frame boundaries; Stripe / reCAPTCHA / embedded forms are invisible. Queued as Phase B / H2 — biggest blocker to real-world automation.
+- **Screenshot capture** — *(Done: `page.screenshot()` returns base64 PNG/JPEG/WebP; v0.9.0 also exposed it as the `screenshot` MCP tool that saves to `.barebrowse/screenshot-*.{png,jpeg,webp}`.)*
+- **Wait strategies** — *(Done: `waitForNavigation`, `waitForNetworkIdle`, `waitFor({text|selector})`. F9 in v0.8.0 made network-idle resilient to orphan finish events. v0.9.0 added `wait_for` as an MCP + bareagent tool.)*
+- **Tab management** — *(Done: `createTab()`, `tabs()`. F4 in v0.8.0 made `switchTab()` actually swap the working session; F7 wired the dialog handler on sub-tabs. v0.9.0 added `tabs` as an MCP tool with optional `switchTo: N`.)*
+- **MCP server wrapper** — *(Done: `mcp-server.js`. v0.9.0 grew to 18+ tools — added `reload`, `screenshot`, `wait_for`, `tabs`, `select`, `hover`, plus the opt-in `eval` gated behind `BAREBROWSE_MCP_EVAL=1`. Per-tool timeouts replaced the blanket 30s; `runStdio()` exported so `cli.js` can launch it cleanly.)*
+- **Attach to a running browser** — *(Done v0.9.0: `connect({ port })` reuses an already-running Chrome session via `attach()` → `getDebugUrl()`. Skips stealth + `Browser.setPermission` + download capture so we don't mutate the user's browser globally. `close()` leaves the underlying process alive — only the tab we created is torn down.)*
+- **iframe / OOPIF support** — *(Done v0.9.0: `Target.setAutoAttach({flatten:true})` + per-frame AX trees merged. Refs route to the right session via `{session, backendNodeId}` so clicks inside Stripe / reCAPTCHA / embedded forms work. `--site-per-process` launch flag is now default so even same-origin iframes get OOPIF sessions.)*
+- **Reload** — *(Done v0.9.0: `page.reload({ignoreCache, timeout})`, exposed as MCP + bareagent + CLI subcommand.)*
+- **Download capture** — *(Done v0.9.0: `page.downloads` live array, `--download-path` CLI flag, `downloads` MCP + bareagent + CLI subcommand.)*
+- **Dialog override** — *(Done v0.9.0: `page.onDialog(handler)` lets callers return `{accept, promptText}` instead of the default auto-accept.)*
+- **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Still queued.
 
 ### Medium-term
 - **Firefox support** — Via WebDriver BiDi protocol (cross-browser standard, still maturing). Second protocol adapter alongside CDP.
