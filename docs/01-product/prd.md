@@ -2,7 +2,7 @@
 
 **Version:** 1.2
 **Date:** 2026-05-18
-**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0. All H1–H9 shipped one commit each (see `docs/02-features/fix-plan.md`). Outstanding follow-up: MCP Config Diagnostics (low priority — Claude Code already surfaces the warning).
+**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0; pruneMode follow-up shipped @ v0.9.1 — `read` alias wired in `prune.js` and `pruneMode: 'act'|'read'` exposed on the MCP / bareagent `browse` + `snapshot` tools, plus an auto-hint when act-mode collapses a content page. All H1–H9 shipped one commit each (see `docs/02-features/fix-plan.md`). No outstanding Phase B follow-ups.
 
 ---
 

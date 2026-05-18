@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.9.0 | Node.js >= 22 | 0 required deps | Apache-2.0
+> v0.9.1 | Node.js >= 22 | 0 required deps | Apache-2.0
 
 ## What this is
 

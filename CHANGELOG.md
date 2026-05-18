@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.9.1
 
 ### Pruning — `pruneMode` reaches MCP / bareagent and `read` finally works
 
