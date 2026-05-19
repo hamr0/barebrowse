@@ -45,6 +45,8 @@ const snapshot = await browse('https://example.com', {
   prune: true,           // apply ARIA pruning (47-95% token reduction)
   pruneMode: 'act',      // 'act' (interactive elements) | 'read' (all content)
   consent: true,         // auto-dismiss cookie consent dialogs
+  blockAds: true,        // block ~120 ad/tracker URL patterns (default on for owned browsers)
+  blockUrls: [],         // extra URL globs to block (merged with the default)
   timeout: 30000,        // navigation timeout in ms
 });
 ```
@@ -91,6 +93,8 @@ const snapshot = await browse('https://example.com', {
 - `viewport: '1280x720'` — Set viewport dimensions
 - `storageState: 'file.json'` — Load cookies/localStorage from saved state
 - `downloadPath: '/abs/dir'` — Where downloads land. Default: per-session `mkdtemp` under `/tmp/barebrowse-dl-*` that gets removed on `close()`. Caller-supplied paths are not cleaned up — caller owns the lifecycle.
+- `blockAds: true|false` — CDP-level URL blocking of ~120 common ad/tracker patterns (Google ads/analytics, FB/Amazon/MS/Adobe ad+analytics, Segment/Amplitude/Mixpanel/Heap, Hotjar/FullStory/LogRocket, Criteo/Taboola/Outbrain, the consumer-pixel cluster, AppNexus/Rubicon/PubMatic supply, marketing automation). Default `true` for launched browsers, `false` in attach mode (would affect any tab in the user's running browser). Explicit `true` in attach mode is honored and follows the session across `switchTab()`. Shrinks ARIA snapshots and speeds page loads.
+- `blockUrls: ['*://foo.com/*', ...]` — Extra glob patterns (CDP `Network.setBlockedURLs` format) to block in addition to the default. Merged with the default unless `blockAds: false`.
 
 ## Snapshot format
 
@@ -161,7 +165,8 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 | Form submission | `press('Enter')` triggers onsubmit | Both |
 | SPA navigation | `waitForNavigation()` uses loadEventFired + frameNavigated | Both |
 | Bot detection | v0.9.0 (H9): Cloudflare-strong phrases ("Just a moment", "Attention Required", "verify you are human") fire alone; generic phrases ("access denied", "unknown error") only fire on near-empty pages — no more false-positive headed-launches on legitimate 4xx/5xx pages. `botBlocked` flag set after every `goto()`. Hybrid fallback switches to headed. Snapshot shows `[BOT CHALLENGE DETECTED]` warning. | Hybrid |
-| Stealth (headless tells) | v0.9.0 (H4): `Network.setUserAgentOverride` strips "HeadlessChrome" from UA in HTTP headers AND `navigator.userAgent`; JS patches for webdriver, plugins, languages, full `chrome.runtime` enum shape, `Notification` constructor + `permission: 'default'`, `hardwareConcurrency: 8`, `deviceMemory: 8`, WebGL `UNMASKED_VENDOR_WEBGL`/`UNMASKED_RENDERER_WEBGL` spoofed to Intel | Headless |
+| Stealth (headless tells) | v0.9.0 (H4): `Network.setUserAgentOverride` strips "HeadlessChrome" from UA in HTTP headers AND `navigator.userAgent`; JS patches for webdriver, plugins, languages, full `chrome.runtime` enum shape, `Notification` constructor + `permission: 'default'`, `hardwareConcurrency: 8`, `deviceMemory: 8`, WebGL `UNMASKED_VENDOR_WEBGL`/`UNMASKED_RENDERER_WEBGL` spoofed to Intel. v0.10.0: canvas fingerprint noise — `toDataURL`/`getImageData` XOR a per-session `crypto.getRandomValues`-seeded mask into ~1 byte per 64-byte stride (stable within a session, different across sessions; bitmap is restored after encoding so legitimate canvas use is unaffected). | Headless |
+| Ad / tracker URL blocking | v0.10.0: CDP `Network.setBlockedURLs` with ~120 curated patterns (Google/FB/Amazon/MS/Adobe ad+analytics, the major SaaS analytics + session-replay stacks, content-rec, supply-side ad networks, marketing automation). Default on for launched browsers, off in attach mode. `opts.blockUrls` extends; `opts.blockAds: false` disables. Shrinks ARIA snapshots and speeds loads. | Launched |
 | iframe / OOPIF content (Stripe, reCAPTCHA, embedded forms) | v0.9.0 (H2): `Target.setAutoAttach({flatten:true})` registers a CDP session per iframe; `ariaTree()` walks `Page.getFrameTree`, fetches each frame's AX tree on the right session, splices children under iframe placeholders via `DOM.getFrameOwner`. Refs route via `{session, backendNodeId}` so clicks dispatch in the iframe's Input domain. `--site-per-process` launch flag forces every iframe — including same-origin — into OOPIF so coords work. | Both |
 | Downloads | v0.9.0 (H7): `Browser.setDownloadBehavior({behavior:'allowAndName', downloadPath, eventsEnabled:true})` + listeners populate `page.downloads`. Files land at `savedPath` (under `--download-path` if supplied, else per-session `/tmp/barebrowse-dl-*`). | Headless + Headed (skipped in attach mode) |
 | Profile locking | Unique temp dir per headless instance | Headless |

@@ -1,5 +1,81 @@
 # Changelog
 
+## 0.10.0
+
+### Ad/tracker URL blocking + canvas-noise stealth + Chromium pgid reap fix
+
+Scrapling-inspired additions to make every snapshot quieter and every
+headless session less fingerprintable, plus a flake fix surfaced by the
+new work.
+
+- **Ad/tracker URL blocking via CDP `Network.setBlockedURLs`.** New
+  `src/blocklist.js` ships ~120 hand-curated glob patterns covering the
+  high-frequency tracker families: Google ads + analytics, Facebook
+  Pixel, Amazon ads, MS Clarity/Bing, Adobe Marketing Cloud, the
+  consumer-pixel cluster (LinkedIn/Twitter/TikTok/Snap/Pinterest), the
+  SaaS analytics stacks (Segment/Amplitude/Mixpanel/Heap/PostHog),
+  session-replay (Hotjar/FullStory/LogRocket/Crazy Egg/Mouseflow),
+  content recommendation (Criteo/Taboola/Outbrain), supply-side ad
+  networks (AppNexus/Rubicon/PubMatic/OpenX/Trade Desk), and marketing
+  automation (HubSpot/Marketo/Pardot/Intercom/Drift). Curated by traffic
+  frequency rather than pulled wholesale from Peter Lowe — CDP does
+  linear pattern matching per request, so the long tail of regional
+  networks was measurable cost (~10ms cumulative on a 100-request page)
+  for ~5% extra coverage we'd rarely hit in agent traffic. Net effect:
+  smaller ARIA snapshots and faster page loads.
+- **`opts.blockAds` and `opts.blockUrls` on `connect()` and `browse()`.**
+  `blockAds` defaults to `true` for launched browsers and `false` in
+  attach mode (would otherwise affect any tab in the user's running
+  browser). Explicit `blockAds: true` in attach mode is honored and
+  follows the session across `switchTab()`. `blockUrls` accepts extra
+  glob patterns merged with the default unless `blockAds: false`.
+- **CLI flags on `bb open`: `--no-block-ads` and `--block-urls=PATTERN`**
+  (the latter repeatable). Plumbed through `cli.js`, `src/daemon.js`
+  startDaemon args, and `runDaemon` → `connect()`. Not exposed via MCP
+  or bareagent on purpose — agents inside a session shouldn't be
+  reconfiguring infra per tool call; the decision belongs at session
+  start.
+- **Canvas fingerprint noise** in `src/stealth.js`. After WebGL
+  (already spoofed in v0.9.0), canvas `toDataURL` / `getImageData` is
+  the second-most-checked fingerprint vector — the pixel output of
+  rendered text/shapes depends on GPU, driver, and font rasterizer in
+  ways that are stable per machine but unique across machines, which
+  makes it a tracking signal that survives cookie clearing. The patch
+  XORs ~1 bit per 64-byte stride into the read pixels, with the bit
+  derived from a position-mixed hash of a per-session
+  `crypto.getRandomValues`-seeded value. Output is stable within a
+  session (so legitimate canvas use doesn't flicker) and different
+  across sessions (so fingerprinters see a fresh hash on every visit).
+  The canvas bitmap is snapshotted and restored around encoding so any
+  downstream legitimate read sees the original pixels.
+- **Pre-existing Chromium subprocess reap flake fixed.** Chromium
+  spawns renderer/GPU/network/utility subprocesses that, under
+  `--site-per-process` (v0.9.0 H2), can outlive SIGTERM on the
+  Chromium parent by seconds while still holding profile-dir file
+  handles. Without `detached: true`, all of them shared Node's process
+  group — there was no way to signal the whole Chromium tree without
+  enumerating PIDs. `src/chromium.js` now spawns with `detached: true`
+  so each Chromium becomes its own process-group leader, and
+  `cleanupBrowser` / `reapAllSync` send SIGKILL to the negative PID
+  (the whole group) before `rmSync`. Latent in `main`, but the new
+  blocklist's added CDP setup overlapped the cleanup window enough to
+  hit ~1-in-3 under parallel test load. Side effect: terminal SIGINT
+  now goes to Node's pgid only — `registerExitHandlers`' SIGINT
+  reaper is what kills Chromium under Ctrl-C and must not be removed.
+- **`startDaemon` poll deadline 15s → 30s** for cold-boot margin on
+  slower hardware (CI / older boxes) now that the blocklist adds a
+  small amount of CDP setup time to the session-startup path.
+- **Tests:** 138 total (10 new). New: 5-test unit suite for
+  `DEFAULT_BLOCKLIST` (shape/coverage drift guards, must-cover
+  tracker families, no dups); 2-test integration suite that proves
+  `Network.setBlockedURLs` actually drops the matching subresource
+  and that `blockAds:false` lets it through; 2 new canvas-noise
+  subtests (patch installed, stable within session, different across
+  sessions); 1 end-to-end `bb open --block-urls=PATTERN URL` test
+  that proves the flag survives every hop through `cli.js` →
+  `startDaemon` → daemon-internal → `connect()` → `setBlockedURLs`
+  and that the tracker server sees zero hits.
+
 ## 0.9.1
 
 ### Pruning — `pruneMode` reaches MCP / bareagent and `read` finally works
