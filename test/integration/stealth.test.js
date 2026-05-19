@@ -95,8 +95,93 @@ describe('stealth patches in headless (H4)', () => {
       const langs = await readWindow(page, 'JSON.stringify(navigator.languages)');
       assert.ok(langs && langs.includes('en'),
         `navigator.languages should include 'en', got: ${langs}`);
+
+      // 8. Canvas-noise — toDataURL must be a patched function (not native),
+      //    and rendering identical canvases in two separate sessions must
+      //    yield different fingerprints. Within one session the seed is
+      //    stable, so the same canvas read twice is unchanged (otherwise
+      //    legitimate canvas use would flicker).
+      const isPatched = await readWindow(page,
+        'HTMLCanvasElement.prototype.toDataURL.toString().includes("[native code]")');
+      assert.equal(isPatched, false,
+        'HTMLCanvasElement.prototype.toDataURL must be replaced, not native');
+      const fingerprint = await readWindow(page, `(() => {
+        const c = document.createElement('canvas');
+        c.width = 200; c.height = 50;
+        const ctx = c.getContext('2d');
+        ctx.fillStyle = '#f60'; ctx.fillRect(0, 0, 200, 50);
+        ctx.fillStyle = '#069'; ctx.font = '16px sans-serif';
+        ctx.fillText('barebrowse-fp 🤖', 4, 24);
+        return c.toDataURL();
+      })()`);
+      assert.ok(typeof fingerprint === 'string' && fingerprint.startsWith('data:image/png'),
+        'canvas toDataURL must still produce a valid PNG data URL');
     } finally {
       await page.close();
+      await server.close();
+    }
+  });
+
+  it('canvas toDataURL is stable across repeated calls in one session (no XOR alternation)', async () => {
+    // Regression test for an early version of the canvas-noise patch that
+    // mutated the canvas in place (putImageData of the noisy bytes) without
+    // restoring originals. XOR is self-inverse, so call 1 returned noisy
+    // pixels, call 2 read the already-noisy canvas and XORed back to clean,
+    // call 3 noisy again, etc. A fingerprinter that reads twice and compares
+    // would catch the inconsistency, AND any downstream legitimate canvas
+    // use would see a corrupted bitmap.
+    const server = await startLocalhost('<!doctype html><h1>canvas-stability</h1>');
+    const renderScript = `(() => {
+      const c = document.createElement('canvas');
+      c.width = 200; c.height = 50;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#f60'; ctx.fillRect(0, 0, 200, 50);
+      ctx.fillStyle = '#069'; ctx.font = '16px sans-serif';
+      ctx.fillText('barebrowse-fp', 4, 24);
+      return [c.toDataURL(), c.toDataURL(), c.toDataURL()];
+    })()`;
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto(server.url);
+      const { result } = await page.cdp.send('Runtime.evaluate', {
+        expression: renderScript, returnByValue: true,
+      });
+      const [a, b, c] = result.value;
+      assert.equal(a, b, 'toDataURL call 1 vs 2 must match — canvas state must not leak between calls');
+      assert.equal(b, c, 'toDataURL call 2 vs 3 must match — canvas state must not leak between calls');
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
+  it('canvas fingerprint differs across two headless sessions (canvas-noise)', async () => {
+    // Two fresh `connect()` calls = two STEALTH_SCRIPT evals = two CANVAS_SEED
+    // values. Rendering the same content in each session should produce
+    // different toDataURL output. (Same session would produce the same output
+    // since the seed is stable per page.)
+    const server = await startLocalhost('<!doctype html><h1>canvas-probe</h1>');
+    const renderScript = `(() => {
+      const c = document.createElement('canvas');
+      c.width = 200; c.height = 50;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#f60'; ctx.fillRect(0, 0, 200, 50);
+      ctx.fillStyle = '#069'; ctx.font = '16px sans-serif';
+      ctx.fillText('barebrowse-fp', 4, 24);
+      return c.toDataURL();
+    })()`;
+    const p1 = await connect({ mode: 'headless' });
+    const p2 = await connect({ mode: 'headless' });
+    try {
+      await p1.goto(server.url);
+      await p2.goto(server.url);
+      const fp1 = await readWindow(p1, renderScript);
+      const fp2 = await readWindow(p2, renderScript);
+      assert.notEqual(fp1, fp2,
+        'two headless sessions rendering the same canvas should produce different fingerprints');
+    } finally {
+      await p1.close();
+      await p2.close();
       await server.close();
     }
   });

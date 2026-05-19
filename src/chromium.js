@@ -16,9 +16,12 @@ let exitHandlersRegistered = false;
 function reapAllSync() {
   const toReap = [...activeBrowsers];
   activeBrowsers.clear();
-  // Send SIGKILL to everything first so the kernel reaps in parallel
+  // Send SIGKILL to the parent AND the whole process group (detached:true
+  // gives each Chromium its own pgid, so -pid targets every renderer/GPU/
+  // network child without touching Node or its other children).
   for (const b of toReap) {
     try { if (!b.process.killed) b.process.kill('SIGKILL'); } catch {}
+    try { process.kill(-b.process.pid, 'SIGKILL'); } catch {}
   }
   // Then poll each for actual death before removing its profile dir —
   // Chromium can hold file handles briefly even after SIGKILL, which would
@@ -151,8 +154,22 @@ export async function launch(opts = {}) {
   // about:blank as initial page
   args.push('about:blank');
 
+  // detached:true makes Node call setsid() so Chromium becomes its own
+  // process-group leader. Without this, the renderer/GPU/network children
+  // it forks share the Node parent's process group — SIGTERM on the
+  // Chromium PID only signals Chromium itself and the children linger,
+  // holding profile-dir files for seconds after the parent exits. Under
+  // parallel test load that races our rmSync cleanup. With a separate
+  // pgid, cleanupBrowser can signal the whole group with process.kill(-pid).
+  //
+  // Trade-off: a terminal SIGINT (Ctrl-C) is delivered to the foreground
+  // process group, which is now Node's — Chromium will NOT receive it
+  // directly. The SIGINT handler in registerExitHandlers() that calls
+  // reapAllSync() is what actually kills Chromium under Ctrl-C now. Do not
+  // remove that handler without restoring some other path to reap children.
   const child = spawn(binary, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
   });
 
   // Parse the WebSocket URL from stderr
@@ -216,20 +233,33 @@ export async function cleanupBrowser(browser) {
     });
     try { browser.process.kill(); } catch {}
     await exited;
+    // SIGKILL the whole Chromium process group. The parent may have exited
+    // already (above) but renderer/GPU/network children — separate processes
+    // under --site-per-process — can outlive it by seconds, and they hold
+    // profile-dir file handles. Because launch() spawned with detached:true,
+    // the children share Chromium's pgid (not Node's), so process.kill on a
+    // negative PID reaps the whole group without touching anything else.
+    try { process.kill(-browser.process.pid, 'SIGKILL'); } catch {
+      // ESRCH = group already gone; anything else is best-effort here.
+    }
   }
   if (browser.ownedProfileDir) {
-    // Chromium can still flush files for ~hundreds of ms after exit; with
-    // --site-per-process (added in H2) every iframe is its own renderer
-    // process, each with its own pending file handles, so the old 10×100ms
-    // window (1s) wasn't always enough under parallel test load. Now
-    // 25×100ms (2.5s) plus a polling jitter to avoid every concurrent
-    // cleanup hammering at the same tick.
-    for (let i = 0; i < 25; i++) {
+    // Chromium spawns renderer + GPU + network + utility subprocesses (one
+    // per site under --site-per-process from H2), and SIGTERM on the parent
+    // doesn't guarantee the children have closed their profile-file handles
+    // by the time the parent's exit event fires. Under parallel test load
+    // we've seen handle-release take >2.5s. Retry budget here is 60×100ms
+    // jittered (~6s+ worst case). Retry on ANY error short of ENOENT —
+    // earlier code only retried ENOTEMPTY/EBUSY but Linux also reports
+    // EPERM/EACCES transiently when an open-deleted file is still being
+    // written to. force:true already swallows ENOENT, so the catch only
+    // sees real failures.
+    for (let i = 0; i < 60; i++) {
       try {
         rmSync(browser.ownedProfileDir, { recursive: true, force: true });
         break;
       } catch (err) {
-        if (err.code !== 'ENOTEMPTY' && err.code !== 'EBUSY') break;
+        if (err.code === 'ENOENT') break; // already gone
         await new Promise((r) => setTimeout(r, 100 + Math.floor(Math.random() * 50)));
       }
     }

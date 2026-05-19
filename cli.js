@@ -117,6 +117,8 @@ async function cmdOpen() {
     viewport: parseFlag('--viewport'),
     storageState: parseFlag('--storage-state'),
     downloadPath: parseFlag('--download-path'),
+    blockAds: hasFlag('--no-block-ads') ? false : undefined,
+    blockUrls: parseFlagAll('--block-urls'),
   };
 
   try {
@@ -218,6 +220,8 @@ async function runDaemonInternal() {
     viewport: parseFlag('--viewport'),
     storageState: parseFlag('--storage-state'),
     downloadPath: parseFlag('--download-path'),
+    blockAds: hasFlag('--no-block-ads') ? false : undefined,
+    blockUrls: parseFlagAll('--block-urls'),
   };
   const outputDir = parseFlag('--output-dir') || resolve('.barebrowse');
   const url = parseFlag('--url');
@@ -238,6 +242,20 @@ function parseFlag(name) {
 
 function hasFlag(name) {
   return args.includes(name);
+}
+
+// Collects every occurrence of a repeatable flag (--name=val or --name val).
+// Returns undefined when absent so the opts object stays sparse and callers
+// can distinguish "not provided" from "provided but empty".
+function parseFlagAll(name) {
+  const out = [];
+  for (let i = 0; i < args.length; i++) {
+    if (args[i].startsWith(name + '=')) out.push(args[i].slice(name.length + 1));
+    else if (args[i] === name && args[i + 1] && !args[i + 1].startsWith('--')) {
+      out.push(args[i + 1]); i++;
+    }
+  }
+  return out.length ? out : undefined;
 }
 
 
@@ -467,6 +485,10 @@ Session:
     --viewport=WxH                  Viewport size (e.g. 1280x720)
     --storage-state=FILE            Load cookies/localStorage from JSON file
     --download-path=DIR             Directory for downloaded files (default: per-session temp dir)
+    --no-block-ads                  Disable the built-in ad/tracker blocklist (~120 patterns).
+                                    Default: enabled in owned-browser modes, disabled in attach mode.
+    --block-urls=PATTERN            Extra URL glob to block (repeatable, e.g. --block-urls='*://*.foo.com/*').
+                                    Use the =VALUE form when the pattern could be mistaken for a flag.
 
 Navigation:
   barebrowse goto <url>             Navigate to URL

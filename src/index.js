@@ -16,6 +16,7 @@ import { prune as pruneTree } from './prune.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
+import { DEFAULT_BLOCKLIST } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
 import { join as pathJoin } from 'node:path';
 
@@ -29,6 +30,11 @@ import { join as pathJoin } from 'node:path';
  * @param {boolean} [opts.cookies=true] - Inject user's cookies (Phase 2)
  * @param {boolean} [opts.prune=true] - Apply ARIA pruning (Phase 2)
  * @param {number} [opts.timeout=30000] - Navigation timeout in ms
+ * @param {boolean} [opts.blockAds=true] - Block ~120 common ad/tracker
+ *   URL patterns via CDP. Shrinks ARIA snapshots and speeds page loads.
+ *   See src/blocklist.js for the default set. Set false to disable.
+ * @param {string[]} [opts.blockUrls] - Extra URL glob patterns to block,
+ *   merged with the default unless blockAds:false.
  * @returns {Promise<string>} ARIA snapshot text
  */
 export async function browse(url, opts = {}) {
@@ -53,7 +59,8 @@ export async function browse(url, opts = {}) {
     }
 
     // Step 2: Create a new page target and attach
-    let page = await createPage(cdp, mode !== 'headed', { viewport: opts.viewport });
+    const pageOpts = { viewport: opts.viewport, blockAds: opts.blockAds, blockUrls: opts.blockUrls };
+    let page = await createPage(cdp, mode !== 'headed', pageOpts);
 
     // Step 2.5: Suppress permission prompts
     await suppressPermissions(cdp);
@@ -87,7 +94,7 @@ export async function browse(url, opts = {}) {
       try {
         browser = await launch({ ...launchOpts, headed: true });
         cdp = await createCDP(browser.wsUrl);
-        page = await createPage(cdp, false, { viewport: opts.viewport });
+        page = await createPage(cdp, false, pageOpts);
         await suppressPermissions(cdp);
         if (opts.cookies !== false) {
           try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
@@ -139,6 +146,14 @@ export async function browse(url, opts = {}) {
  *   Default: a per-session subdirectory under the OS temp dir. Downloads
  *   land here as <guid>; check `page.downloads` for { url, suggestedFilename,
  *   savedPath, state, totalBytes, receivedBytes } per file.
+ * @param {boolean} [opts.blockAds] - Block ~120 common ad/tracker URL
+ *   patterns via CDP. Defaults to true for launched browsers, false in
+ *   attach mode (would affect any tab attached to the user's running
+ *   session). Setting blockAds:true explicitly in attach mode honors the
+ *   request — blocking applies to whichever tab the session is currently
+ *   attached to and follows the session across switchTab() until close.
+ * @param {string[]} [opts.blockUrls] - Extra URL glob patterns to block,
+ *   merged with the default unless blockAds is false.
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
@@ -169,7 +184,15 @@ export async function connect(opts = {}) {
   // (they'd persist in the user's session via addScriptToEvaluateOnNewDocument)
   // and the headed→headless rewind in goto() is gated off below.
   let currentlyHeaded = attachMode || (mode === 'headed');
-  let page = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
+  // Default blockAds on for owned browsers, off in attach mode (would affect
+  // any tab we attach to in the user's running session). Caller can flip with
+  // explicit blockAds:true/false.
+  const pageOpts = {
+    viewport: opts.viewport,
+    blockAds: opts.blockAds !== undefined ? opts.blockAds : !attachMode,
+    blockUrls: opts.blockUrls,
+  };
+  let page = await createPage(cdp, !currentlyHeaded, pageOpts);
   let refMap = new Map();
   let botBlocked = false;
 
@@ -304,7 +327,7 @@ export async function connect(opts = {}) {
 
         browser = await launch(launchOpts);
         cdp = await createCDP(browser.wsUrl);
-        page = await createPage(cdp, true, { viewport: opts.viewport });
+        page = await createPage(cdp, true, pageOpts);
         setupDialogHandler(page.session);
         await suppressPermissions(cdp);
         currentlyHeaded = false;
@@ -330,7 +353,7 @@ export async function connect(opts = {}) {
         try {
           browser = await launch({ ...launchOpts, headed: true });
           cdp = await createCDP(browser.wsUrl);
-          page = await createPage(cdp, false, { viewport: opts.viewport });
+          page = await createPage(cdp, false, pageOpts);
           setupDialogHandler(page.session);
           await suppressPermissions(cdp);
           await navigate(page, url, timeout);
@@ -473,7 +496,7 @@ export async function connect(opts = {}) {
       // closure handle used by every method below, so swapping it makes
       // snapshot/click/type/etc. operate on the new tab.
       const oldSessionId = page.sessionId;
-      page = await attachToExistingTarget(cdp, target.targetId);
+      page = await attachToExistingTarget(cdp, target.targetId, pageOpts);
       refMap = new Map(); // refs from the previous tab are no longer valid
       setupDialogHandler(page.session);
       try { await cdp.send('Target.detachFromTarget', { sessionId: oldSessionId }); } catch {}
@@ -561,7 +584,7 @@ export async function connect(opts = {}) {
     get cdp() { return page.session; },
 
     async createTab() {
-      const tab = await createPage(cdp, !currentlyHeaded, { viewport: opts.viewport });
+      const tab = await createPage(cdp, !currentlyHeaded, pageOpts);
       await suppressPermissions(cdp);
       setupDialogHandler(tab.session);
       let tabBotBlocked = false;
@@ -653,6 +676,12 @@ async function createPage(cdp, stealth = false, pageOpts = {}) {
     await applyStealth(session);
   }
 
+  // Ad/tracker URL blocking via CDP. Default on for owned browsers — shrinks
+  // ARIA, speeds loads. Skipped in attach mode (would affect the user's
+  // running browser globally) and skippable per-call via blockAds:false.
+  // Custom patterns in blockUrls extend the default unless blockAds is false.
+  await applyBlocklist(session, pageOpts);
+
   // Set viewport size if specified (e.g. "1280x720")
   if (pageOpts.viewport) {
     const [w, h] = pageOpts.viewport.split('x').map(Number);
@@ -718,14 +747,33 @@ async function attachFrameTracking(cdp, mainSession) {
  * Attach a CDP session to an existing target (e.g. a tab opened by window.open).
  * Enables the same domains as createPage so snapshot/click/type work uniformly.
  */
-async function attachToExistingTarget(cdp, targetId) {
+async function attachToExistingTarget(cdp, targetId, pageOpts = {}) {
   const { sessionId } = await cdp.send('Target.attachToTarget', { targetId, flatten: true });
   const session = cdp.session(sessionId);
   await session.send('Page.enable');
   await session.send('Network.enable');
   await session.send('DOM.enable');
+  await applyBlocklist(session, pageOpts);
   const framesByFrameId = await attachFrameTracking(cdp, session);
   return { session, targetId, sessionId, framesByFrameId };
+}
+
+/**
+ * Apply Network.setBlockedURLs for ad/tracker blocking on a session.
+ * Default list is on; pass blockAds:false to skip, blockUrls:[] to extend.
+ * Silent on failure — older Chrome / unusual modes shouldn't break the page.
+ */
+async function applyBlocklist(session, pageOpts) {
+  if (pageOpts.blockAds === false && !pageOpts.blockUrls) return;
+  const patterns = pageOpts.blockAds === false
+    ? (pageOpts.blockUrls || [])
+    : [...DEFAULT_BLOCKLIST, ...(pageOpts.blockUrls || [])];
+  if (!patterns.length) return;
+  try {
+    await session.send('Network.setBlockedURLs', { urls: patterns });
+  } catch {
+    // Network.setBlockedURLs unsupported on this Chrome — skip silently.
+  }
 }
 
 /**

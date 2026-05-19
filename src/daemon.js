@@ -40,6 +40,10 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   if (opts.viewport) args.push('--viewport', opts.viewport);
   if (opts.storageState) args.push('--storage-state', opts.storageState);
   if (opts.downloadPath) args.push('--download-path', opts.downloadPath);
+  if (opts.blockAds === false) args.push('--no-block-ads');
+  if (Array.isArray(opts.blockUrls)) {
+    for (const p of opts.blockUrls) args.push('--block-urls', p);
+  }
 
   const child = spawn(process.execPath, args, {
     detached: true,
@@ -48,8 +52,11 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   });
   child.unref();
 
-  // Poll for session.json (50ms interval, 15s timeout)
-  const deadline = Date.now() + 15000;
+  // Poll for session.json (50ms interval, 30s timeout). 30s covers cold
+  // Chromium boot plus initial-URL navigation on slower CI/older hardware;
+  // the previous 15s was tight enough that the ad-blocklist's added
+  // CDP setup time pushed real boots past it on stress runs.
+  const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
     if (existsSync(sessionPath)) {
       try {
@@ -59,7 +66,7 @@ export async function startDaemon(opts, outputDir, initialUrl) {
     }
     await new Promise((r) => setTimeout(r, 50));
   }
-  throw new Error('Daemon failed to start within 15s');
+  throw new Error('Daemon failed to start within 30s');
 }
 
 /**
@@ -79,6 +86,8 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     viewport: opts.viewport,
     storageState: opts.storageState,
     downloadPath: opts.downloadPath,
+    blockAds: opts.blockAds,
+    blockUrls: opts.blockUrls,
   });
 
   // Console log capture
