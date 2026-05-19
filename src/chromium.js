@@ -161,6 +161,12 @@ export async function launch(opts = {}) {
   // holding profile-dir files for seconds after the parent exits. Under
   // parallel test load that races our rmSync cleanup. With a separate
   // pgid, cleanupBrowser can signal the whole group with process.kill(-pid).
+  //
+  // Trade-off: a terminal SIGINT (Ctrl-C) is delivered to the foreground
+  // process group, which is now Node's — Chromium will NOT receive it
+  // directly. The SIGINT handler in registerExitHandlers() that calls
+  // reapAllSync() is what actually kills Chromium under Ctrl-C now. Do not
+  // remove that handler without restoring some other path to reap children.
   const child = spawn(binary, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: true,

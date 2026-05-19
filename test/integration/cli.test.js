@@ -121,15 +121,19 @@ describe('CLI session', () => {
     assert.equal(out, '[]', `downloads should print empty JSON array, got: ${out}`);
   });
 
-  it('--block-urls reaches connect() through the daemon (blocks subresource)', async () => {
-    // Plumbing test: cli.js parseFlagAll('--block-urls') → daemon runDaemon
-    // opts → connect({ blockUrls }) → createPage() → Network.setBlockedURLs.
-    // We spawn daemon-internal directly with piped stdio so we can observe
-    // both session.json and child stderr. Going through `bb open` would
-    // detach the child and the parent's 15s startDaemon poll times out
-    // before Chromium-plus-122-blocked-URLs finishes booting — that path
-    // adds nothing this test cares about (parent-child fork ergonomics
-    // aren't what we're verifying), so skip it.
+  it('`bb open --block-urls=PATTERN URL` blocks the matching subresource end-to-end', async () => {
+    // End-to-end: cli.js cmdOpen → startDaemon (detached child with spawn
+    // args forwarded) → child cli.js --daemon-internal → runDaemon opts →
+    // connect({ blockUrls }) → createPage() → Network.setBlockedURLs.
+    // Spinning a localhost tracker + page server lets us prove the pattern
+    // survives every hop AND the parent's 30s poll deadline.
+    //
+    // Why this test uses async spawn + await-stdout instead of the synchronous
+    // cli() helper: the localhost HTTP servers live in this Node process, so
+    // we need the event loop free to serve Chromium's requests. execFileSync
+    // (what cli() uses) blocks the loop, the page request stalls, navigation
+    // never completes, and the daemon never writes session.json. Other CLI
+    // tests don't hit this because they use about:blank / example.com.
     const { createServer } = await import('node:http');
     const { spawn } = await import('node:child_process');
     const startSrv = async (handler) => {
@@ -144,34 +148,38 @@ describe('CLI session', () => {
       res.end(`<!doctype html><script src="http://127.0.0.1:${tracker.port}/t.js"></script>ok`);
     });
     const subDir = mkdtempSync(join(tmpdir(), 'bb-cli-block-'));
-    const subBareDir = join(subDir, '.barebrowse');
 
-    const child = spawn(NODE, [
-      CLI, '--daemon-internal',
-      '--output-dir', subBareDir,
-      '--url', `http://127.0.0.1:${pageSrv.port}/`,
+    const openProc = spawn(NODE, [
+      CLI, 'open',
+      `http://127.0.0.1:${pageSrv.port}/`,
       `--block-urls=*://127.0.0.1:${tracker.port}/*`,
-    ], { stdio: ['ignore', 'pipe', 'pipe'] });
+    ], { cwd: subDir, stdio: ['ignore', 'pipe', 'pipe'] });
+    let stdout = '';
     let stderr = '';
-    child.stderr.on('data', (d) => { stderr += d.toString(); });
+    openProc.stdout.on('data', (d) => { stdout += d.toString(); });
+    openProc.stderr.on('data', (d) => { stderr += d.toString(); });
 
     try {
-      // Poll for session.json — daemon writes it once connect() + initial
-      // goto land. 20s is generous; observed boot is ~6-8s under no load.
-      const sessionPath = join(subBareDir, 'session.json');
-      const deadline = Date.now() + 20000;
-      while (Date.now() < deadline && !existsSync(sessionPath)) {
-        await new Promise((r) => setTimeout(r, 100));
-      }
-      assert.ok(existsSync(sessionPath),
-        `daemon never wrote session.json — child stderr: ${stderr}`);
-      // The daemon's runDaemon awaited page.goto(initialUrl) before writing
-      // session.json, so by now the navigation is complete and any tracker
-      // request would have fired (or been blocked).
+      const exited = await new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          try { openProc.kill(); } catch {}
+          reject(new Error(`bb open hung past 45s. stdout: ${stdout}\nstderr: ${stderr}`));
+        }, 45000);
+        openProc.once('exit', (code) => { clearTimeout(timer); resolve(code); });
+        openProc.once('error', (err) => { clearTimeout(timer); reject(err); });
+      });
+      assert.equal(exited, 0, `bb open exited with ${exited}. stderr: ${stderr}`);
+      assert.ok(stdout.includes('Session started'),
+        `bb open must accept --block-urls and start the daemon. stdout: ${stdout}`);
+      // Daemon writes session.json AFTER page.goto(initialUrl) resolves, so
+      // by the time bb open prints "Session started" the navigation is done
+      // and any tracker request would have fired (or been blocked).
       assert.equal(trackerHits, 0,
         `--block-urls did not reach connect(): tracker was hit ${trackerHits} times`);
     } finally {
-      try { child.kill(); } catch { /* already dead */ }
+      // close uses cli() (sync), but at this point bb open has exited so
+      // there's no in-flight HTTP that needs the test event loop.
+      try { cli(['close'], { cwd: subDir }); } catch { /* daemon may have died */ }
       await tracker.close();
       await pageSrv.close();
       rmSync(subDir, { recursive: true, force: true });
