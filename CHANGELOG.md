@@ -1,5 +1,48 @@
 # Changelog
 
+## 0.10.1
+
+### Blocklist long-tail additions + legacy-Chrome warn + switchTab attach-mode test
+
+Carry-forward items from the v0.10.0 backlog. All additive, no behavior
+change on supported Chrome.
+
+- **8 new patterns in `src/blocklist.js`** (120 → 128, still in the
+  curated 80–200 band):
+  - Mobile-measurement-on-web cluster (increasingly served from web
+    pages, not just SDKs): `*.appsflyer.com`, `*.branch.io`,
+    `*.adjust.com`.
+  - Privacy-friendly analytics that still tracks from an agent POV:
+    `static.cloudflareinsights.com` (Cloudflare Web Analytics),
+    `*.matomo.cloud` (Matomo Cloud's hosted tier).
+  - Broader Outbrain coverage: `amplify.outbrain.com`,
+    `log.outbrain.com` (in addition to the existing
+    `widgets.outbrain.com` and `*.outbrain.com/utils/*`).
+  - Broader PostHog: `*.posthog.com/static/array.js*` (the snippet
+    loader, in addition to the existing `/e/` and `/decide/` endpoints).
+- **One-time `console.warn` when `Network.setBlockedURLs` rejects.**
+  Legacy Chromium builds lacking the method previously failed silently
+  inside `applyBlocklist`; now a single warn per process surfaces the
+  reason so callers don't wonder why blocking isn't engaging. Stays
+  silent on supported Chrome (success path), stays silent when
+  `blockAds: false` opts out entirely. Module-scoped flag —
+  intentionally not per-session, since the failure mode is the
+  browser, not the session.
+- **`switchTab()` + `blockAds:true` attach-mode integration test.**
+  The v0.10.0 JSDoc claimed blocklist follows `switchTab()` in attach
+  mode but had no automated guard. New test in
+  `test/integration/blocklist.test.js` launches a real browser, opens
+  a second tab via raw CDP (bypassing barebrowse so the tab simulates
+  one the user already had open), attaches with explicit
+  `blockAds: true` + `blockUrls: [pattern]`, switches into that tab,
+  and asserts the tracker server gets zero hits and the tracker script
+  never executed. Locks in the post-switch `applyBlocklist` call site
+  that was added in v0.10.0.
+- **Tests:** 143 total (5 new). 4 new unit tests in
+  `test/unit/blocklist.test.js` (long-tail coverage drift guard +
+  3-subtest warn-once suite covering rejection, success path, and
+  opted-out paths); 1 new integration test as above.
+
 ## 0.10.0
 
 ### Ad/tracker URL blocking + canvas-noise stealth + Chromium pgid reap fix

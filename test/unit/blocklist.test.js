@@ -5,9 +5,10 @@
  * Run: node --test test/unit/blocklist.test.js
  */
 
-import { describe, it } from 'node:test';
+import { describe, it, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { DEFAULT_BLOCKLIST } from '../../src/blocklist.js';
+import { applyBlocklist, _resetBlocklistWarning } from '../../src/index.js';
 
 describe('DEFAULT_BLOCKLIST', () => {
   it('exports a non-empty array', () => {
@@ -44,6 +45,26 @@ describe('DEFAULT_BLOCKLIST', () => {
     }
   });
 
+  it('covers the long-tail families added in v0.10.x backlog', () => {
+    // These were carried in the v0.10.0 backlog as low-risk additive entries.
+    // Asserting them explicitly guards against a future re-curation dropping
+    // them along with truly low-value patterns.
+    const mustCover = [
+      'cloudflareinsights.com',
+      'matomo.cloud',
+      'appsflyer.com',
+      'branch.io',
+      'adjust.com',
+      'amplify.outbrain.com',
+      'log.outbrain.com',
+      'posthog.com/static/array.js',
+    ];
+    const joined = DEFAULT_BLOCKLIST.join(' ');
+    for (const needle of mustCover) {
+      assert.ok(joined.includes(needle), `missing long-tail entry: ${needle}`);
+    }
+  });
+
   it('covers the top tracker families by name', () => {
     // High-frequency clusters that must be present — losing any of these is
     // a regression that'd silently drop blocking coverage for the biggest
@@ -66,5 +87,58 @@ describe('DEFAULT_BLOCKLIST', () => {
     for (const needle of mustCover) {
       assert.ok(joined.includes(needle), `missing cluster: ${needle}`);
     }
+  });
+});
+
+describe('applyBlocklist warn-once on Network.setBlockedURLs reject', () => {
+  let origWarn;
+  let warnings;
+
+  beforeEach(() => {
+    warnings = [];
+    origWarn = console.warn;
+    console.warn = (msg) => warnings.push(String(msg));
+    _resetBlocklistWarning();
+  });
+
+  afterEach(() => {
+    console.warn = origWarn;
+    _resetBlocklistWarning();
+  });
+
+  it('emits exactly one warn across many rejecting calls', async () => {
+    // Mock CDP session whose send() always rejects, simulating a Chromium
+    // build old enough to lack Network.setBlockedURLs.
+    const rejectingSession = {
+      send: async () => { throw new Error("'Network.setBlockedURLs' wasn't found"); },
+    };
+    for (let i = 0; i < 5; i++) {
+      await applyBlocklist(rejectingSession, { blockAds: true });
+    }
+    assert.equal(warnings.length, 1,
+      `expected exactly one warn across 5 rejecting calls, got ${warnings.length}: ${JSON.stringify(warnings)}`);
+    assert.ok(warnings[0].includes('barebrowse'),
+      `warn message should identify the library, got: ${warnings[0]}`);
+    assert.ok(warnings[0].includes('Network.setBlockedURLs'),
+      `warn message should name the CDP method, got: ${warnings[0]}`);
+  });
+
+  it('does not warn when the session succeeds', async () => {
+    const okSession = { send: async () => ({}) };
+    for (let i = 0; i < 3; i++) {
+      await applyBlocklist(okSession, { blockAds: true });
+    }
+    assert.equal(warnings.length, 0,
+      `no warn expected on successful sessions, got: ${JSON.stringify(warnings)}`);
+  });
+
+  it('does not warn when blocking is fully opted out', async () => {
+    const rejectingSession = {
+      send: async () => { throw new Error('should never reach here'); },
+    };
+    // blockAds:false with no blockUrls → applyBlocklist returns before send.
+    await applyBlocklist(rejectingSession, { blockAds: false });
+    assert.equal(warnings.length, 0,
+      `opted-out callers shouldn't trigger the warn path, got: ${JSON.stringify(warnings)}`);
   });
 });

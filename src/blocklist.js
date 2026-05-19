@@ -99,6 +99,8 @@ export const DEFAULT_BLOCKLIST = [
   '*://trc.taboola.com/*',
   '*://widgets.outbrain.com/*',
   '*://*.outbrain.com/utils/*',
+  '*://amplify.outbrain.com/*',
+  '*://log.outbrain.com/*',
 
   // --- Tealium / Marketo / Pardot / Salesforce marketing ---
   '*://tags.tiqcdn.com/*',
@@ -152,6 +154,7 @@ export const DEFAULT_BLOCKLIST = [
   '*://heapanalytics.com/h*',
   '*://*.posthog.com/e/*',
   '*://*.posthog.com/decide/*',
+  '*://*.posthog.com/static/array.js*',
 
   // --- Marketing automation ---
   '*://track.hubspot.com/*',
@@ -169,6 +172,15 @@ export const DEFAULT_BLOCKLIST = [
   // --- Error reporters (Sentry kept off — agents may want to see errors) ---
   '*://sessions.bugsnag.com/*',
   '*://notify.bugsnag.com/*',
+
+  // --- Mobile-measurement (increasingly served on web too) ---
+  '*://*.appsflyer.com/*',
+  '*://*.branch.io/*',
+  '*://*.adjust.com/*',
+
+  // --- Privacy-friendly analytics (still trackers from an agent POV) ---
+  '*://static.cloudflareinsights.com/*',
+  '*://*.matomo.cloud/*',
 
   // --- Misc widely-deployed ad networks ---
   '*://*.adnxs.com/*',                // AppNexus / Xandr

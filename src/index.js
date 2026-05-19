@@ -758,12 +758,21 @@ async function attachToExistingTarget(cdp, targetId, pageOpts = {}) {
   return { session, targetId, sessionId, framesByFrameId };
 }
 
+// One-time warn flag for Network.setBlockedURLs reject. Module-scoped so the
+// warn fires once per process across every session — legacy Chrome will keep
+// rejecting and we don't want to spam.
+let blocklistWarned = false;
+
 /**
  * Apply Network.setBlockedURLs for ad/tracker blocking on a session.
  * Default list is on; pass blockAds:false to skip, blockUrls:[] to extend.
- * Silent on failure — older Chrome / unusual modes shouldn't break the page.
+ * On failure (legacy Chrome lacking the method) warns once and continues —
+ * blocking is an enhancement, not a hard requirement.
+ *
+ * Exported for unit testing of the warn-once behavior; not part of the public
+ * API surface.
  */
-async function applyBlocklist(session, pageOpts) {
+export async function applyBlocklist(session, pageOpts) {
   if (pageOpts.blockAds === false && !pageOpts.blockUrls) return;
   const patterns = pageOpts.blockAds === false
     ? (pageOpts.blockUrls || [])
@@ -771,9 +780,17 @@ async function applyBlocklist(session, pageOpts) {
   if (!patterns.length) return;
   try {
     await session.send('Network.setBlockedURLs', { urls: patterns });
-  } catch {
-    // Network.setBlockedURLs unsupported on this Chrome — skip silently.
+  } catch (err) {
+    if (!blocklistWarned) {
+      blocklistWarned = true;
+      console.warn(`barebrowse: Network.setBlockedURLs unsupported — ad/tracker blocking disabled (${err.message})`);
+    }
   }
+}
+
+/** Test-only: reset the warn-once flag. Not part of the public API. */
+export function _resetBlocklistWarning() {
+  blocklistWarned = false;
 }
 
 /**
