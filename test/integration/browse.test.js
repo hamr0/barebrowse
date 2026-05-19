@@ -158,7 +158,17 @@ describe('createTab()', () => {
         await tab.close();
       }
 
-      const after = await page.tabs();
+      // Target.getTargets is eventually consistent — Chromium propagates
+      // the closed-target list a tick or two after the close call resolves.
+      // Under parallel test load we've observed ~50-200ms lag, so poll
+      // briefly instead of asserting synchronously.
+      let after;
+      const deadline = Date.now() + 3000;
+      do {
+        after = await page.tabs();
+        if (after.length === before.length) break;
+        await new Promise((r) => setTimeout(r, 50));
+      } while (Date.now() < deadline);
       assert.equal(after.length, before.length, 'all tabs should be closed — no zombies');
     } finally {
       await page.close();
