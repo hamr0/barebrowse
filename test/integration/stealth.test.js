@@ -122,6 +122,39 @@ describe('stealth patches in headless (H4)', () => {
     }
   });
 
+  it('canvas toDataURL is stable across repeated calls in one session (no XOR alternation)', async () => {
+    // Regression test for an early version of the canvas-noise patch that
+    // mutated the canvas in place (putImageData of the noisy bytes) without
+    // restoring originals. XOR is self-inverse, so call 1 returned noisy
+    // pixels, call 2 read the already-noisy canvas and XORed back to clean,
+    // call 3 noisy again, etc. A fingerprinter that reads twice and compares
+    // would catch the inconsistency, AND any downstream legitimate canvas
+    // use would see a corrupted bitmap.
+    const server = await startLocalhost('<!doctype html><h1>canvas-stability</h1>');
+    const renderScript = `(() => {
+      const c = document.createElement('canvas');
+      c.width = 200; c.height = 50;
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#f60'; ctx.fillRect(0, 0, 200, 50);
+      ctx.fillStyle = '#069'; ctx.font = '16px sans-serif';
+      ctx.fillText('barebrowse-fp', 4, 24);
+      return [c.toDataURL(), c.toDataURL(), c.toDataURL()];
+    })()`;
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto(server.url);
+      const { result } = await page.cdp.send('Runtime.evaluate', {
+        expression: renderScript, returnByValue: true,
+      });
+      const [a, b, c] = result.value;
+      assert.equal(a, b, 'toDataURL call 1 vs 2 must match — canvas state must not leak between calls');
+      assert.equal(b, c, 'toDataURL call 2 vs 3 must match — canvas state must not leak between calls');
+    } finally {
+      await page.close();
+      await server.close();
+    }
+  });
+
   it('canvas fingerprint differs across two headless sessions (canvas-noise)', async () => {
     // Two fresh `connect()` calls = two STEALTH_SCRIPT evals = two CANVAS_SEED
     // values. Rendering the same content in each session should produce

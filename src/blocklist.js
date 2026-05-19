@@ -35,8 +35,7 @@ export const DEFAULT_BLOCKLIST = [
 
   // --- Facebook / Meta ---
   '*://connect.facebook.net/*',
-  '*://*.facebook.com/tr/*',         // Pixel
-  '*://*.facebook.com/tr*',
+  '*://*.facebook.com/tr*',          // Pixel (matches both /tr/... and /tr?...)
   '*://*.fbcdn.net/signals/*',
 
   // --- Amazon ads ---

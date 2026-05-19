@@ -134,8 +134,20 @@ const STEALTH_SCRIPT = `
     if (ctx && this.width > 0 && this.height > 0) {
       try {
         const img = origGetImageData.call(ctx, 0, 0, this.width, this.height);
+        // Snapshot the original bytes so we can restore them after encoding.
+        // Without this, repeated toDataURL() alternates noisy/clean: call 1
+        // XORs the canvas in place, call 2 reads the noisy canvas and XORs
+        // again (self-inverse), call 3 again, etc. Same XOR-cancellation
+        // class as the earlier double-apply bug, just through canvas state
+        // rather than method composition. The restore also keeps the
+        // bitmap idempotent for any downstream legitimate canvas reads.
+        const original = new Uint8ClampedArray(img.data);
         shiftPixels(img.data);
         ctx.putImageData(img, 0, 0);
+        const result = origToDataURL.apply(this, arguments);
+        img.data.set(original);
+        ctx.putImageData(img, 0, 0);
+        return result;
       } catch {
         // Tainted canvas (cross-origin image) — can't read; skip the nudge
         // and fall through to the original call so the page sees the

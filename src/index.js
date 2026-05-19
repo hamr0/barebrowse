@@ -149,7 +149,9 @@ export async function browse(url, opts = {}) {
  * @param {boolean} [opts.blockAds] - Block ~120 common ad/tracker URL
  *   patterns via CDP. Defaults to true for launched browsers, false in
  *   attach mode (would affect any tab attached to the user's running
- *   session). Pass explicitly to override.
+ *   session). Setting blockAds:true explicitly in attach mode honors the
+ *   request — blocking applies to whichever tab the session is currently
+ *   attached to and follows the session across switchTab() until close.
  * @param {string[]} [opts.blockUrls] - Extra URL glob patterns to block,
  *   merged with the default unless blockAds is false.
  * @returns {Promise<object>} Page handle with goto, snapshot, close

@@ -487,7 +487,8 @@ Session:
     --download-path=DIR             Directory for downloaded files (default: per-session temp dir)
     --no-block-ads                  Disable the built-in ad/tracker blocklist (~120 patterns).
                                     Default: enabled in owned-browser modes, disabled in attach mode.
-    --block-urls=PATTERN            Extra URL glob to block (repeatable, e.g. --block-urls='*://*.foo.com/*')
+    --block-urls=PATTERN            Extra URL glob to block (repeatable, e.g. --block-urls='*://*.foo.com/*').
+                                    Use the =VALUE form when the pattern could be mistaken for a flag.
 
 Navigation:
   barebrowse goto <url>             Navigate to URL
