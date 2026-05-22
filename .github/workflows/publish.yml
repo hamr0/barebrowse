@@ -1,0 +1,26 @@
+name: Publish to npm
+
+# Trusted publishing via OIDC — no NPM_TOKEN needed.
+# Configure the trusted publisher at npmjs.com first (see repo notes).
+on:
+  workflow_dispatch:        # manual "Run workflow" button
+  release:
+    types: [published]      # also publishes when you cut a GitHub release
+
+permissions:
+  contents: read
+  id-token: write           # required: lets npm mint OIDC credentials
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: 'https://registry.npmjs.org'
+      - name: Upgrade npm (trusted publishing needs >= 11.5.1)
+        run: npm install -g npm@latest
+      - name: Publish
+        run: npm publish
