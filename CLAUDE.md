@@ -21,4 +21,4 @@
 - **Tests:** 71 passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
 - **Docs:** `docs/README.md` (navigation guide to all documentation)
 
-For full development and testing standards, see `.claude/memory/AGENT_RULES.md`.
+For full development and testing standards, see `/home/hamr/Documents/PycharmProjects/gitdone/.claude/memory/AGENT_RULES.md`.
