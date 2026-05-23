@@ -1,8 +1,8 @@
 # barebrowse — Product Requirements Document
 
-**Version:** 1.2
-**Date:** 2026-05-18
-**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0; pruneMode follow-up shipped @ v0.9.1 — `read` alias wired in `prune.js` and `pruneMode: 'act'|'read'` exposed on the MCP / bareagent `browse` + `snapshot` tools, plus an auto-hint when act-mode collapses a content page. All H1–H9 shipped one commit each (see `docs/02-features/fix-plan.md`). No outstanding Phase B follow-ups.
+**Version:** 1.3
+**Date:** 2026-05-23
+**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0; pruneMode follow-up shipped @ v0.9.1. v0.10.x added ad/tracker blocking + canvas-noise stealth. **v0.11.0 = security hardening release** — full audit of library + CLI daemon + MCP server; eight findings fixed and regression-tested (157 passing). See the "Security model & safe defaults" section below and the v0.11.0 CHANGELOG entry.
 
 ---
 
@@ -112,6 +112,23 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 
 **Limitation:** Cookies expire. This works for existing sessions, not new logins. For sites requiring fresh auth, headed mode with user interaction is the fallback.
 
+### Security Model & Safe Defaults
+
+**Decision (v0.11.0):** barebrowse hands an autonomous — and therefore prompt-injectable — agent an *authenticated* browser. The threat model is (a) page-sourced instructions steering the agent into local/internal resources or file exfiltration, and (b) other local users/processes on a shared host. Defaults are calibrated to `severity × likelihood` vs. cost-of-breaking-legit-use, and a safe default never forces the user to disable a *different* safe default to get work done.
+
+| Control | Default | Rationale |
+|---|---|---|
+| **Navigation scheme guard** | **On.** `file:`/`view-source:`/`chrome:`/`filesystem:`/`devtools:`/… rejected; `http`/`https`/`data`/`blob`/`about` allowed | A *web*-browsing tool reaching the local filesystem is almost never intended and is a confirmed file-read / directory-listing vector. `data:` is opaque-origin (no `file://` or cross-origin read) and the test-fixture mechanism, so blocking it would buy nothing and only push users onto `allowLocalUrls` — which *also* re-opens `file://`. One uncoupled escape hatch: `allowLocalUrls: true`. |
+| **Private-network / SSRF guard** | **Opt-in** (`blockPrivateNetwork`) | Blocking loopback / RFC-1918 / link-local / cloud-metadata by default would break the common, legitimate case of pointing an agent at a local dev server. Security-conscious deployments enable it; metadata-credential and internal-recon vectors then close. |
+| **Upload sandbox** | **Opt-in** (`uploadDir`) | Uploading files is a stated feature (job applications, KYC, media); files legitimately come from anywhere. A default confinement would break that. When set, paths must resolve (symlinks included) inside the directory. |
+| **Daemon authentication** | **On.** Per-session 32-byte token, required on `/command` | The CLI daemon binds loopback, but loopback is shared across local users. Without a token any local process could drive the authenticated browser (incl. `eval`). Token lives in `session.json` (mode `0600`); the bundled client sends it transparently. |
+| **Artifact permissions** | **On.** session dir `0700`, sensitive files `0600` | Snapshots (authenticated content) and `saveState` output (cookies + localStorage = session tokens) must not be world-readable on a multi-user host. |
+| **MCP `eval`** | **Opt-in** (`BAREBROWSE_MCP_EVAL=1`) | `Runtime.evaluate` in an authenticated session is full access. The agent acts with less judgment than a developer, so the MCP surface gates it; CLI/connect/daemon keep it (developer is the caller) but the daemon now requires the auth token. |
+
+Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `LIKE`), so browsing one site can't pull look-alike or unrelated-eTLD cookies into the session. Every safety control is expressed identically across the library, MCP, bareagent, and CLI surfaces — no entry point is a less-securable path.
+
+**Known limitation:** the private-network guard matches the URL hostname; a public DNS name that resolves to a private IP (DNS rebinding) is not caught — that needs connection-time IP inspection.
+
 ### Pruning (Absorbed from mcprune)
 
 **Decision:** Port mcprune's role-based ARIA tree pruning into barebrowse as a built-in step, not an optional module.
@@ -184,7 +201,13 @@ const tree = await browse('https://example.com', {
 });
 
 // Long-lived session for interaction
-const page = await connect({ mode: 'headed' });
+const page = await connect({
+  mode: 'headed',
+  // Safety controls (v0.11.0):
+  allowLocalUrls: false,       // default: file:/chrome:/etc. navigation is blocked
+  blockPrivateNetwork: false,  // opt-in SSRF guard (loopback/RFC-1918/metadata)
+  uploadDir: '/tmp/agent-uploads', // opt-in: confine upload() to this directory
+});
 await page.goto('https://amazon.com/cart');
 await page.click('[data-action="checkout"]');
 await page.type('#gift-message', 'Happy birthday!');

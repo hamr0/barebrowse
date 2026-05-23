@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCookies } from '../../src/auth.js';
+import { extractCookies, cookieDomainMatch } from '../../src/auth.js';
 
 describe('extractCookies()', () => {
   it('auto-detects a browser and returns cookies', () => {
@@ -62,5 +62,25 @@ describe('extractCookies()', () => {
     for (const cookie of cookies) {
       assert.ok(valid.has(cookie.sameSite), `${cookie.sameSite} should be valid sameSite`);
     }
+  });
+});
+
+describe('cookieDomainMatch() — precise injection filter', () => {
+  it('matches the host and its parent domains', () => {
+    assert.equal(cookieDomainMatch('mail.google.com', '.google.com'), true);
+    assert.equal(cookieDomainMatch('mail.google.com', 'google.com'), true);
+    assert.equal(cookieDomainMatch('www.example.com', 'www.example.com'), true);
+  });
+
+  it('rejects look-alike and unrelated domains (the over-match the LIKE pre-filter lets through)', () => {
+    assert.equal(cookieDomainMatch('apple.com', 'apple.com.evil.org'), false);
+    assert.equal(cookieDomainMatch('apple.com', 'notapple.com'), false);
+    // multi-part eTLD: browsing one .co.uk site must not pull another's cookies
+    assert.equal(cookieDomainMatch('mybank.co.uk', 'evil.co.uk'), false);
+    assert.equal(cookieDomainMatch('x.com', 'y.com'), false);
+  });
+
+  it('is case-insensitive', () => {
+    assert.equal(cookieDomainMatch('Mail.Google.COM', '.GOOGLE.com'), true);
   });
 });

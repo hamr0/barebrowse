@@ -53,7 +53,11 @@ export async function sendCommand(command, args, outputDir) {
   try {
     res = await fetch(`http://127.0.0.1:${session.port}/command`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        // Authenticate to the daemon with the per-session token from session.json.
+        ...(session.token ? { 'x-barebrowse-token': session.token } : {}),
+      },
       body: JSON.stringify({ command, args }),
       signal: AbortSignal.timeout(60000),
     });

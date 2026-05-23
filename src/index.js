@@ -18,7 +18,9 @@ import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
 import { DEFAULT_BLOCKLIST } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
+import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
+import { chmodSync } from 'node:fs';
 
 /**
  * Browse a URL and return an ARIA snapshot.
@@ -40,6 +42,10 @@ import { join as pathJoin } from 'node:path';
 export async function browse(url, opts = {}) {
   const mode = opts.mode || 'headless';
   const timeout = opts.timeout || 30000;
+
+  // Reject local-resource schemes (and optionally private hosts) before we
+  // spend a browser launch on a URL we won't navigate to.
+  assertNavigable(url, { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork });
 
   let browser = null;
   let cdp = null;
@@ -154,6 +160,15 @@ export async function browse(url, opts = {}) {
  *   attached to and follows the session across switchTab() until close.
  * @param {string[]} [opts.blockUrls] - Extra URL glob patterns to block,
  *   merged with the default unless blockAds is false.
+ * @param {boolean} [opts.allowLocalUrls=false] - Permit navigation to local-
+ *   resource schemes (file:, view-source:, chrome:, …). Blocked by default
+ *   because a prompt-injected agent could use them to read local files.
+ * @param {boolean} [opts.blockPrivateNetwork=false] - Reject navigation to
+ *   loopback / RFC-1918 / link-local / cloud-metadata hosts (SSRF guard).
+ *   Off by default so localhost dev-server browsing keeps working.
+ * @param {string} [opts.uploadDir] - When set, upload() rejects any file that
+ *   does not resolve (symlinks included) inside this directory. Sandboxes the
+ *   agent's file-upload capability. Default: no restriction.
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
@@ -164,6 +179,11 @@ export async function connect(opts = {}) {
   // Forward caller-supplied launch knobs into every launch() below,
   // including hybrid-fallback re-launches inside goto().
   const launchOpts = { proxy: opts.proxy, binary: opts.binary, userDataDir: opts.userDataDir };
+  // Navigation safety policy, applied on every goto()/createTab().goto().
+  const urlGuard = { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork };
+  // Optional upload sandbox: when set, upload() rejects files outside this dir.
+  // assertUploadAllowed resolves it (realpath) at check time.
+  const uploadDir = opts.uploadDir || null;
 
   if (attachMode) {
     // Reuse the user's running browser — do not launch, do not own the
@@ -312,6 +332,7 @@ export async function connect(opts = {}) {
 
   return {
     async goto(url, timeout = 30000) {
+      assertNavigable(url, urlGuard);
       // Refs from the previous page are about to become invalid — clear
       // before navigating so a stale click(ref) errors clearly instead of
       // silently resolving to whatever backendNodeId happens to still be in
@@ -467,6 +488,10 @@ export async function connect(opts = {}) {
     async upload(ref, files) {
       const entry = refMap.get(ref);
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      // Upload sandbox: when uploadDir is set, every path must resolve
+      // (symlinks included, via realpath) inside it. Stops a prompt-injected
+      // agent from attaching ~/.ssh/id_rsa or other arbitrary local files.
+      assertUploadAllowed(files, uploadDir);
       await cdpUpload(entry.session, entry.backendNodeId, files);
     },
 
@@ -535,7 +560,10 @@ export async function connect(opts = {}) {
       });
       const state = { cookies, localStorage: JSON.parse(result.value || '{}') };
       const { writeFileSync } = await import('node:fs');
-      writeFileSync(filePath, JSON.stringify(state, null, 2));
+      // State holds cookies + localStorage (session tokens) — write owner-only
+      // so a multi-user host can't read another user's credentials off disk.
+      writeFileSync(filePath, JSON.stringify(state, null, 2), { mode: 0o600 });
+      try { chmodSync(filePath, 0o600); } catch { /* best effort if pre-existing */ }
     },
 
     get botBlocked() { return botBlocked; },
@@ -590,6 +618,7 @@ export async function connect(opts = {}) {
       let tabBotBlocked = false;
       return {
         async goto(url, timeout = 30000) {
+          assertNavigable(url, urlGuard);
           await navigate(tab, url, timeout);
           if (opts.consent !== false) {
             await dismissConsent(tab.session);

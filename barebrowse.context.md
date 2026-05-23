@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.9.1 | Node.js >= 22 | 0 required deps | Apache-2.0
+> v0.11.0 | Node.js >= 22 | 0 required deps | Apache-2.0
 
 ## What this is
 
@@ -95,6 +95,9 @@ const snapshot = await browse('https://example.com', {
 - `downloadPath: '/abs/dir'` — Where downloads land. Default: per-session `mkdtemp` under `/tmp/barebrowse-dl-*` that gets removed on `close()`. Caller-supplied paths are not cleaned up — caller owns the lifecycle.
 - `blockAds: true|false` — CDP-level URL blocking of 128 common ad/tracker patterns (Google ads/analytics, FB/Amazon/MS/Adobe ad+analytics, Segment/Amplitude/Mixpanel/Heap/PostHog, Hotjar/FullStory/LogRocket, Criteo/Taboola/Outbrain, the consumer-pixel cluster, AppNexus/Rubicon/PubMatic supply, marketing automation; v0.10.1 added AppsFlyer/Branch/Adjust, Cloudflare Web Analytics, Matomo Cloud). Default `true` for launched browsers, `false` in attach mode (would affect any tab in the user's running browser). Explicit `true` in attach mode is honored and follows the session across `switchTab()` (regression-tested). Shrinks ARIA snapshots and speeds page loads. On legacy Chromium lacking `Network.setBlockedURLs` a one-time `console.warn` surfaces the fallback.
 - `blockUrls: ['*://foo.com/*', ...]` — Extra glob patterns (CDP `Network.setBlockedURLs` format) to block in addition to the default. Merged with the default unless `blockAds: false`.
+- `allowLocalUrls: true|false` — (v0.11.0) Default `false`: navigation to local-resource / browser-internal schemes (`file:`, `view-source:`, `chrome:`, `filesystem:`, `devtools:`, …) is **blocked** to stop a prompt-injected agent reading local files. `http`/`https`/`data`/`blob`/`about` are always allowed. Set `true` to permit local schemes.
+- `blockPrivateNetwork: true|false` — (v0.11.0) Default `false`. When `true`, `goto()`/`browse()` refuse loopback / RFC-1918 / link-local / cloud-metadata (`169.254.169.254`) / `*.internal` hosts (SSRF guard). Off by default so localhost dev-server browsing works. Hostname-based — does not catch DNS names that resolve to private IPs.
+- `uploadDir: '/abs/dir'` — (v0.11.0) Default unset (no restriction). When set, `upload()` rejects any file that does not resolve (symlinks included, via `realpath`) inside this directory — sandboxes the agent's file-upload capability.
 
 ## Snapshot format
 
@@ -226,7 +229,7 @@ barebrowse save-state                  # → .barebrowse/state-<timestamp>.json
 barebrowse close                       # Kill daemon + browser
 ```
 
-**Open flags:** `--mode=headless|headed|hybrid`, `--port=N` (attach to running browser), `--proxy=URL`, `--viewport=WxH`, `--storage-state=FILE`, `--download-path=DIR` (v0.9.0), `--no-cookies`, `--browser=firefox|chromium`, `--timeout=N`
+**Open flags:** `--mode=headless|headed|hybrid`, `--port=N` (attach to running browser), `--proxy=URL`, `--viewport=WxH`, `--storage-state=FILE`, `--download-path=DIR` (v0.9.0), `--no-cookies`, `--browser=firefox|chromium`, `--timeout=N`, `--block-private-network` (SSRF guard, v0.11.0), `--upload-dir=DIR` (upload sandbox, v0.11.0)
 
 Session lifecycle: `open` spawns a background daemon holding a `connect()` session. Subsequent commands POST to the daemon over HTTP (localhost). `close` shuts everything down. JS dialogs (alert/confirm/prompt) are auto-dismissed and logged.
 
@@ -354,6 +357,10 @@ Useful for agent threshold decisions: "skip sites above score 40", "warn if term
 13. **Refs are globally flat across frames.** v0.9.0 (H2) assigns refs from a shared counter across the merged frame tree, so a `[ref=42]` from an iframe and a `[ref=43]` from the parent come from one address space. The visible `[ref=N]` format is unchanged. refMap stores `{session, backendNodeId}` so `click(ref)` automatically dispatches in the right frame's session.
 
 14. **`eval` MCP tool is opt-in.** Set `BAREBROWSE_MCP_EVAL=1` to register it. Default off because `Runtime.evaluate` in an authenticated session can read cookies/localStorage, post on the user's behalf, hit any same-origin endpoint. CLI/connect()/daemon all keep `eval` because the developer is the caller; MCP gates it because the agent acts with less judgment.
+
+15. **The CLI daemon requires a per-session token (v0.11.0).** `open` mints a 32-byte random token, writes it into `.barebrowse/session.json` (mode `0600`) and requires it on `POST /command` via the `x-barebrowse-token` header (loopback is shared across local users, so binding to `127.0.0.1` alone isn't an authorization boundary). The bundled `session-client` sends it automatically — no change for CLI users. A third-party client hitting the daemon HTTP API directly must read the token from `session.json` and send it. `GET /status` stays open (liveness only). The session dir is `0700`; snapshots, `saveState`, and logs are written `0600`.
+
+16. **Navigation is scheme-guarded by default (v0.11.0).** `file:`/`chrome:`/etc. throw unless `allowLocalUrls: true`; `blockPrivateNetwork` and `uploadDir` add opt-in SSRF and upload-sandbox controls. All four are exposed identically on the library, MCP/bareagent (via `connect` opts), and the CLI (`--block-private-network`, `--upload-dir=DIR`; the scheme guard and token are always on).
 
 ## Constraints
 
