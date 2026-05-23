@@ -2,6 +2,12 @@
   "name": "barebrowse",
   "version": "0.11.0",
   "description": "Authenticated web browsing for autonomous agents via CDP. URL in, pruned ARIA snapshot out.",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hamr0/barebrowse.git"
+  },
+  "homepage": "https://github.com/hamr0/barebrowse#readme",
+  "bugs": "https://github.com/hamr0/barebrowse/issues",
   "type": "module",
   "main": "src/index.js",
   "exports": {
