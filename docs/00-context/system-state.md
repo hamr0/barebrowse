@@ -82,6 +82,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **Profile locking** | Unique temp dir per headless instance (`/tmp/barebrowse-<pid>-<ts>`) | Headless |
 | **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
 | **ARIA noise** | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
+| **Hostile navigation (prompt-injected agent)** | v0.11.0: `goto()`/`browse()` block `file:`/`view-source:`/`chrome:`/etc. by default (`src/url-guard.js`); opt-in `blockPrivateNetwork` (loopback/RFC-1918/link-local/cloud-metadata SSRF guard) and `uploadDir` (realpath-checked upload sandbox). Cookie injection scoped by precise RFC-6265 domain match | Both |
 
 ### Not yet handled
 
@@ -331,6 +332,8 @@ barebrowse close                       # Kill daemon + browser
 ```
 
 Architecture: `open` spawns a detached child process running an HTTP server on a random localhost port. Session state stored in `.barebrowse/session.json`. Subsequent commands POST to the daemon. `close` sends shutdown, daemon calls `page.close()` + `process.exit(0)`.
+
+**Auth (v0.11.0):** loopback alone is not an authorization boundary (shared across local users), so the daemon mints a 32-byte token at startup, writes it into `session.json` (mode `0600`) and requires it on `POST /command` via `x-barebrowse-token` (constant-time compare). `session-client` sends it transparently. Session dir is `0700`; snapshots/`saveState`/logs are `0600`. `GET /status` stays open (liveness only).
 
 Full commands: open, close, status, goto, back, forward, snapshot, screenshot, pdf, click, type, fill, press, scroll, hover, select, drag, upload, tabs, tab, eval, wait-idle, wait-for, console-logs, network-log, dialog-log, save-state.
 

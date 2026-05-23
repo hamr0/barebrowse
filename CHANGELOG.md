@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.11.0
+
+### Security hardening — audit findings fixed, safe-by-default
+
+A full security audit of the library + CLI daemon + MCP server. Eight
+findings were reproduced with live PoCs, fixed, and locked in with 14 new
+regression tests (143 → 157 passing). Two new opt-in controls; two new
+defaults that change behavior (see **Breaking** below).
+
+- **Daemon authentication (was: unauthenticated `eval` over loopback).**
+  The CLI daemon's HTTP server bound to `127.0.0.1` but had no auth — and
+  loopback is shared across local users, so any local process could POST
+  `/command` (including `eval` = arbitrary JS in the authenticated browser).
+  Now every daemon mints a 32-byte random token at startup, written into
+  `session.json` (mode `0600`) and required on `/command` via the
+  `x-barebrowse-token` header (constant-time compare). `session-client.js`
+  reads and sends it transparently — no caller change. `GET /status` stays
+  open as a liveness ping returning only `{ ok, pid }`.
+- **Artifact permissions.** The session dir is now created `0700` and all
+  daemon artifacts (`session.json`, snapshots, screenshots, PDFs, console /
+  network / dialog logs) plus `page.saveState()` output are written `0600`.
+  `saveState` holds cookies + localStorage (session tokens), so this stops a
+  multi-user host from reading another user's credentials off disk.
+- **Navigation scheme guard (new module `src/url-guard.js`).** `goto()` /
+  `browse()` now reject local-resource and browser-internal schemes
+  (`file:`, `view-source:`, `chrome:`, `chrome-extension:`, `filesystem:`,
+  `devtools:`, …) by default — closing a confirmed local-file-read /
+  directory-listing vector for a prompt-injected agent. `http`/`https`/
+  `data`/`blob`/`about` stay allowed (`data:` is opaque-origin and the
+  test-fixture mechanism — not a read/SSRF vector). Override with
+  `{ allowLocalUrls: true }`.
+- **SSRF guard (opt-in `blockPrivateNetwork`).** When set, `goto()`/
+  `browse()` refuse loopback / RFC-1918 / link-local / cloud-metadata
+  (`169.254.169.254`) / `*.internal` hosts. Off by default so localhost
+  dev-server browsing keeps working. Exposed as `--block-private-network`.
+- **Upload sandbox (opt-in `uploadDir`).** `upload()` confirmed it would
+  attach any absolute path to a file input (exfil vector under prompt
+  injection). When `uploadDir` is set, every path must resolve (symlinks
+  included, via `realpath`) inside it. Default unrestricted — nothing breaks
+  unless you opt in. Exposed as `--upload-dir=DIR`. Both new opts pass
+  through `connect()` → MCP / bareagent / CLI daemon uniformly.
+- **Cookie injection scoped precisely (was: over-broad substring match).**
+  `authenticate()` matched `host_key LIKE '%domain%'`, so browsing
+  `apple.com` injected cookies for `apple.com.evil.org` / `notapple.com`,
+  and `mybank.co.uk` (→ `co.uk`) pulled every `*.co.uk` cookie. The LIKE
+  query is now only a coarse pre-filter; a precise RFC-6265
+  `cookieDomainMatch()` decides what actually gets injected (parent-domain
+  cookies like `.google.com` still apply to `mail.google.com`).
+- **Hardening:** browser discovery uses `execFileSync('which', [name])`
+  (no shell) instead of an interpolated `execSync` string; the cleanup
+  busy-wait drops a `sleep` subprocess for `Atomics.wait`. Added
+  `.gitignore` (was missing — `.barebrowse/` state/snapshots could be
+  accidentally committed). Pinned `wearehere` to exact `1.0.0`.
+- **Tests:** 157 total (14 new) — `test/unit/url-guard.test.js` (19
+  assertions over scheme/private-host policy), `cookieDomainMatch` cases in
+  `test/unit/auth.test.js`, daemon token + `0600` perms in
+  `test/integration/cli.test.js`.
+
+**Breaking:** (1) `file:`/`chrome:`/etc. navigation now throws by default —
+pass `allowLocalUrls: true` to restore. (2) The CLI daemon now requires the
+token; this is transparent via the bundled `session-client`, but any
+third-party client hitting the daemon's HTTP API directly must send
+`x-barebrowse-token` from `session.json`.
+
 ## 0.10.1
 
 ### Blocklist long-tail additions + legacy-Chrome warn + switchTab attach-mode test

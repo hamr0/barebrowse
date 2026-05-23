@@ -5,8 +5,13 @@
  * Modes: headless (launch new, no UI), headed (launch new, visible window).
  */
 
-import { execSync, spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, rmSync } from 'node:fs';
+
+/** Block the current thread for `ms` without spawning a process. */
+function sleepSync(ms) {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
 
 // Track launched browsers so we can clean them up if the parent crashes.
 // Registered exit handlers (one-time) iterate this set on shutdown.
@@ -29,7 +34,7 @@ function reapAllSync() {
   for (const b of toReap) {
     for (let i = 0; i < 20; i++) {
       try { process.kill(b.process.pid, 0); } catch { break; }
-      try { execSync('sleep 0.05'); } catch {}
+      sleepSync(50);
     }
     if (b.ownedProfileDir) {
       try { rmSync(b.ownedProfileDir, { recursive: true, force: true }); } catch {}
@@ -84,8 +89,11 @@ export function findBrowser() {
         if (existsSync(candidate)) return candidate;
         continue;
       }
-      // Relative name — check via which
-      const path = execSync(`which ${candidate} 2>/dev/null`, { encoding: 'utf8' }).trim();
+      // Relative name — resolve via `which` (execFile: no shell, no injection)
+      const path = execFileSync('which', [candidate], {
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      }).trim();
       if (path) return path;
     } catch {
       // Not found, try next

@@ -38,6 +38,10 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 - `--proxy=URL` — HTTP/SOCKS proxy server
 - `--viewport=WxH` — Viewport size (e.g. 1280x720)
 - `--storage-state=FILE` — Load cookies/localStorage from JSON file
+- `--block-private-network` — SSRF guard: refuse loopback / RFC-1918 / link-local / cloud-metadata hosts (v0.11.0)
+- `--upload-dir=DIR` — Sandbox uploads to DIR; reject files outside it (v0.11.0)
+
+> Security (v0.11.0): `file:`/`chrome:`/etc. navigation is blocked by default, and the daemon requires a per-session token (handled transparently by the CLI). Snapshots and saved state are written owner-only (`0600`).
 
 ### Navigation
 

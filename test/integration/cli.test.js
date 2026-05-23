@@ -52,6 +52,34 @@ describe('CLI session', () => {
     assert.ok(out.includes('Session running'), `expected running, got: ${out}`);
   });
 
+  it('session.json carries an auth token and is owner-readable only', async () => {
+    const { statSync } = await import('node:fs');
+    const session = JSON.parse(readFileSync(join(sessionDir, 'session.json'), 'utf8'));
+    assert.equal(typeof session.token, 'string', 'session should have a token');
+    assert.equal(session.token.length, 64, 'token should be 32 random bytes hex');
+    const mode = statSync(join(sessionDir, 'session.json')).mode & 0o777;
+    assert.equal(mode, 0o600, `session.json should be 0600, got ${mode.toString(8)}`);
+  });
+
+  it('daemon rejects /command without the token (no unauthenticated eval)', async () => {
+    const session = JSON.parse(readFileSync(join(sessionDir, 'session.json'), 'utf8'));
+    // No token header — any other local process would be in this position.
+    const res = await fetch(`http://127.0.0.1:${session.port}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ command: 'eval', args: { expression: '1336+1' } }),
+    });
+    assert.equal(res.status, 401, 'unauthenticated command must be rejected');
+    assert.equal((await res.json()).ok, false);
+    // Wrong token is also rejected.
+    const res2 = await fetch(`http://127.0.0.1:${session.port}/command`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-barebrowse-token': 'badtoken' },
+      body: JSON.stringify({ command: 'status', args: {} }),
+    });
+    assert.equal(res2.status, 401, 'wrong token must be rejected');
+  });
+
   it('snapshot creates a .yml file', () => {
     const out = cli(['snapshot'], { cwd: tmpDir });
     assert.ok(out.endsWith('.yml'), `expected .yml path, got: ${out}`);

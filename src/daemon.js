@@ -8,8 +8,24 @@
 import { createServer } from 'node:http';
 import { spawn } from 'node:child_process';
 import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync } from 'node:fs';
+import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { connect } from './index.js';
+
+/** Owner-only file write helper — daemon artifacts can hold authenticated content. */
+function writeFilePrivate(path, data) {
+  writeFileSync(path, data, { mode: 0o600 });
+}
+
+/** Constant-time token compare; false on any length/format mismatch. */
+function tokenMatches(expected, got) {
+  if (typeof got !== 'string' || got.length !== expected.length) return false;
+  try {
+    return timingSafeEqual(Buffer.from(got), Buffer.from(expected));
+  } catch {
+    return false;
+  }
+}
 
 const SESSION_FILE = 'session.json';
 
@@ -19,7 +35,7 @@ const SESSION_FILE = 'session.json';
  */
 export async function startDaemon(opts, outputDir, initialUrl) {
   const absDir = resolve(outputDir);
-  mkdirSync(absDir, { recursive: true });
+  mkdirSync(absDir, { recursive: true, mode: 0o700 });
 
   // Clean stale session
   const sessionPath = join(absDir, SESSION_FILE);
@@ -44,6 +60,8 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   if (Array.isArray(opts.blockUrls)) {
     for (const p of opts.blockUrls) args.push('--block-urls', p);
   }
+  if (opts.blockPrivateNetwork) args.push('--block-private-network');
+  if (opts.uploadDir) args.push('--upload-dir', opts.uploadDir);
 
   const child = spawn(process.execPath, args, {
     detached: true,
@@ -75,7 +93,13 @@ export async function startDaemon(opts, outputDir, initialUrl) {
  */
 export async function runDaemon(opts, outputDir, initialUrl) {
   const absDir = resolve(outputDir);
-  mkdirSync(absDir, { recursive: true });
+  mkdirSync(absDir, { recursive: true, mode: 0o700 });
+
+  // Per-session auth token. The daemon binds to loopback, but loopback is
+  // shared across local users — without a token any local user/process could
+  // POST /command and drive the authenticated browser (incl. `eval`). The
+  // token is written into session.json (mode 0600) so only the owner reads it.
+  const authToken = randomBytes(32).toString('hex');
 
   // Connect to browser
   const page = await connect({
@@ -88,6 +112,8 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     downloadPath: opts.downloadPath,
     blockAds: opts.blockAds,
     blockUrls: opts.blockUrls,
+    blockPrivateNetwork: opts.blockPrivateNetwork,
+    uploadDir: opts.uploadDir,
   });
 
   // Console log capture
@@ -161,7 +187,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       const text = await page.snapshot({ mode: pruneMode });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `page-${ts}.yml`);
-      writeFileSync(file, text);
+      writeFilePrivate(file, text);
       return { ok: true, file };
     },
 
@@ -170,7 +196,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const ext = format || 'png';
       const file = join(absDir, `screenshot-${ts}.${ext}`);
-      writeFileSync(file, Buffer.from(data, 'base64'));
+      writeFilePrivate(file, Buffer.from(data, 'base64'));
       return { ok: true, file };
     },
 
@@ -244,7 +270,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       const data = await page.pdf({ landscape });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `page-${ts}.pdf`);
-      writeFileSync(file, Buffer.from(data, 'base64'));
+      writeFilePrivate(file, Buffer.from(data, 'base64'));
       return { ok: true, file };
     },
 
@@ -273,7 +299,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     async 'dialog-log'() {
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `dialogs-${ts}.json`);
-      writeFileSync(file, JSON.stringify(page.dialogLog, null, 2));
+      writeFilePrivate(file, JSON.stringify(page.dialogLog, null, 2));
       return { ok: true, file, count: page.dialogLog.length };
     },
 
@@ -304,7 +330,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       if (level) logs = logs.filter((l) => l.type === level);
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `console-${ts}.json`);
-      writeFileSync(file, JSON.stringify(logs, null, 2));
+      writeFilePrivate(file, JSON.stringify(logs, null, 2));
       if (clear) consoleLogs.length = 0;
       return { ok: true, file, count: logs.length };
     },
@@ -314,7 +340,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       if (failed) logs = logs.filter((l) => l.status === 0 || l.status >= 400);
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `network-${ts}.json`);
-      writeFileSync(file, JSON.stringify(logs, null, 2));
+      writeFilePrivate(file, JSON.stringify(logs, null, 2));
       return { ok: true, file, count: logs.length };
     },
 
@@ -343,6 +369,14 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     if (req.method !== 'POST' || req.url !== '/command') {
       res.writeHead(404);
       res.end('Not found');
+      return;
+    }
+
+    // Require the per-session token. Rejects any local process that hasn't
+    // read session.json (which is owner-only). Constant-time compare.
+    if (!tokenMatches(authToken, req.headers['x-barebrowse-token'])) {
+      res.writeHead(401, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'Unauthorized: missing or invalid token' }));
       return;
     }
 
@@ -388,11 +422,13 @@ export async function runDaemon(opts, outputDir, initialUrl) {
 
   const port = server.address().port;
 
-  // Write session.json so parent/clients can find us
+  // Write session.json so parent/clients can find us. Owner-only: it carries
+  // the auth token that gates /command.
   const sessionPath = join(absDir, SESSION_FILE);
-  writeFileSync(sessionPath, JSON.stringify({
+  writeFilePrivate(sessionPath, JSON.stringify({
     port,
     pid: process.pid,
+    token: authToken,
     startedAt: new Date().toISOString(),
   }));
 

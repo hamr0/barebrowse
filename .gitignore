@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Runtime session artifacts — may contain authenticated page snapshots,
+# saved state (cookies + localStorage = session tokens), screenshots, logs.
+.barebrowse/
+
+# Secrets / local env
+.env
+.env.*
+!.env.example
+
+# Editor / tooling
+.idea/
+.aurora/
+*.log
+
+# OS
+.DS_Store

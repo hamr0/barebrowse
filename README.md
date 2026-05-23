@@ -134,6 +134,17 @@ No clone profile, no fresh cookies — the agent sees what you see.
 
 Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (ARIA node count heuristic + stealth patches + automatic headed fallback — snapshot shows `[BOT CHALLENGE DETECTED]` warning when blocked), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
+## Safe by default (v0.11.0)
+
+barebrowse hands an autonomous — and therefore prompt-injectable — agent an *authenticated* browser, so the defaults are calibrated for that threat:
+
+- **Local-resource schemes blocked.** `file:`, `view-source:`, `chrome:`, etc. are rejected by default (a confirmed local-file-read vector); `http`/`https`/`data` stay allowed. Override with `allowLocalUrls: true`.
+- **Cookie injection scoped** to a precise RFC-6265 domain match — browsing one site can't pull look-alike or unrelated cookies into the session.
+- **CLI daemon authenticated** with a per-session token (loopback alone isn't an authorization boundary); snapshots and saved state are written owner-only (`0600`).
+- **Opt-in hardening** for stricter deployments: `blockPrivateNetwork` (SSRF guard for loopback/RFC-1918/cloud-metadata) and `uploadDir` (confine `upload()` to one directory). Both available on the library, MCP, bareagent, and CLI (`--block-private-network`, `--upload-dir`).
+
+See `barebrowse.context.md` and the PRD's "Security Model & Safe Defaults" for the full rationale.
+
 ## What the agent sees
 
 Raw ARIA output from a page is noisy -- decorative wrappers, hidden elements, structural junk. The pruning pipeline (ported from [mcprune](https://github.com/hamr0/mcprune)) strips it down to what matters.

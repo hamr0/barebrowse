@@ -269,6 +269,22 @@ export async function injectCookies(session, cookies) {
 }
 
 /**
+ * RFC 6265 domain-match: does `host` belong to a cookie declared for
+ * `cookieDomain`? Leading dot on the cookie domain is ignored (host-only
+ * vs domain cookies are matched the same here, intentionally — we want
+ * parent-domain cookies like .google.com to apply to mail.google.com).
+ * @param {string} host - target hostname (e.g. 'mail.google.com')
+ * @param {string} cookieDomain - cookie's host_key (e.g. '.google.com')
+ * @returns {boolean}
+ */
+export function cookieDomainMatch(host, cookieDomain) {
+  const h = String(host).toLowerCase();
+  const d = String(cookieDomain).toLowerCase().replace(/^\./, '');
+  if (!d) return false;
+  return h === d || h.endsWith('.' + d);
+}
+
+/**
  * Extract cookies for a URL and inject them into a CDP session.
  * Convenience function combining extractCookies + injectCookies.
  * @param {object} session - CDP session handle
@@ -276,12 +292,18 @@ export async function injectCookies(session, cookies) {
  * @param {object} [opts] - Options passed to extractCookies
  */
 export async function authenticate(session, url, opts = {}) {
-  // Strip to registrable domain so mail.google.com → google.com
-  // This ensures parent-domain cookies (.google.com) are included
-  const hostname = new URL(url).hostname.replace(/^www\./, '');
-  const parts = hostname.split('.');
-  const domain = parts.length > 2 ? parts.slice(-2).join('.') : hostname;
-  const cookies = extractCookies({ ...opts, domain });
+  const fullHost = new URL(url).hostname.toLowerCase();
+  // Coarse SQL pre-filter: strip to a registrable-ish domain so the LIKE query
+  // returns a superset (incl. parent-domain cookies). slice(-2) is a cheap
+  // heuristic — it over-selects for multi-part eTLDs (co.uk) and as a substring
+  // match, so the precise RFC-6265 domain-match below is what actually decides
+  // which cookies get injected. Without it, browsing apple.com would inject
+  // cookies for apple.com.evil.org and every *.co.uk site (verified).
+  const noWww = fullHost.replace(/^www\./, '');
+  const parts = noWww.split('.');
+  const coarseDomain = parts.length > 2 ? parts.slice(-2).join('.') : noWww;
+  const candidates = extractCookies({ ...opts, domain: coarseDomain });
+  const cookies = candidates.filter((c) => cookieDomainMatch(fullHost, c.domain));
   if (cookies.length > 0) {
     await injectCookies(session, cookies);
   }

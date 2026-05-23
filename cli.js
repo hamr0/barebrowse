@@ -119,6 +119,8 @@ async function cmdOpen() {
     downloadPath: parseFlag('--download-path'),
     blockAds: hasFlag('--no-block-ads') ? false : undefined,
     blockUrls: parseFlagAll('--block-urls'),
+    blockPrivateNetwork: hasFlag('--block-private-network') || undefined,
+    uploadDir: parseFlag('--upload-dir') ? resolve(parseFlag('--upload-dir')) : undefined,
   };
 
   try {
@@ -222,6 +224,8 @@ async function runDaemonInternal() {
     downloadPath: parseFlag('--download-path'),
     blockAds: hasFlag('--no-block-ads') ? false : undefined,
     blockUrls: parseFlagAll('--block-urls'),
+    blockPrivateNetwork: hasFlag('--block-private-network') || undefined,
+    uploadDir: parseFlag('--upload-dir'),
   };
   const outputDir = parseFlag('--output-dir') || resolve('.barebrowse');
   const url = parseFlag('--url');
@@ -489,6 +493,10 @@ Session:
                                     Default: enabled in owned-browser modes, disabled in attach mode.
     --block-urls=PATTERN            Extra URL glob to block (repeatable, e.g. --block-urls='*://*.foo.com/*').
                                     Use the =VALUE form when the pattern could be mistaken for a flag.
+    --block-private-network         SSRF guard: refuse to navigate to loopback / RFC-1918 / link-local /
+                                    cloud-metadata hosts. Off by default so localhost browsing works.
+    --upload-dir=DIR                Sandbox uploads: reject files outside DIR (symlinks resolved).
+                                    Default: no restriction. (file:/chrome: schemes are always blocked.)
 
 Navigation:
   barebrowse goto <url>             Navigate to URL
