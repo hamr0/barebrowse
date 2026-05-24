@@ -28,8 +28,11 @@ jobs:
         run: npm install -g npm@latest
       - name: Install dependencies
         run: npm ci
-      - name: Test
-        run: npm test
+      - name: Test (unit only)
+        # Integration tests drive a real Chromium and hang on a headless
+        # CI runner (no browser / sandbox). The publish gate runs the
+        # browser-free unit suite; run `npm test` locally for the full suite.
+        run: npm run test:unit
       - name: Skip if this version is already on npm
         id: check
         run: |
