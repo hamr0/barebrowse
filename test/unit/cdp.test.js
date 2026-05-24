@@ -10,7 +10,13 @@ import assert from 'node:assert/strict';
 import { findBrowser, launch, cleanupBrowser } from '../../src/chromium.js';
 import { createCDP } from '../../src/cdp.js';
 
-describe('findBrowser()', () => {
+// These suites drive a real Chromium; skip them when no browser is installed
+// (e.g. a headless CI runner). They run wherever a browser is present.
+let BROWSER_AVAILABLE = true;
+try { findBrowser(); } catch { BROWSER_AVAILABLE = false; }
+const browserSkip = BROWSER_AVAILABLE ? false : 'no Chromium-based browser installed';
+
+describe('findBrowser()', { skip: browserSkip }, () => {
   it('finds a Chromium-based browser', () => {
     const binary = findBrowser();
     assert.ok(binary.length > 0, 'should return a path');
@@ -19,7 +25,7 @@ describe('findBrowser()', () => {
   });
 });
 
-describe('launch()', () => {
+describe('launch()', { skip: browserSkip }, () => {
   it('launches headless Chromium and returns WebSocket URL', async () => {
     const browser = await launch();
     try {
@@ -111,7 +117,7 @@ describe('launch()', () => {
   });
 });
 
-describe('createCDP()', () => {
+describe('createCDP()', { skip: browserSkip }, () => {
   it('connects to browser and sends commands', async () => {
     const browser = await launch();
     try {
@@ -155,7 +161,7 @@ describe('createCDP()', () => {
   });
 });
 
-describe('ARIA tree via CDP', () => {
+describe('ARIA tree via CDP', { skip: browserSkip }, () => {
   it('gets accessibility tree from a page', async () => {
     const browser = await launch();
     try {
