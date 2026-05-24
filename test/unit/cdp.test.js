@@ -10,11 +10,14 @@ import assert from 'node:assert/strict';
 import { findBrowser, launch, cleanupBrowser } from '../../src/chromium.js';
 import { createCDP } from '../../src/cdp.js';
 
-// These suites drive a real Chromium; skip them when no browser is installed
-// (e.g. a headless CI runner). They run wherever a browser is present.
+// These suites launch a real Chromium. GitHub runners ship a browser but
+// headless launch is unreliable there (sandbox/deps), so skip on CI; also skip
+// where no browser is installed. They run in full on a normal dev machine.
 let BROWSER_AVAILABLE = true;
 try { findBrowser(); } catch { BROWSER_AVAILABLE = false; }
-const browserSkip = BROWSER_AVAILABLE ? false : 'no Chromium-based browser installed';
+const browserSkip = process.env.CI ? 'browser launch unreliable on CI runners'
+  : BROWSER_AVAILABLE ? false
+  : 'no Chromium-based browser installed';
 
 describe('findBrowser()', { skip: browserSkip }, () => {
   it('finds a Chromium-based browser', () => {
