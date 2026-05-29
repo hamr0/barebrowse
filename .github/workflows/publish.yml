@@ -60,17 +60,26 @@ jobs:
           VERSION=$(node -p "require('./package.json').version")
           PUBLISH_EXIT=0
           npm publish --provenance --access public || PUBLISH_EXIT=$?
+          # Registry read-after-write can lag well past 15s. Poll generously
+          # (~2 min) so the end-state check doesn't false-negative on a publish
+          # that actually succeeded. `npm view` caches, so bypass it.
           PUBLISHED=""
-          for _ in 1 2 3 4 5; do
-            PUBLISHED=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
+          for _ in $(seq 1 20); do
+            PUBLISHED=$(npm view "$NAME@$VERSION" version --prefer-online 2>/dev/null || true)
             [ "$PUBLISHED" = "$VERSION" ] && break
-            sleep 3
+            sleep 6
           done
           if [ "$PUBLISHED" = "$VERSION" ]; then
             if [ "$PUBLISH_EXIT" -ne 0 ]; then
               echo "::warning::npm publish exited $PUBLISH_EXIT but $NAME@$VERSION is on the registry (known npm OIDC post-publish web-auth 401); treating as success."
             fi
             echo "✅ Published $NAME@$VERSION"
+          elif [ "$PUBLISH_EXIT" -eq 0 ]; then
+            # npm reported success (exit 0 = the upload HTTP call succeeded) but
+            # the registry still isn't reflecting it after the poll window.
+            # Trust the success exit here — the inverse of the OIDC-401 case.
+            echo "::warning::npm publish exited 0 but $NAME@$VERSION not yet visible after ~2 min (registry reflection lag); treating as success."
+            echo "✅ Published $NAME@$VERSION (npm exit 0; registry lagging)"
           else
             echo "::error::npm publish failed (exit $PUBLISH_EXIT) and $NAME@$VERSION is NOT on the registry."
             exit 1
