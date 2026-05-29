@@ -37,8 +37,8 @@ jobs:
         run: npm ci
       - name: Typecheck
         run: npm run typecheck --if-present
-      - name: Test
-        run: npm test --if-present
+      - name: Test (unit only — integration tests need a real browser)
+        run: npm run test:unit
       - name: Skip if this version is already on npm
         id: check
         run: |

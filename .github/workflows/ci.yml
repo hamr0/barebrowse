@@ -26,5 +26,5 @@ jobs:
         run: npm run typecheck
       - name: Build types (.d.ts emit)
         run: npm run build:types
-      - name: Test
-        run: npm test
+      - name: Test (unit only — integration tests need a real browser)
+        run: npm run test:unit
