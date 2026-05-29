@@ -1,11 +1,18 @@
+# npm publish — manual only (run when you want, via "Run workflow").
+#
+# Auth: npm trusted publishing via OIDC (no NPM_TOKEN). Configure the trusted
+# publisher once at npmjs.com (Package → Settings → Trusted Publisher → GitHub
+# Actions: this repo + this workflow file) before the first run.
+#
+# Idempotent: skips a version already on the registry, and asserts the END
+# STATE (polls the registry) rather than trusting npm's exit code, because
+# npm's OIDC flow can exit non-zero from a trailing web-auth 401 *after* the
+# tarball + provenance are already published. `prepublishOnly` builds any
+# generated artifacts (e.g. .d.ts) into the tarball at publish time.
 name: Publish to npm
 
-# Trusted publishing via OIDC — no NPM_TOKEN needed.
-# Configure the trusted publisher at npmjs.com first (see repo notes).
 on:
-  workflow_dispatch:        # manual "Run workflow" button
-  release:
-    types: [published]      # also publishes when you cut a GitHub release
+  workflow_dispatch:        # manual "Run workflow" button — publish when you want
 
 permissions:
   contents: read
@@ -28,11 +35,10 @@ jobs:
         run: npm install -g npm@latest
       - name: Install dependencies
         run: npm ci
-      - name: Test (unit only)
-        # Integration tests drive a real Chromium and hang on a headless
-        # CI runner (no browser / sandbox). The publish gate runs the
-        # browser-free unit suite; run `npm test` locally for the full suite.
-        run: npm run test:unit
+      - name: Typecheck
+        run: npm run typecheck --if-present
+      - name: Test
+        run: npm test --if-present
       - name: Skip if this version is already on npm
         id: check
         run: |
@@ -48,20 +54,12 @@ jobs:
       - name: Publish
         if: steps.check.outputs.skip == 'false'
         run: |
-          # npm's OIDC trusted-publishing flow can exit non-zero from a trailing
-          # "generate Web Auth URLs" call (HTTP 401) AFTER the tarball +
-          # provenance have already been committed to the registry — making the
-          # step go red on a publish that actually succeeded. So don't trust the
-          # exit code: run the publish, then assert the END STATE (is the version
-          # on the registry?). A genuine failure — where the version is NOT on
-          # npm — still fails the step; only a publish-succeeded-but-exited-nonzero
-          # is downgraded to a warning. (A blanket `|| true` would instead hide
-          # real failures, which is worse.)
+          # Don't trust npm's exit code (see header): publish, then assert the
+          # version is actually on the registry. A genuine failure still fails.
           NAME=$(node -p "require('./package.json').name")
           VERSION=$(node -p "require('./package.json').version")
           PUBLISH_EXIT=0
           npm publish --provenance --access public || PUBLISH_EXIT=$?
-          # Registry reflection can lag a few seconds; poll briefly.
           PUBLISHED=""
           for _ in 1 2 3 4 5; do
             PUBLISHED=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
