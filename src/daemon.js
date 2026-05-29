@@ -416,11 +416,17 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     }
   });
 
-  await new Promise((resolve) => {
+  /** @type {Promise<void>} */
+  const listening = new Promise((resolve) => {
     server.listen(0, '127.0.0.1', () => resolve());
   });
+  await listening;
 
-  const port = server.address().port;
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Daemon server failed to bind to a TCP port');
+  }
+  const port = address.port;
 
   // Write session.json so parent/clients can find us. Owner-only: it carries
   // the auth token that gates /command.

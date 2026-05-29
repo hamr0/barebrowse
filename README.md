@@ -35,6 +35,8 @@ npm install barebrowse
 
 Requires Node.js >= 22 and any installed Chromium-based browser.
 
+Ships with TypeScript types (generated from JSDoc) — autocomplete and type-checking work out of the box, no `@types/barebrowse` needed. The library is vanilla JS with no build step.
+
 ## Three ways to use it
 
 ### 1. CLI session -- for coding agents and quick testing

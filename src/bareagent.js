@@ -11,6 +11,8 @@
  * 300ms settle delay after actions for DOM updates.
  */
 
+/// <reference path="./wearehere.d.ts" />
+
 import { browse, connect } from './index.js';
 
 // Optional: privacy assessment via wearehere
@@ -21,6 +23,14 @@ try {
 
 const SETTLE_MS = 300;
 const settle = () => new Promise((r) => setTimeout(r, SETTLE_MS));
+
+/**
+ * @typedef {object} BrowseTool
+ * @property {string} name
+ * @property {string} description
+ * @property {object} parameters - JSON-schema-shaped parameter spec
+ * @property {(args?: any) => Promise<any>} execute
+ */
 
 /**
  * Create bareagent-compatible browse tools.
@@ -42,6 +52,7 @@ export function createBrowseTools(opts = {}) {
     return await page.snapshot();
   }
 
+  /** @type {BrowseTool[]} */
   const tools = [
     {
       name: 'browse',
@@ -77,7 +88,7 @@ export function createBrowseTools(opts = {}) {
           pruneMode: { type: 'string', enum: ['act', 'read'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs).' },
         },
       },
-      execute: async ({ pruneMode } = {}) => {
+      execute: async (/** @type {{ pruneMode?: string }} */ { pruneMode } = {}) => {
         const page = await getPage();
         return await page.snapshot(pruneMode ? { mode: pruneMode } : undefined);
       },
@@ -231,7 +242,7 @@ export function createBrowseTools(opts = {}) {
           landscape: { type: 'boolean', description: 'Landscape orientation (default: false)' },
         },
       },
-      execute: async ({ landscape } = {}) => {
+      execute: async (/** @type {{ landscape?: boolean }} */ { landscape } = {}) => {
         const page = await getPage();
         return await page.pdf({ landscape });
       },
@@ -245,7 +256,7 @@ export function createBrowseTools(opts = {}) {
           format: { type: 'string', enum: ['png', 'jpeg', 'webp'], description: 'Image format (default: png)' },
         },
       },
-      execute: async ({ format } = {}) => {
+      execute: async (/** @type {{ format?: string }} */ { format } = {}) => {
         const page = await getPage();
         return await page.screenshot({ format });
       },
@@ -259,7 +270,7 @@ export function createBrowseTools(opts = {}) {
           ignoreCache: { type: 'boolean', description: 'Bypass HTTP cache (hard reload). Default: false.' },
         },
       },
-      execute: async ({ ignoreCache } = {}) => actionAndSnapshot((page) => page.reload({ ignoreCache })),
+      execute: async (/** @type {{ ignoreCache?: boolean }} */ { ignoreCache } = {}) => actionAndSnapshot((page) => page.reload({ ignoreCache })),
     },
     {
       name: 'wait_for',
@@ -272,7 +283,7 @@ export function createBrowseTools(opts = {}) {
           timeout: { type: 'number', description: 'Timeout in ms (default: 30000)' },
         },
       },
-      execute: async ({ text, selector, timeout } = {}) => actionAndSnapshot((page) => page.waitFor({ text, selector, timeout })),
+      execute: async (/** @type {{ text?: string, selector?: string, timeout?: number }} */ { text, selector, timeout } = {}) => actionAndSnapshot((page) => page.waitFor({ text, selector, timeout })),
     },
     {
       name: 'downloads',

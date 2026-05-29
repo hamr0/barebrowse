@@ -1,7 +1,7 @@
 # barebrowse -- Integration Guide
 
 > For AI assistants and developers wiring barebrowse into a project.
-> v0.11.0 | Node.js >= 22 | 0 required deps | Apache-2.0
+> v0.12.0 | Node.js >= 22 | 0 required deps | Apache-2.0
 
 ## What this is
 
@@ -12,6 +12,11 @@ No Playwright. No bundled browser. No build step. Vanilla JS, ES modules.
 ```
 npm install barebrowse
 ```
+
+**TypeScript:** ships with `.d.ts` types generated from the source JSDoc, so
+autocomplete and type-checking work out of the box — no `@types/barebrowse`
+needed. The library itself is vanilla JS with no build step; the types are a
+publish-time artifact.
 
 Three integration paths:
 1. **Library:** `import { browse, connect } from 'barebrowse'` -- one-shot or interactive session

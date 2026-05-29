@@ -126,7 +126,7 @@ function extractChromiumCookies(dbPath, domain) {
   const aesKey = deriveKey(password);
 
   // immutable=1 bypasses WAL lock on live databases
-  const db = new DatabaseSync(`file://${dbPath}?immutable=1`, { readonly: true });
+  const db = new DatabaseSync(`file://${dbPath}?immutable=1`, { readOnly: true });
 
   let sql = `SELECT host_key, name, value, encrypted_value, path,
     CAST(expires_utc AS TEXT) AS expires_utc, is_secure, is_httponly, samesite
@@ -144,7 +144,8 @@ function extractChromiumCookies(dbPath, domain) {
   const SAMESITE = { 0: 'None', 1: 'Lax', 2: 'Strict' };
 
   return rows.map((row) => {
-    const enc = Buffer.from(row.encrypted_value);
+    const rawEnc = row.encrypted_value;
+    const enc = rawEnc instanceof Uint8Array ? Buffer.from(rawEnc) : Buffer.alloc(0);
     let value;
     try {
       value = enc.length > 0 ? decryptCookie(enc, aesKey) : row.value;
@@ -154,7 +155,9 @@ function extractChromiumCookies(dbPath, domain) {
 
     // Chrome timestamp: microseconds since 1601-01-01
     const CHROME_EPOCH = 11644473600000000n;
-    const expiresUtc = row.expires_utc ? BigInt(row.expires_utc) : 0n;
+    const expiresUtc = typeof row.expires_utc === 'string' || typeof row.expires_utc === 'number'
+      ? BigInt(row.expires_utc)
+      : 0n;
     const expires = expiresUtc > 0n
       ? Number((expiresUtc - CHROME_EPOCH) / 1000000n)
       : -1;
@@ -179,7 +182,7 @@ function extractChromiumCookies(dbPath, domain) {
  * @returns {Array<object>} Cookies in CDP Network.setCookie format
  */
 function extractFirefoxCookies(dbPath, domain) {
-  const db = new DatabaseSync(`file://${dbPath}?immutable=1`, { readonly: true });
+  const db = new DatabaseSync(`file://${dbPath}?immutable=1`, { readOnly: true });
 
   let sql = `SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite
     FROM moz_cookies`;

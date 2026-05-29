@@ -1,0 +1,30 @@
+# Push / PR gate. Mirrors the checks the publish workflow runs before shipping:
+# typecheck (JSDoc → .d.ts contract via tsc checkJs + strictNullChecks),
+# build:types (the .d.ts actually emit), and the test suite. No lint step —
+# tsc already catches the bug class that matters for a vanilla-ESM lib.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm ci
+      - name: Typecheck (JSDoc contract)
+        run: npm run typecheck
+      - name: Build types (.d.ts emit)
+        run: npm run build:types
+      - name: Test
+        run: npm test

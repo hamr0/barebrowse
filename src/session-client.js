@@ -13,7 +13,7 @@ const SESSION_FILE = 'session.json';
 
 /**
  * Read session.json from the output directory.
- * @returns {{ port: number, pid: number, startedAt: string } | null}
+ * @returns {{ port: number, pid: number, token?: string, startedAt: string } | null}
  */
 export function readSession(outputDir) {
   const sessionPath = join(resolve(outputDir), SESSION_FILE);

@@ -12,12 +12,14 @@
  * @param {object} [opts]
  * @param {number} [opts.timeout=30000] - Max wait time before reject
  * @param {number} [opts.idle=500] - Required idle duration before resolve
+ * @returns {Promise<void>}
  */
 export function waitForNetworkIdle(session, opts = {}) {
   const timeout = opts.timeout || 30000;
   const idle = opts.idle || 500;
 
-  return new Promise((resolve, reject) => {
+  /** @type {Promise<void>} */
+  const settled = new Promise((resolve, reject) => {
     const pending = new Set();
     let timer = null;
     const unsubs = [];
@@ -59,4 +61,5 @@ export function waitForNetworkIdle(session, opts = {}) {
     // Start check immediately (might already be idle)
     check();
   });
+  return settled;
 }

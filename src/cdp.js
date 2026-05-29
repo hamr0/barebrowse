@@ -12,7 +12,7 @@
 /**
  * Create a CDP client connected to the given WebSocket URL.
  * @param {string} wsUrl - WebSocket URL (ws://127.0.0.1:PORT/devtools/...)
- * @returns {Promise<CDPClient>}
+ * @returns {Promise<object>} CDP client ({ send, on, once, session, close })
  */
 export async function createCDP(wsUrl) {
   const ws = new WebSocket(wsUrl);
@@ -20,7 +20,8 @@ export async function createCDP(wsUrl) {
   const pending = new Map();   // id → { resolve, reject }
   const listeners = new Map(); // "method" or "sessionId:method" → Set<callback>
 
-  await new Promise((resolve, reject) => {
+  /** @type {Promise<void>} */
+  const connected = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('CDP connection timeout (5s)')), 5000);
     ws.onopen = () => { clearTimeout(timeout); resolve(); };
     ws.onerror = (e) => {
@@ -28,6 +29,7 @@ export async function createCDP(wsUrl) {
       reject(new Error(`CDP WebSocket connection failed: ${e.message || 'unknown error'}`));
     };
   });
+  await connected;
 
   ws.onmessage = (event) => {
     const msg = JSON.parse(typeof event.data === 'string' ? event.data : event.data.toString());

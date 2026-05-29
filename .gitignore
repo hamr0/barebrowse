@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
 
+# Generated type declarations — built from JSDoc on publish (tsconfig.json +
+# prepublishOnly), never committed, so the shipped .d.ts can't drift.
+/types/
+
 # Runtime session artifacts — may contain authenticated page snapshots,
 # saved state (cookies + localStorage = session tokens), screenshots, logs.
 .barebrowse/

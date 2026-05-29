@@ -60,7 +60,7 @@ const SKIP_ROLES = new Set([
  *
  * @param {object} tree - Root node from buildTree() (CDP format)
  * @param {object} [options]
- * @param {'act'|'browse'|'navigate'|'full'} [options.mode='act'] - Pruning mode
+ * @param {'act'|'browse'|'navigate'|'full'|'read'} [options.mode='act'] - Pruning mode ('read' is an alias for 'browse')
  * @param {string} [options.context=''] - Search context for relevance filtering
  * @returns {object|null} Pruned tree
  */

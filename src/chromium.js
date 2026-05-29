@@ -112,7 +112,8 @@ export function findBrowser() {
  * @param {number} [opts.port=0] - CDP port (0 = random available port)
  * @param {string} [opts.userDataDir] - Browser profile directory
  * @param {boolean} [opts.headed=false] - Launch in headed mode (with visible window)
- * @returns {Promise<{wsUrl: string, process: ChildProcess, port: number}>}
+ * @param {string} [opts.proxy] - Proxy server (e.g. 'http://host:port')
+ * @returns {Promise<{wsUrl: string, process: import('node:child_process').ChildProcess, port: number}>}
  */
 export async function launch(opts = {}) {
   const binary = opts.binary || findBrowser();
@@ -235,6 +236,7 @@ export async function cleanupBrowser(browser) {
   if (!browser) return;
   activeBrowsers.delete(browser);
   if (browser.process && !browser.process.killed && browser.process.exitCode === null) {
+    /** @type {Promise<void>} */
     const exited = new Promise((resolve) => {
       const timer = setTimeout(resolve, 2000);
       browser.process.once('exit', () => { clearTimeout(timer); resolve(); });
@@ -282,7 +284,10 @@ export async function cleanupBrowser(browser) {
 export async function getDebugUrl(port) {
   const res = await fetch(`http://127.0.0.1:${port}/json/version`);
   if (!res.ok) throw new Error(`Cannot reach browser debug port at ${port}: ${res.status}`);
-  const data = await res.json();
+  const data = /** @type {{ webSocketDebuggerUrl?: string }} */ (await res.json());
+  if (!data.webSocketDebuggerUrl) {
+    throw new Error(`Browser debug port at ${port} returned no webSocketDebuggerUrl`);
+  }
   return data.webSocketDebuggerUrl;
 }
 

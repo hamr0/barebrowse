@@ -37,6 +37,17 @@ import { chmodSync } from 'node:fs';
  *   See src/blocklist.js for the default set. Set false to disable.
  * @param {string[]} [opts.blockUrls] - Extra URL glob patterns to block,
  *   merged with the default unless blockAds:false.
+ * @param {boolean} [opts.allowLocalUrls=false] - Permit navigation to local-
+ *   resource schemes (file:, view-source:, chrome:, …). Blocked by default.
+ * @param {boolean} [opts.blockPrivateNetwork=false] - Reject navigation to
+ *   loopback / RFC-1918 / link-local / cloud-metadata hosts (SSRF guard).
+ * @param {string} [opts.proxy] - Proxy server (e.g. 'http://host:port').
+ * @param {string} [opts.binary] - Path to browser binary (auto-detected if omitted).
+ * @param {string} [opts.userDataDir] - Browser profile directory.
+ * @param {{width: number, height: number}} [opts.viewport] - Viewport dimensions.
+ * @param {string} [opts.browser] - Source browser for cookie extraction.
+ * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs.
+ * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Pruning mode.
  * @returns {Promise<string>} ARIA snapshot text
  */
 export async function browse(url, opts = {}) {
@@ -169,6 +180,14 @@ export async function browse(url, opts = {}) {
  * @param {string} [opts.uploadDir] - When set, upload() rejects any file that
  *   does not resolve (symlinks included) inside this directory. Sandboxes the
  *   agent's file-upload capability. Default: no restriction.
+ * @param {string} [opts.proxy] - Proxy server (e.g. 'http://host:port').
+ * @param {string} [opts.binary] - Path to browser binary (auto-detected if omitted).
+ * @param {string} [opts.userDataDir] - Browser profile directory.
+ * @param {{width: number, height: number}} [opts.viewport] - Viewport dimensions.
+ * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs.
+ * @param {string} [opts.storageState] - Path to a storage-state JSON file
+ *   (cookies + localStorage) to load before navigation.
+ * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Pruning mode.
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
@@ -189,7 +208,7 @@ export async function connect(opts = {}) {
     // Reuse the user's running browser — do not launch, do not own the
     // profile. cleanupBrowser() is a no-op on this shape (process: null,
     // ownedProfileDir: null), which is the whole point.
-    browser = await attach({ port: opts.port });
+    browser = await attach({ port: opts.port ?? 0 });
     cdp = await createCDP(browser.wsUrl);
   } else if (mode === 'headed') {
     browser = await launch({ ...launchOpts, headed: true });
