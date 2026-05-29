@@ -47,4 +47,33 @@ jobs:
           fi
       - name: Publish
         if: steps.check.outputs.skip == 'false'
-        run: npm publish --provenance --access public
+        run: |
+          # npm's OIDC trusted-publishing flow can exit non-zero from a trailing
+          # "generate Web Auth URLs" call (HTTP 401) AFTER the tarball +
+          # provenance have already been committed to the registry — making the
+          # step go red on a publish that actually succeeded. So don't trust the
+          # exit code: run the publish, then assert the END STATE (is the version
+          # on the registry?). A genuine failure — where the version is NOT on
+          # npm — still fails the step; only a publish-succeeded-but-exited-nonzero
+          # is downgraded to a warning. (A blanket `|| true` would instead hide
+          # real failures, which is worse.)
+          NAME=$(node -p "require('./package.json').name")
+          VERSION=$(node -p "require('./package.json').version")
+          PUBLISH_EXIT=0
+          npm publish --provenance --access public || PUBLISH_EXIT=$?
+          # Registry reflection can lag a few seconds; poll briefly.
+          PUBLISHED=""
+          for _ in 1 2 3 4 5; do
+            PUBLISHED=$(npm view "$NAME@$VERSION" version 2>/dev/null || true)
+            [ "$PUBLISHED" = "$VERSION" ] && break
+            sleep 3
+          done
+          if [ "$PUBLISHED" = "$VERSION" ]; then
+            if [ "$PUBLISH_EXIT" -ne 0 ]; then
+              echo "::warning::npm publish exited $PUBLISH_EXIT but $NAME@$VERSION is on the registry (known npm OIDC post-publish web-auth 401); treating as success."
+            fi
+            echo "✅ Published $NAME@$VERSION"
+          else
+            echo "::error::npm publish failed (exit $PUBLISH_EXIT) and $NAME@$VERSION is NOT on the registry."
+            exit 1
+          fi
