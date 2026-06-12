@@ -26,7 +26,7 @@ barebrowse gives your AI agent a real browser. Navigate, read, interact, move on
 
 It uses the browser you already have -- your sessions, your cookies. Pages come back stripped to what matters -- 40-90% fewer tokens than raw output.
 
-No Playwright. Zero dependencies. No bundled browser. No 200MB download.
+No Playwright. No bundled browser. No 200MB download. Two tiny dependencies (`ws` + Mozilla Readability).
 
 ## Install
 
@@ -45,6 +45,7 @@ Ships with TypeScript types (generated from JSDoc) — autocomplete and type-che
 ```bash
 barebrowse open https://example.com    # Start session + navigate
 barebrowse snapshot                    # ARIA snapshot → .barebrowse/page-*.yml
+barebrowse readable                    # Clean article text → .barebrowse/article-*.txt
 barebrowse click 8                     # Click element
 barebrowse close                       # End session
 ```
@@ -95,7 +96,7 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-18 tools: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
+19 tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
 
 `browse` and `snapshot` accept `pruneMode: 'act'|'read'` (v0.9.1). `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch.
 
@@ -103,7 +104,7 @@ Troubleshooting MCP setup: `npx barebrowse doctor` scans every known config loca
 
 ### 3. Library -- for agentic automation
 
-Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (17 tools, auto-snapshot after every action).
+Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (18 tools, auto-snapshot after every action).
 
 For code examples, API reference, and wiring instructions, see **[barebrowse.context.md](barebrowse.context.md)** -- the full integration guide.
 
@@ -170,6 +171,7 @@ Everything the agent can do through barebrowse:
 | **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
 | **Back / Forward** | Browser history navigation |
 | **Snapshot** | Pruned ARIA tree with `[ref=N]` markers. Two modes: `act` (buttons, links, inputs) and `read` (full text). 40-90% token reduction. |
+| **Readable** | Clean article text (title + body, chrome stripped — Reader-View engine). For *reading* article-like pages, not interacting. Advisory `confidence`; falls back to snapshot on non-articles. |
 | **Click** | Scroll into view + mouse click at element center, JS fallback for hidden elements |
 | **Type** | Focus + insert text, with option to clear existing content first |
 | **Press** | Special keys: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
@@ -216,7 +218,7 @@ URL -> find/launch browser (chromium.js)
     -> agent-ready snapshot with [ref=N] markers
 ```
 
-11 modules, 2,400 lines, zero required dependencies.
+14 modules, ~3,000 lines, two small dependencies (`ws`, `@mozilla/readability`).
 
 ## Requirements
 

@@ -191,6 +191,19 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       return { ok: true, file };
     },
 
+    async readable() {
+      const r = await page.readable();
+      // A non-article page is not an error — surface the hint so the agent
+      // knows to fall back to snapshot, rather than failing the command.
+      if (!r.ok) return { ok: true, value: r.hint };
+      const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\n`
+        + `confidence: ${r.confidence}${r.hint ? ` (${r.hint})` : ''}\n\n`;
+      const ts = new Date().toISOString().replace(/[:.]/g, '-');
+      const file = join(absDir, `article-${ts}.txt`);
+      writeFilePrivate(file, header + r.text);
+      return { ok: true, file };
+    },
+
     async screenshot({ format }) {
       const data = await page.screenshot({ format: format || 'png' });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');

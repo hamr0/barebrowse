@@ -67,6 +67,7 @@ const snapshot = await browse('https://example.com', {
 | `goForward()` | -- | void | Navigate forward in browser history |
 | `reload(opts?)` | { ignoreCache?: boolean, timeout?: number } | void | Reload the current page. Clears refMap (refs from pre-reload reject). |
 | `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read' } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. |
+| `readable()` | -- | object | Clean article text (Reader-View engine). `{ ok, title, byline, text, length, confidence: 'high'\|'low', readerable, hint? }` or `{ ok: false, hint }`. For *reading*, not interacting — see note below. |
 | `click(ref)` | ref: string | void | Scroll into view + mouse press+release at center |
 | `type(ref, text, opts?)` | ref: string, text: string, opts: { clear?, keyEvents? } | void | Focus + insert text. `clear: true` replaces existing. |
 | `press(key)` | key: string | void | Special key: Enter, Tab, Escape, Backspace, Delete, arrows, Home, End, PageUp, PageDown, Space |
@@ -121,6 +122,28 @@ Key rules:
 - Always call `snapshot()` to get fresh refs before interacting
 - `click(ref)` / `type(ref, text)` / `hover(ref)` / `select(ref, value)` use these ref strings
 - Pruning removes noise (~47-95% token reduction) while keeping all interactive elements
+
+## readable() vs snapshot() — which to use
+
+Two different jobs:
+
+- **`snapshot()`** → the *actionable* ARIA tree (`[ref=N]` markers). Use it to **interact** (click/type/fill) or on **any** page type (home pages, search results, app UIs).
+- **`readable()`** → the *article* as clean reading text (title + body prose; nav/ads/sidebars stripped). Use it **only** to **read or summarise** article-like pages (news, blogs, docs, wiki), where `snapshot()` is both noisy and *silently lossy on long prose* (`read` pruning can drop body text).
+
+`readable()` is **not** a token-savings feature — vs a read-mode snapshot it can be smaller *or* larger depending on the page; its value is **complete, clean prose**. It returns no refs, so you cannot interact with its output.
+
+**Article detection is unreliable**, so `readable()` never hard-gates. It always returns whatever it extracted plus an advisory `confidence`:
+- `confidence: 'high'` → safe to treat as an article.
+- `confidence: 'low'` (or `ok: false`) → probably not an article; the `hint` tells the agent to fall back to `snapshot()`.
+
+```js
+const r = await page.readable();
+if (r.ok && r.confidence === 'high') {
+  use(r.text);              // clean article prose
+} else {
+  const snap = await page.snapshot({ mode: 'read' });  // fall back
+}
+```
 
 ## Interaction loop: observe, think, act
 
@@ -207,10 +230,10 @@ try {
 ```
 
 `createBrowseTools(opts)` returns:
-- `tools` -- array of bareagent-compatible tool objects: `browse`, `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `select`, `hover`, `back`, `forward`, `reload` (v0.9.0), `drag`, `upload`, `tabs`, `switchTab`, `pdf`, `screenshot`, `wait_for` (v0.9.0), `downloads` (v0.9.0), plus `assess` if wearehere installed
+- `tools` -- array of bareagent-compatible tool objects: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `select`, `hover`, `back`, `forward`, `reload` (v0.9.0), `drag`, `upload`, `tabs`, `switchTab`, `pdf`, `screenshot`, `wait_for` (v0.9.0), `downloads` (v0.9.0), plus `assess` if wearehere installed
 - `close()` -- cleanup function, call when done
 
-Action tools (click, type, press, scroll, hover, goto, back, forward, reload, drag, upload, select, switchTab, wait_for) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates.
+Action tools (click, type, press, scroll, hover, goto, back, forward, reload, drag, upload, select, switchTab, wait_for) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates. `readable` is a read tool (like `snapshot`): it returns the article text directly, not a follow-up snapshot.
 
 `onDialog` is intentionally not exposed as a tool — it's a callback shape that doesn't fit a request/response tool loop. If your bareagent flow needs to override a confirm/prompt, drop to `import { connect }` directly and pass the page through.
 
@@ -221,6 +244,7 @@ For coding agents (Claude Code, Copilot, Cursor) and quick interactive testing. 
 ```bash
 barebrowse open https://example.com    # Start daemon + navigate
 barebrowse snapshot                    # → .barebrowse/page-<timestamp>.yml
+barebrowse readable                    # → .barebrowse/article-<timestamp>.txt (clean article text)
 barebrowse click 8                     # Click element ref=8
 barebrowse type 12 hello world         # Type into element ref=12
 barebrowse back                        # Go back in history
@@ -262,7 +286,7 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 }
 ```
 
-18 core tools as of v0.9.0: `browse` (one-shot), `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if `wearehere` is installed (`npm install wearehere`). Plus the **opt-in `eval` tool** gated by `BAREBROWSE_MCP_EVAL=1` (default OFF) — `Runtime.evaluate` in the user's authenticated session can read cookies/localStorage and hit any same-origin endpoint, so opt-in only.
+19 core tools: `browse` (one-shot), `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if `wearehere` is installed (`npm install wearehere`). Plus the **opt-in `eval` tool** gated by `BAREBROWSE_MCP_EVAL=1` (default OFF) — `Runtime.evaluate` in the user's authenticated session can read cookies/localStorage and hit any same-origin endpoint, so opt-in only.
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
 

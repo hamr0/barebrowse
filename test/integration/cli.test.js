@@ -87,6 +87,23 @@ describe('CLI session', () => {
     // about:blank is empty after pruning — just verify file was created
   });
 
+  it('readable extracts an article to an .txt file', () => {
+    const para = '<p>Web scraping is the automated extraction of data from '
+      + 'websites by a bot that downloads pages and parses their content into a '
+      + 'structured form, widely used for research and price monitoring.</p>';
+    const html = `<html><head><title>CLI Readable Article</title></head><body>`
+      + `<nav><a href="/a">Home</a></nav><article><h1>Heading</h1>`
+      + para.repeat(8) + `<p>CLI-READABLE-SENTINEL here.</p></article>`
+      + `<footer>footer junk</footer></body></html>`;
+    cli(['goto', 'data:text/html,' + encodeURIComponent(html)], { cwd: tmpDir, timeout: 60000 });
+    const out = cli(['readable'], { cwd: tmpDir });
+    assert.ok(out.endsWith('.txt'), `expected .txt path, got: ${out}`);
+    const content = readFileSync(out, 'utf8');
+    assert.ok(content.includes('title: CLI Readable Article'), 'should carry the title header');
+    assert.ok(content.includes('CLI-READABLE-SENTINEL'), 'should include body prose');
+    assert.ok(!content.includes('footer junk'), 'should strip footer chrome');
+  });
+
   it('goto navigates and snapshot shows new page content', () => {
     const out = cli(['goto', 'https://example.com'], { cwd: tmpDir, timeout: 60000 });
     assert.ok(out === 'ok', `expected ok, got: ${out}`);

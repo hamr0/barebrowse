@@ -52,6 +52,7 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 | `barebrowse forward` | Go forward in browser history. |
 | `barebrowse snapshot` | ARIA snapshot → `.barebrowse/page-<timestamp>.yml` |
 | `barebrowse snapshot --mode=read` | Read mode: keeps all text (for content extraction) |
+| `barebrowse readable` | Clean article text → `.barebrowse/article-<timestamp>.txt`. For reading/summarising articles (news, blogs, docs); falls back to snapshot on non-articles. |
 | `barebrowse screenshot` | Screenshot → `.barebrowse/screenshot-<timestamp>.png` |
 | `barebrowse pdf [--landscape]` | PDF export → `.barebrowse/page-<timestamp>.pdf` |
 

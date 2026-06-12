@@ -18,6 +18,7 @@ import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
 import { DEFAULT_BLOCKLIST } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
+import { readable as extractReadable } from './readable.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
 import { chmodSync } from 'node:fs';
@@ -457,6 +458,13 @@ export async function connect(opts = {}) {
         ? `hint: act mode dropped most of the page — retry with pruneMode='read' for paragraphs and long text\n`
         : '';
       return stats + '\n' + hint + warn + out;
+    },
+
+    // Clean article text (Firefox Reader View engine), for reading/summarising
+    // — not for interacting. Returns { ok:false, hint } on non-article pages.
+    // See readable.js for why this never hard-gates on article detection.
+    async readable() {
+      return extractReadable(page.session);
     },
 
     async click(ref) {

@@ -2,6 +2,35 @@
 
 ## [Unreleased]
 
+### Added
+- **`readable()` — clean article extraction.** New read mode that returns the
+  main article of a page as clean text (title + body prose, nav/ads/sidebars
+  stripped) via Mozilla Readability injected in-page over CDP. Companion to
+  `snapshot()`, not a replacement: `snapshot()` is the *actionable* ARIA tree
+  for clicking/typing; `readable()` is for *reading/summarising* article-like
+  pages (news, blogs, docs, wiki), where `snapshot()` is noisy and silently
+  lossy on long prose. Article detection is unreliable, so `readable()` never
+  hard-gates — it always returns the text plus an advisory `confidence`
+  (`high`/`low`) and a hint to fall back to `snapshot()` on non-article pages.
+  Exposed everywhere: `page.readable()`, MCP `readable` tool, bareagent
+  `readable` tool, and `barebrowse readable` CLI (→ `.barebrowse/article-*.txt`).
+
+### Fixed
+- **Large pages no longer kill the CDP connection.** Node's built-in WebSocket
+  (undici) silently caps decompressed messages at ~3 MB and *permanently* tears
+  down the socket when a single `Accessibility.getFullAXTree` response exceeds
+  it — which broke `snapshot()` (and consent dismissal during `goto()`) on big
+  pages (e.g. long Wikipedia articles). `cdp.js` now uses the `ws` package with
+  a 256 MB `maxPayload`; the built-in exposes no way to raise the limit.
+  Regression test: `connect.test.js` snapshots a 12k-node page that tripped the
+  old cap.
+
+### Changed
+- **Two runtime dependencies (previously zero):** `ws` (CDP transport, above)
+  and `@mozilla/readability` (`readable()`). Both are lightweight, widely
+  adopted, and actively maintained, per the project's dependency rule (external
+  only when the stdlib genuinely can't do the job).
+
 ## [0.12.0] - 2026-05-29
 
 ### Added

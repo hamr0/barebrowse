@@ -94,6 +94,18 @@ export function createBrowseTools(opts = {}) {
       },
     },
     {
+      name: 'readable',
+      description: 'Extract the main article as clean reading text (title + body prose, chrome stripped — Firefox Reader View engine). Use ONLY to READ/SUMMARISE article-like pages (news, blogs, docs, wiki). For interacting, or for non-article pages, use snapshot. Returns a low-confidence hint to use snapshot when the page is not an article.',
+      parameters: { type: 'object', properties: {} },
+      execute: async () => {
+        const page = await getPage();
+        const r = await page.readable();
+        if (!r.ok) return r.hint;
+        const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\nconfidence: ${r.confidence}\n\n`;
+        return header + r.text;
+      },
+    },
+    {
       name: 'click',
       description: 'Click an element by its ref from the snapshot. Returns the updated snapshot.',
       parameters: {

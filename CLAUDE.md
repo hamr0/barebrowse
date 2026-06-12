@@ -17,8 +17,8 @@
 - **Runtime:** Node.js >= 22 (built-in WebSocket, sqlite)
 - **Protocol:** CDP (Chrome DevTools Protocol) direct — no Playwright
 - **Browser:** Any installed Chromium-based browser (chromium, chrome, brave, edge)
-- **Modules:** 11 files in `src/`, ~2,400 lines, zero required deps
-- **Tests:** 71 passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
+- **Modules:** ~14 files in `src/`. Two runtime deps: `ws` (CDP transport — built-in WebSocket caps messages ~3MB and dies) and `@mozilla/readability` (`readable()` article extraction). Both vetted/lightweight per the dependency rule.
+- **Tests:** 160+ passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
 - **Docs:** `docs/README.md` (navigation guide to all documentation)
 
 For full development and testing standards, see `.claude/memory/AGENT_RULES.md`.

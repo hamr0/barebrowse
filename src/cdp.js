@@ -2,12 +2,21 @@
  * cdp.js — Minimal Chrome DevTools Protocol client over WebSocket.
  *
  * Sends JSON-RPC commands, receives responses and events.
- * Uses Node 22's built-in WebSocket (no external deps).
+ * Uses the `ws` package (not Node's built-in WebSocket): the built-in
+ * silently caps decompressed messages at ~3 MB and permanently kills the
+ * socket when a single CDP response (e.g. Accessibility.getFullAXTree on a
+ * large page) exceeds it — with no way to raise the limit. `ws` exposes
+ * maxPayload, so we lift the ceiling and disable compression.
  *
  * Supports flattened sessions: when a sessionId is provided,
  * it's sent at the top level of the message (not inside params).
  * Events from sessions are also dispatched by sessionId.
  */
+
+import WebSocket from 'ws';
+
+/** Lift the message ceiling well past any realistic AX/DOM payload. */
+const MAX_PAYLOAD = 256 * 1024 * 1024; // 256 MB
 
 /**
  * Create a CDP client connected to the given WebSocket URL.
@@ -15,7 +24,7 @@
  * @returns {Promise<object>} CDP client ({ send, on, once, session, close })
  */
 export async function createCDP(wsUrl) {
-  const ws = new WebSocket(wsUrl);
+  const ws = new WebSocket(wsUrl, { maxPayload: MAX_PAYLOAD, perMessageDeflate: false });
   let nextId = 1;
   const pending = new Map();   // id → { resolve, reject }
   const listeners = new Map(); // "method" or "sessionId:method" → Set<callback>

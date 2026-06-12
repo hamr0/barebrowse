@@ -3,7 +3,8 @@
  * mcp-server.js — MCP server for barebrowse.
  *
  * Raw JSON-RPC 2.0 over stdio. No SDK dependency.
- * 12 tools: browse, goto, snapshot, click, type, press, scroll, back, forward, drag, upload, pdf.
+ * Tools: browse, goto, snapshot, readable, click, type, press, scroll, back,
+ * forward, drag, upload, pdf, reload, screenshot, wait_for, tabs, select, hover.
  *
  * Session tools share a singleton page, lazy-created on first use.
  * Action tools return 'ok' — agent calls snapshot explicitly to observe.
@@ -175,6 +176,16 @@ export const TOOLS = [
       properties: {
         pruneMode: { type: 'string', enum: ['act', 'read'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If a previous snapshot looked empty on a content-heavy page, retry with "read".' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
+      },
+    },
+  },
+  {
+    name: 'readable',
+    description: 'Extract the main article of the current page as clean reading text (title + body prose, nav/ads/sidebars stripped — the Firefox Reader View engine). Use ONLY when your goal is to READ or SUMMARISE article-like content (news, blog posts, docs, wiki). For clicking/typing/forms, or for non-article pages (home pages, search results, app UIs), use snapshot instead. On a non-article page this returns a low-confidence result with a hint to use snapshot.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        maxChars: { type: 'number', description: 'Max chars to return inline. Longer articles are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
     },
   },
@@ -402,6 +413,20 @@ async function handleToolCall(name, args) {
         return `Snapshot (${text.length} chars) saved to ${file}`;
       }
       return text;
+    }, TIMEOUTS.snapshot);
+    case 'readable': return withRetry(async () => {
+      const page = await getPage();
+      const r = await page.readable();
+      if (!r.ok) return r.hint;
+      const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\n`
+        + `confidence: ${r.confidence}${r.hint ? ` (${r.hint})` : ''}\n\n`;
+      const body = header + r.text;
+      const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
+      if (body.length > limit) {
+        const file = saveSnapshot(body);
+        return `Article "${r.title}" (${r.text.length} chars, confidence: ${r.confidence}) saved to ${file}`;
+      }
+      return body;
     }, TIMEOUTS.snapshot);
     case 'click': return withRetry(async () => {
       const page = await getPage();
