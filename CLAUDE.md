@@ -13,11 +13,11 @@
 ## Project Specifics
 
 - **What:** Vanilla JS library — CDP-direct browsing for autonomous agents. URL in, pruned ARIA snapshot out.
-- **Language:** Vanilla JavaScript, ES modules, no build step
-- **Runtime:** Node.js >= 22 (built-in WebSocket, sqlite)
+- **Language:** Vanilla JavaScript, ES modules, no runtime build step (JSDoc→`.d.ts` types generated at publish only)
+- **Runtime:** Node.js >= 22 (built-in `node:sqlite` for reading cookie DBs)
 - **Protocol:** CDP (Chrome DevTools Protocol) direct — no Playwright
 - **Browser:** Any installed Chromium-based browser (chromium, chrome, brave, edge)
-- **Modules:** ~14 files in `src/`. Two runtime deps: `ws` (CDP transport — built-in WebSocket caps messages ~3MB and dies) and `@mozilla/readability` (`readable()` article extraction). Both vetted/lightweight per the dependency rule.
+- **Modules:** ~16 files in `src/`. Two runtime deps: `ws` (CDP transport — Node's built-in WebSocket caps messages ~3MB and tears down the socket) and `@mozilla/readability` (`readable()` article extraction). Both vetted/lightweight per the dependency rule.
 - **Tests:** 160+ passing — run with `node --test test/unit/*.test.js test/integration/*.test.js`
 - **Docs:** `docs/README.md` (navigation guide to all documentation)
 
