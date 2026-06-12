@@ -14,6 +14,7 @@
 /// <reference path="./wearehere.d.ts" />
 
 import { browse, connect } from './index.js';
+import { formatReadable } from './readable.js';
 
 // Optional: privacy assessment via wearehere
 let assessFn = null;
@@ -99,10 +100,7 @@ export function createBrowseTools(opts = {}) {
       parameters: { type: 'object', properties: {} },
       execute: async () => {
         const page = await getPage();
-        const r = await page.readable();
-        if (!r.ok) return r.hint;
-        const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\nconfidence: ${r.confidence}\n\n`;
-        return header + r.text;
+        return formatReadable(await page.readable());
       },
     },
     {

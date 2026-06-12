@@ -11,6 +11,7 @@
  */
 
 import { browse, connect } from './src/index.js';
+import { formatReadable } from './src/readable.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -103,13 +104,13 @@ async function withRetry(fn, timeoutMs, { retry = true } = {}) {
 const MAX_CHARS_DEFAULT = 30000;
 const OUTPUT_DIR = join(process.cwd(), '.barebrowse');
 
-export function saveSnapshot(text) {
+export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
   // Owner-only: snapshots/articles can hold authenticated page content
   // (logged-in text, reflected session data). Matches the daemon's 0600/0700
   // invariant — and is umask-independent because the modes are explicit.
   mkdirSync(OUTPUT_DIR, { recursive: true, mode: 0o700 });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = join(OUTPUT_DIR, `page-${ts}.yml`);
+  const file = join(OUTPUT_DIR, `${prefix}-${ts}.${ext}`);
   writeFileSync(file, text, { mode: 0o600 });
   return file;
 }
@@ -421,12 +422,10 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       const r = await page.readable();
       if (!r.ok) return r.hint;
-      const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\n`
-        + `confidence: ${r.confidence}${r.hint ? ` (${r.hint})` : ''}\n\n`;
-      const body = header + r.text;
+      const body = formatReadable(r);
       const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
       if (body.length > limit) {
-        const file = saveSnapshot(body);
+        const file = saveSnapshot(body, { prefix: 'article', ext: 'txt' });
         return `Article "${r.title}" (${r.text.length} chars, confidence: ${r.confidence}) saved to ${file}`;
       }
       return body;

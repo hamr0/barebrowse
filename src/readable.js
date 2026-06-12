@@ -30,6 +30,47 @@ const READERABLE_SRC = readFileSync(require.resolve('@mozilla/readability/Readab
 /** Below this many characters of extracted text, treat as low confidence. */
 const MIN_ARTICLE_CHARS = 1500;
 
+// Fully static — interpolates only the two module-level source constants — so
+// it's built once at load, not rebuilt (~120 KB) on every readable() call.
+const EXTRACT_EXPRESSION = `(() => {
+  ${READERABLE_SRC}
+  ${READABILITY_SRC}
+  try {
+    const readerable = isProbablyReaderable(document);
+    // Readability mutates the document it parses — clone so the live page
+    // (and any later snapshot()/interaction) is untouched.
+    const art = new Readability(document.cloneNode(true)).parse();
+    if (!art || !art.textContent || !art.textContent.trim()) {
+      return { ok: false, readerable };
+    }
+    return {
+      ok: true,
+      readerable,
+      title: art.title || '',
+      byline: art.byline || '',
+      text: art.textContent.trim(),
+      length: art.length || art.textContent.length,
+    };
+  } catch (e) {
+    return { ok: false, err: String(e && e.message || e) };
+  }
+})()`;
+
+/**
+ * Render a readable() result as a text block: a short header (title / byline /
+ * confidence, with the fall-back hint inline when present) then the body. On a
+ * failed extraction it returns the hint. Shared by the MCP, bareagent, and
+ * CLI/daemon surfaces so their output can't drift apart.
+ * @param {object} r - a readable() result.
+ * @returns {string}
+ */
+export function formatReadable(r) {
+  if (!r.ok) return r.hint;
+  const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\n`
+    + `confidence: ${r.confidence}${r.hint ? ` (${r.hint})` : ''}\n\n`;
+  return header + r.text;
+}
+
 /**
  * Extract the main article from the current page.
  * @param {object} session - CDP session-scoped handle (.send()).
@@ -39,32 +80,8 @@ const MIN_ARTICLE_CHARS = 1500;
  *     confidence: 'high'|'low', readerable, hint? }  — extracted article
  */
 export async function readable(session) {
-  const expression = `(() => {
-    ${READERABLE_SRC}
-    ${READABILITY_SRC}
-    try {
-      const readerable = isProbablyReaderable(document);
-      // Readability mutates the document it parses — clone so the live page
-      // (and any later snapshot()/interaction) is untouched.
-      const art = new Readability(document.cloneNode(true)).parse();
-      if (!art || !art.textContent || !art.textContent.trim()) {
-        return { ok: false, readerable };
-      }
-      return {
-        ok: true,
-        readerable,
-        title: art.title || '',
-        byline: art.byline || '',
-        text: art.textContent.trim(),
-        length: art.length || art.textContent.length,
-      };
-    } catch (e) {
-      return { ok: false, err: String(e && e.message || e) };
-    }
-  })()`;
-
   const { result } = await session.send('Runtime.evaluate', {
-    expression,
+    expression: EXTRACT_EXPRESSION,
     returnByValue: true,
     awaitPromise: true,
   });

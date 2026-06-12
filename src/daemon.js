@@ -11,6 +11,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync } from '
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { connect } from './index.js';
+import { formatReadable } from './readable.js';
 
 /** Owner-only file write helper — daemon artifacts can hold authenticated content. */
 function writeFilePrivate(path, data) {
@@ -196,11 +197,9 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       // A non-article page is not an error — surface the hint so the agent
       // knows to fall back to snapshot, rather than failing the command.
       if (!r.ok) return { ok: true, value: r.hint };
-      const header = `title: ${r.title}${r.byline ? `\nbyline: ${r.byline}` : ''}\n`
-        + `confidence: ${r.confidence}${r.hint ? ` (${r.hint})` : ''}\n\n`;
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `article-${ts}.txt`);
-      writeFilePrivate(file, header + r.text);
+      writeFilePrivate(file, formatReadable(r));
       return { ok: true, file };
     },
 
