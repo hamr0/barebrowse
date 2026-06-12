@@ -380,4 +380,31 @@ describe('connect() — page handle contract', () => {
       await page.close();
     }
   });
+
+  it('snapshots a page whose AX tree exceeds the old ~3MB WebSocket cap (F-ws)', async () => {
+    // Regression: Node's built-in WebSocket silently caps decompressed
+    // messages at ~3MB and kills the socket when a single getFullAXTree
+    // response exceeds it. At ~388 bytes/AX-node that cap is ~7.7k nodes;
+    // 12k focusable nodes (~4.5MB) reliably tripped it. cdp.js now uses `ws`
+    // with a 256MB maxPayload. Build the DOM in-page to avoid a giant URL.
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto('data:text/html,<body><h1>CAP-TEST</h1></body>');
+      await page.cdp.send('Runtime.evaluate', {
+        expression: `(() => {
+          const html = Array.from({length: 12000},
+            (_, i) => '<button>btn ' + i + '</button>').join('');
+          document.body.insertAdjacentHTML('beforeend', html);
+        })()`,
+      });
+      // Before the fix this throws "Max decompressed message size exceeded".
+      const snap = await page.snapshot();
+      assert.ok(typeof snap === 'string' && snap.length > 100000,
+        `large-page snapshot should return a big string, got ${snap.length} chars`);
+      assert.ok(snap.includes('btn 11999'),
+        'snapshot must include deep nodes, proving the full AX tree came through');
+    } finally {
+      await page.close();
+    }
+  });
 });

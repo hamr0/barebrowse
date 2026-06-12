@@ -38,6 +38,8 @@ if (args.includes('--daemon-internal')) {
   await cmdProxy('goto', { url: args[1], timeout: parseFlag('--timeout') });
 } else if (cmd === 'snapshot') {
   await cmdProxy('snapshot', { mode: parseFlag('--mode') });
+} else if (cmd === 'readable') {
+  await cmdProxy('readable');
 } else if (cmd === 'screenshot') {
   await cmdProxy('screenshot', { format: parseFlag('--format') });
 } else if (cmd === 'click' && args[1]) {
@@ -504,6 +506,7 @@ Navigation:
   barebrowse forward                Go forward in history
   barebrowse reload [--no-cache]    Reload current page
   barebrowse snapshot [--mode=M]    ARIA snapshot -> .barebrowse/page-*.yml
+  barebrowse readable               Clean article text -> .barebrowse/article-*.txt
   barebrowse screenshot [--format]  Screenshot -> .barebrowse/screenshot-*.png
   barebrowse pdf [--landscape]      PDF export -> .barebrowse/page-*.pdf
 

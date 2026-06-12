@@ -277,6 +277,8 @@ This section exists so we don't re-debate settled decisions.
 | Naming | chromium.js | Covers all Chromium-family browsers, not just Chrome | chrome.js | Too specific; Brave/Edge/Arc are also targets |
 | mcprune integration | Absorb pruning logic | One package does it all, mcprune pruning is a pure function | Keep separate | Agents shouldn't need two packages to browse |
 | openclaw lesson | Single bridge protocol | One CDP connection vs many API integrations | Direct multi-API | openclaw proved this fails — bloat, maintenance, fragility |
+| CDP transport | `ws` package | Node's built-in WebSocket silently caps decompressed messages ~3 MB and *kills the socket* when `getFullAXTree` on a big page exceeds it — no knob to raise it. `ws` exposes `maxPayload` (set 256 MB). First runtime dep; justified by the "external only when stdlib genuinely can't" rule | Built-in WebSocket / incremental `getChildAXNodes` walk | Built-in can't raise the cap; the zero-dep incremental walk was 14 s + 117 MB garbage on a normal page and still crashed (measured) |
+| Reading mode | `readable()` via Mozilla Readability | Some tasks need to *read* an article, not act on it — `snapshot()` is noisy and silently lossy on long prose. Readability is the Firefox Reader-View engine, injected in-page over CDP (works on JS-rendered articles). Companion to `snapshot()`, not a replacement | Reuse `read`-mode snapshot / hand-rolled extraction | Read snapshot drops body text on long pages; content extraction is sanitization-adjacent → use the vetted library, not a homegrown parser |
 
 ---
 
@@ -292,6 +294,7 @@ This section exists so we don't re-debate settled decisions.
 - **Reload** — *(Done v0.9.0: `page.reload({ignoreCache, timeout})`, exposed as MCP + bareagent + CLI subcommand.)*
 - **Download capture** — *(Done v0.9.0: `page.downloads` live array, `--download-path` CLI flag, `downloads` MCP + bareagent + CLI subcommand.)*
 - **Dialog override** — *(Done v0.9.0: `page.onDialog(handler)` lets callers return `{accept, promptText}` instead of the default auto-accept.)*
+- **Reading mode** — *(Done: `page.readable()` extracts the main article as clean text via Mozilla Readability injected over CDP. Exposed as `readable` on MCP, bareagent, and the CLI (→ `.barebrowse/article-*.txt`). Never hard-gates — returns text plus an advisory `confidence` and a hint to fall back to `snapshot()` on non-articles.)*
 - **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Still queued.
 
 ### Medium-term
