@@ -25,6 +25,17 @@
   Regression test: `connect.test.js` snapshots a 12k-node page that tripped the
   old cap.
 
+### Security
+- **MCP output files are now owner-only (`0600`).** `saveSnapshot()` and the
+  screenshot tool previously wrote snapshots / articles / screenshots with
+  default perms (`0644` in a `0755` dir under the standard umask) —
+  authenticated page content readable by other local users on a shared host.
+  They now write `0600` files in a `0700` dir, umask-independent, matching the
+  daemon's existing invariant. Regression-guarded by a test that fails on a
+  `0644` write.
+- **Daemon hardening:** `GET /status` (the only pre-auth endpoint) no longer
+  returns the pid; `/command` now caps the request body at 16 MB (→ `413`).
+
 ### Changed
 - **Two runtime dependencies (previously zero):** `ws` (CDP transport, above)
   and `@mozilla/readability` (`readable()`). Both are lightweight, widely
