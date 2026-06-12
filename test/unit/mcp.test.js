@@ -6,9 +6,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { TIMEOUTS, TOOLS } from '../../mcp-server.js';
+import { readFileSync, statSync, unlinkSync } from 'node:fs';
+import { TIMEOUTS, TOOLS, saveSnapshot } from '../../mcp-server.js';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join as joinPath } from 'node:path';
@@ -45,17 +44,6 @@ async function withRetry(fn, timeoutMs, { retry = true } = {}) {
 
 let _retryCount = 0;
 
-// Re-implement saveSnapshot locally to test the logic (it's not exported from mcp-server.js)
-const OUTPUT_DIR = join(import.meta.dirname, '../../.barebrowse-test');
-
-function saveSnapshot(text) {
-  mkdirSync(OUTPUT_DIR, { recursive: true });
-  const ts = new Date().toISOString().replace(/[:.]/g, '-');
-  const file = join(OUTPUT_DIR, `page-${ts}.yml`);
-  writeFileSync(file, text);
-  return file;
-}
-
 describe('MCP saveSnapshot', () => {
   it('saves text to a .yml file and returns the path', () => {
     const text = 'url: https://example.com/\n- heading "Test"';
@@ -66,7 +54,20 @@ describe('MCP saveSnapshot', () => {
       const content = readFileSync(file, 'utf8');
       assert.equal(content, text, 'file content should match input');
     } finally {
-      rmSync(OUTPUT_DIR, { recursive: true, force: true });
+      unlinkSync(file);
+    }
+  });
+
+  it('writes owner-only (0600) — snapshots can hold authenticated page content', () => {
+    // Security regression guard: the real saveSnapshot must write 0600,
+    // umask-independent, matching the daemon's invariant. A 0644 file would
+    // leak logged-in page content to other local users on a shared host.
+    const file = saveSnapshot('url: https://example.com/\n- heading "secret"');
+    try {
+      assert.equal(statSync(file).mode & 0o777, 0o600,
+        `snapshot file must be 0600, got 0o${(statSync(file).mode & 0o777).toString(8)}`);
+    } finally {
+      unlinkSync(file);
     }
   });
 

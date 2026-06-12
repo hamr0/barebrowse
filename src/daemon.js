@@ -374,8 +374,11 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   // Start HTTP server on random port
   const server = createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/status') {
+      // Liveness only — no pid. /status is the one pre-auth endpoint, and
+      // isAlive() just checks res.ok; the pid clients show comes from
+      // session.json (owner-only), so nothing consumes a pid here.
       res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ ok: true, pid: process.pid }));
+      res.end(JSON.stringify({ ok: true }));
       return;
     }
 
@@ -393,8 +396,20 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       return;
     }
 
+    // Cap the request body. Post-auth, single local user, but an unbounded
+    // `body +=` is a needless memory-DoS foot-gun. 16 MB covers any realistic
+    // eval expression / typed text.
+    const MAX_BODY = 16 * 1024 * 1024;
     let body = '';
-    for await (const chunk of req) body += chunk;
+    for await (const chunk of req) {
+      body += chunk;
+      if (body.length > MAX_BODY) {
+        res.writeHead(413, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: false, error: 'Request body too large' }));
+        req.destroy();
+        return;
+      }
+    }
 
     let parsed;
     try {

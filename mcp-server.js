@@ -103,11 +103,14 @@ async function withRetry(fn, timeoutMs, { retry = true } = {}) {
 const MAX_CHARS_DEFAULT = 30000;
 const OUTPUT_DIR = join(process.cwd(), '.barebrowse');
 
-function saveSnapshot(text) {
-  mkdirSync(OUTPUT_DIR, { recursive: true });
+export function saveSnapshot(text) {
+  // Owner-only: snapshots/articles can hold authenticated page content
+  // (logged-in text, reflected session data). Matches the daemon's 0600/0700
+  // invariant — and is umask-independent because the modes are explicit.
+  mkdirSync(OUTPUT_DIR, { recursive: true, mode: 0o700 });
   const ts = new Date().toISOString().replace(/[:.]/g, '-');
   const file = join(OUTPUT_DIR, `page-${ts}.yml`);
-  writeFileSync(file, text);
+  writeFileSync(file, text, { mode: 0o600 });
   return file;
 }
 
@@ -488,10 +491,11 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       const format = args.format || 'png';
       const b64 = await page.screenshot({ format, quality: args.quality });
-      mkdirSync(OUTPUT_DIR, { recursive: true });
+      mkdirSync(OUTPUT_DIR, { recursive: true, mode: 0o700 });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(OUTPUT_DIR, `screenshot-${ts}.${format}`);
-      writeFileSync(file, Buffer.from(b64, 'base64'));
+      // Owner-only: a screenshot of an authenticated page is sensitive too.
+      writeFileSync(file, Buffer.from(b64, 'base64'), { mode: 0o600 });
       return file;
     }, TIMEOUTS.screenshot);
     case 'wait_for': return withRetry(async () => {
