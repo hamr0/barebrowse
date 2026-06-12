@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-06-12
+
 ### Added
 - **`readable()` — clean article extraction.** New read mode that returns the
   main article of a page as clean text (title + body prose, nav/ads/sidebars
