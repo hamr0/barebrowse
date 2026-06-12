@@ -1,8 +1,8 @@
 # barebrowse — Product Requirements Document
 
-**Version:** 1.4
-**Date:** 2026-05-29
-**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0; pruneMode follow-up shipped @ v0.9.1. v0.10.x added ad/tracker blocking + canvas-noise stealth. **v0.11.0 = security hardening release** — full audit of library + CLI daemon + MCP server; eight findings fixed and regression-tested (157 passing). See the "Security model & safe defaults" section below and the v0.11.0 CHANGELOG entry. **v0.12.0** adopted the shared JS-library publishing conventions: a JSDoc→`.d.ts` types pipeline (`tsc` checkJs + strictNullChecks, gated in CI), a `files` allowlist, and a push/PR `ci.yml` — see the Decisions Log "Types" row and the v0.12.0 CHANGELOG entry.
+**Version:** 1.5
+**Date:** 2026-06-12
+**Status:** Phase B (headed enhancements + bot-resistance + MCP completeness) complete @ v0.9.0; pruneMode follow-up shipped @ v0.9.1. v0.10.x added ad/tracker blocking + canvas-noise stealth. **v0.11.0 = security hardening release** — full audit of library + CLI daemon + MCP server; eight findings fixed and regression-tested. See the "Security model & safe defaults" section below and the v0.11.0 CHANGELOG entry. **v0.12.0** adopted the shared JS-library publishing conventions: a JSDoc→`.d.ts` types pipeline (`tsc` checkJs + strictNullChecks, gated in CI), a `files` allowlist, and a push/PR `ci.yml`. **Unreleased** adds `readable()` (clean article extraction via Mozilla Readability), fixes a CDP WebSocket size cap that killed `snapshot()` on large pages (swap to the `ws` package), and extends the `0600`/`0700` artifact-permission invariant to the MCP surface — 168 passing. barebrowse now has two lightweight runtime deps (`ws`, `@mozilla/readability`); see the Decisions Log and CHANGELOG.
 
 ---
 
@@ -20,7 +20,7 @@ barebrowse handles: finding the browser, connecting via CDP, injecting cookies, 
 ## What barebrowse is NOT
 
 - **Not a framework.** No plugin system, no config files, no lifecycle hooks.
-- **Not an MCP server.** But trivially wrappable as one (~30 lines).
+- **Not *only* an MCP server.** The core is a plain library; an optional MCP wrapper (`mcp-server.js`) ships on top for MCP clients.
 - **Not Playwright.** No bundled browser, no cross-engine abstraction, no 200MB download.
 - **Not an agent.** No LLM, no planning, no orchestration — that's bareagent's job.
 - **Not a scraper.** It browses as the user, not as a bot harvesting data.
@@ -57,7 +57,7 @@ CDP (Chrome DevTools Protocol) lets us connect to any Chromium-based browser —
 - Playwright abstracts CDP, but we need CDP directly for all three modes (headless, headed, hybrid) against the user's real browser.
 - Every Playwright API call maps 1:1 to a CDP method. The abstraction adds weight without adding capability for our use case.
 - CDP gives us everything: `Accessibility.getFullAXTree`, `Page.navigate`, `Runtime.evaluate`, `Input.dispatch*Event`, `Network.setCookie`, `Page.captureScreenshot`.
-- The CDP WebSocket client is ~100 lines of vanilla JS. Playwright is ~50,000.
+- The CDP WebSocket client is ~165 lines of vanilla JS (over the `ws` package). Playwright is ~50,000.
 
 **What we lose:** Cross-engine support (Firefox, WebKit). CDP only works with Chromium-family browsers (Chrome, Chromium, Edge, Brave, Vivaldi, Arc, Opera). This covers ~80% of desktop browsers. Firefox support could come later via WebDriver BiDi.
 
@@ -106,7 +106,7 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 
 **Why:**
 - The user's browser has active sessions for every site they use. We reuse those sessions instead of building new auth flows.
-- sweet-cookie (npm package) already extracts cookies from Chrome/Firefox/Safari SQLite databases with OS keychain decryption. We use it or vendor the relevant parts.
+- sweet-cookie isn't published to npm, so `auth.js` is our own focused implementation: it reads Chromium and Firefox cookie SQLite databases and decrypts Chromium cookies via the OS keyring (KWallet on KDE, GNOME keyring / libsecret otherwise); Firefox cookies are plaintext. (Cross-browser injection into the headless Chromium instance — see the Decisions Log "Cookie auth" row.)
 - For headed mode, cookies are already present in the browser — no extraction needed.
 - For headless mode, we extract from the user's profile and inject into the headless instance.
 
@@ -135,7 +135,7 @@ Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `
 
 **Why:**
 - Pruning is not optional for agent consumption. A raw ARIA tree is still too large for most LLM context windows. Pruning is part of the pipeline, not an afterthought.
-- mcprune's pruning logic is a pure function: takes an ARIA tree, returns a smaller ARIA tree. No browser dependency, no Playwright coupling. It's ~300 lines of role-based tree surgery.
+- mcprune's pruning logic is a pure function: takes an ARIA tree, returns a smaller ARIA tree. No browser dependency, no Playwright coupling. It's ~470 lines of role-based tree surgery.
 - By absorbing it, barebrowse becomes a complete "URL in, agent-ready snapshot out" solution. No second package needed.
 
 **What we port from mcprune:**
@@ -177,7 +177,7 @@ The agent doesn't have to think about any of this:
 | **Download capture** (`Content-Disposition: attachment`) | H7: `Browser.setDownloadBehavior({behavior:'allowAndName', downloadPath, eventsEnabled:true})` + live `page.downloads` array with `{ guid, url, suggestedFilename, savedPath, state, totalBytes, receivedBytes }` per file | Both (skipped in attach mode) |
 | **Profile locking** | Unique temp dir per headless instance | Headless |
 | **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
-| **ARIA noise** | 9-step pruning pipeline (ported from mcprune): wrapper collapse, noise removal, landmark promotion | Both |
+| **ARIA noise** | 8-step pruning pipeline (ported from mcprune): region extraction, node prune, wrapper collapse, post-clean, then e-commerce noise removal (dedup links, drop sponsored/spec buttons, truncate after footer, drop filter groups) | Both |
 
 ---
 
@@ -251,9 +251,9 @@ bareagent handles the think/act/observe loop. barebrowse handles "see the web an
 
 multis (personal assistant) uses barebrowse in headed mode for interactive tasks. The multis proxy is already running, providing a desktop session. barebrowse connects to the user's Chrome and drives it on behalf of the assistant.
 
-**MCP server wrapper (future):**
+**MCP server wrapper (shipped):**
 
-barebrowse is not an MCP server, but wrapping it as one is ~30 lines. This would replace Playwright MCP + mcprune proxy with a single, lighter MCP server.
+barebrowse ships `mcp-server.js` — a thin wrapper (raw JSON-RPC 2.0 over stdio, no SDK dependency) exposing the same library as MCP tools (`browse`, `goto`, `snapshot`, `readable`, click/type/etc., plus the opt-in `eval`). It replaces Playwright MCP + the mcprune proxy with a single, lighter MCP server.
 
 ---
 
@@ -263,7 +263,7 @@ This section exists so we don't re-debate settled decisions.
 
 | Decision | Choice | Why | Alternative considered | Why not |
 |---|---|---|---|---|
-| Browser protocol | CDP direct | Uses user's browser, ~100 lines, all 3 modes | Playwright | 200MB download, bundles its own Chromium, abstracts what we need raw |
+| Browser protocol | CDP direct | Uses user's browser, ~165-line client, all 3 modes | Playwright | 200MB download, bundles its own Chromium, abstracts what we need raw |
 | Page representation | ARIA tree | Semantic, token-efficient, what agents need | DOM/HTML | Bloated, noisy, needs heavy parsing |
 | Pruning | Built-in | Agents always need pruned output | Optional/separate | Two deps for one job, pruning isn't optional |
 | Cookie auth | Own auth.js + CDP inject | User's existing sessions (Firefox or Chromium), cross-browser injection into headless Chromium | OAuth/credential storage | Complex, security liability, reinventing what the browser already solved |
@@ -271,7 +271,7 @@ This section exists so we don't re-debate settled decisions.
 | Chromium only | CDP constraint | ~80% browser share, user's real browser | Cross-browser (Playwright) | Requires Playwright, loses "use your own browser" benefit |
 | Anti-detection | Runtime.evaluate patches | Minimal stealth for headless mode | Full stealth framework | Over-engineering; headless + real cookies handles 90% |
 | Daemon/server | None | CDP is direct, no intermediary needed | sweetlink daemon pattern | Unnecessary complexity for local agent→browser |
-| Framework | None (vanilla JS) | Matches bare- philosophy, zero deps | Express/Fastify wrapper | Not a server, not needed |
+| Framework | None (vanilla JS) | Matches bare- philosophy, minimal deps (only `ws` + `@mozilla/readability`, both lightweight) | Express/Fastify wrapper | Not a server, not needed |
 | Language | Vanilla JavaScript | Node.js ecosystem, same as bareagent, CDP libs available | TypeScript | Added build step for shipped code; instead we ship types via JSDoc→`.d.ts` (see types-pipeline row) with no transpile |
 | Types | JSDoc → generated `.d.ts` | Adopters get autocomplete + type errors; the `.js` we author is the `.js` that ships (no build step); `tsc --noEmit` turns JSDoc into a CI-checked contract so it can't drift | Hand-written `.d.ts` / full TypeScript | Hand `.d.ts` go stale; TS needs a transpile step. Generated-and-git-ignored `.d.ts` make drift structurally impossible |
 | Naming | chromium.js | Covers all Chromium-family browsers, not just Chrome | chrome.js | Too specific; Brave/Edge/Arc are also targets |
@@ -316,7 +316,7 @@ This section exists so we don't re-debate settled decisions.
 
 | Repo | What we took | What we skipped |
 |---|---|---|
-| **steipete/sweet-cookie** | Cookie extraction from browser profiles, OS keychain decryption | Nothing — clean, focused library |
+| **steipete/sweet-cookie** | The *approach* — cookie extraction from browser profiles + OS-keyring decryption | The package itself: not published to npm, so `auth.js` reimplements the technique (Chromium KWallet/GNOME + Firefox plaintext) |
 | **steipete/sweetlink** | CDP dual-channel concept, selector discovery scoring, click/command patterns | Daemon architecture, WebSocket bridge, in-page runtime injection, HMAC auth |
 | **steipete/canvas** | Stealth/anti-detection config patterns | Go implementation (we're JS) |
 | **nichochar/open-operator** | AI agent web automation patterns | Full framework, too opinionated |
@@ -339,9 +339,9 @@ barebrowse applies the same lesson: instead of integrating Playwright + Puppetee
 barebrowse succeeds when:
 
 1. `browse(url)` returns a pruned ARIA snapshot of any page, authenticated as the user
-2. Zero heavy dependencies — no Playwright, no Puppeteer, no bundled browser
+2. No heavy dependencies — no Playwright, no Puppeteer, no bundled browser; only two lightweight runtime deps (`ws`, `@mozilla/readability`)
 3. Works with any installed Chromium-based browser
 4. Headless for research, headed for interaction, hybrid for autonomous agents
 5. Plugs into bareagent as plain tool functions
-6. Total source under 1,000 lines for core functionality
+6. The source stays small and readable — low thousands of lines across focused modules, versus Playwright's ~50,000
 7. An agent using barebrowse + bareagent can autonomously research the web and act on pages
