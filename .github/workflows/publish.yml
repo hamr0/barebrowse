@@ -32,7 +32,11 @@ jobs:
           node-version: 22
           registry-url: 'https://registry.npmjs.org'
       - name: Upgrade npm (trusted publishing needs >= 11.5.1)
-        run: npm install -g npm@latest
+        # Pin to npm@11, NOT @latest. npm 12.0.0's `npm publish --provenance` is
+        # broken -- libnpmpublish's provenance.js does `require('sigstore')` but the
+        # tarball only bundles `@sigstore/*`, so publish dies with MODULE_NOT_FOUND.
+        # npm@11 bundles `sigstore` and publishes fine. Revisit once npm fixes it.
+        run: npm install -g npm@11
       - name: Install dependencies
         run: npm ci
       - name: Typecheck
