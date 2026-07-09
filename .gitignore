@@ -21,3 +21,8 @@ node_modules/
 
 # OS
 .DS_Store
+
+# Agent / IDE scratch — never commit (per hamr0 LIBRARY_CONVENTIONS §7)
+.claude/
+.litectx/
+.idea/
