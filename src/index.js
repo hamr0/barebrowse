@@ -19,6 +19,7 @@ import { prune as pruneTree } from './prune.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
+import { applyFirefoxStealth } from './stealth-firefox.js';
 import { DEFAULT_BLOCKLIST } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
 import { readable as extractReadable } from './readable.js';
@@ -746,12 +747,14 @@ async function suppressPermissions(cdp) {
  * ref model, and AX-tree source all differ (see firefox-page.js). close() is
  * wrapped to also reap the Firefox process + temp profile.
  *
- * Chromium-only options NOT applied on this path: `consent` (auto-dismiss),
- * `blockAds`/`blockUrls`, stealth patches, and `hybrid` mode. `saveState`,
- * `waitForNavigation`, `waitForNetworkIdle`, and download/dialog capture are
- * CDP-only too (the page object stubs them — see firefox-page.js). The
- * navigation guard (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir`
- * sandbox, `incognito`, `proxy`, `viewport`, and `pruneMode` DO apply.
+ * Chromium-only options NOT applied on this path: `blockAds`/`blockUrls` and
+ * `hybrid` mode. `saveState`, `waitForNavigation`, `waitForNetworkIdle`, and
+ * download/dialog capture are CDP-only too (the page object stubs them — see
+ * firefox-page.js). `consent` (auto-dismiss) and stealth patches DO apply here
+ * as of v0.16.0 (stealth headless-only, via BiDi preload script — see
+ * stealth-firefox.js / consent-firefox.js), alongside the navigation guard
+ * (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir` sandbox, `incognito`,
+ * `proxy`, `viewport`, and `pruneMode`.
  * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito })
  * @returns {Promise<object>} Firefox page object
  */
@@ -763,11 +766,18 @@ async function connectFirefox(opts) {
     viewport: opts.viewport,
   });
   const bidi = await createBiDi(browser.wsUrl);
+  // Stealth patches (headless only, mirroring the CDP path's `mode !== 'headed'`
+  // gate). Registered before the first navigation via script.addPreloadScript.
+  // Firefox needs a much smaller script than Chromium — see stealth-firefox.js.
+  if (opts.mode !== 'headed') {
+    await applyFirefoxStealth(bidi);
+  }
   const page = await createFirefoxPage(bidi, {
     pruneMode: opts.pruneMode,
     urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
     uploadDir: opts.uploadDir || null,
     incognito: !!opts.incognito,
+    consent: opts.consent,
   });
   const closePage = page.close.bind(page);
   page.close = async () => {
