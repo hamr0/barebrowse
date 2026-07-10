@@ -121,7 +121,14 @@ let _pageConnecting = null;
 async function getPage() {
   if (_page) return _page;
   if (_pageConnecting) return _pageConnecting;
-  _pageConnecting = connect({ mode: 'hybrid' });
+  // Engine selection is a launch-time setting (the browser persists across
+  // tool calls), so it's an env var, not a per-request flag. Firefox is driven
+  // over WebDriver BiDi and has no hybrid fallback — default it to headless
+  // (override with BAREBROWSE_MODE=headed).
+  const connectOpts = process.env.BAREBROWSE_ENGINE === 'firefox'
+    ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'headless' }
+    : { mode: 'hybrid' };
+  _pageConnecting = connect(connectOpts);
   try {
     _page = await _pageConnecting;
     return _page;

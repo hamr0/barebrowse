@@ -72,6 +72,45 @@ export function formatReadable(r) {
 }
 
 /**
+ * The in-page extraction expression (Readability injected + run). Exported so
+ * non-CDP transports (BiDi/Firefox) can evaluate the same source and feed the
+ * raw result through finalizeReadable() — keeping every engine's output
+ * identical.
+ */
+export { EXTRACT_EXPRESSION };
+
+/**
+ * Turn the raw in-page extraction result into the public readable() shape,
+ * applying the advisory confidence rule. Transport-agnostic.
+ * @param {object} r - raw result from EXTRACT_EXPRESSION
+ * @returns {object} public readable() result
+ */
+export function finalizeReadable(r) {
+  r = r || {};
+  if (!r.ok) {
+    return {
+      ok: false,
+      hint: r.err
+        ? `readable extraction failed (${r.err}); use snapshot()`
+        : 'no article content found on this page; use snapshot() instead',
+    };
+  }
+  // Advisory confidence: high only when the reader-view heuristic agrees AND
+  // there is a substantial amount of text. Low is not an error — the text is
+  // still returned; it just means "verify, or prefer snapshot()".
+  const confidence = r.readerable && r.length >= MIN_ARTICLE_CHARS ? 'high' : 'low';
+  const out = {
+    ok: true,
+    title: r.title, byline: r.byline, text: r.text, length: r.length,
+    readerable: r.readerable, confidence,
+  };
+  if (confidence === 'low') {
+    out.hint = 'low article confidence — this may not be an article; consider snapshot()';
+  }
+  return out;
+}
+
+/**
  * Extract the main article from the current page.
  * @param {object} session - CDP session-scoped handle (.send()).
  * @returns {Promise<object>} One of:
@@ -85,32 +124,5 @@ export async function readable(session) {
     returnByValue: true,
     awaitPromise: true,
   });
-  const r = result.value || {};
-
-  if (!r.ok) {
-    return {
-      ok: false,
-      hint: r.err
-        ? `readable extraction failed (${r.err}); use snapshot()`
-        : 'no article content found on this page; use snapshot() instead',
-    };
-  }
-
-  // Advisory confidence: high only when the reader-view heuristic agrees AND
-  // there is a substantial amount of text. Low is not an error — the text is
-  // still returned; it just means "verify, or prefer snapshot()".
-  const confidence = r.readerable && r.length >= MIN_ARTICLE_CHARS ? 'high' : 'low';
-  const out = {
-    ok: true,
-    title: r.title,
-    byline: r.byline,
-    text: r.text,
-    length: r.length,
-    readerable: r.readerable,
-    confidence,
-  };
-  if (confidence === 'low') {
-    out.hint = 'low article confidence — this may not be an article; consider snapshot()';
-  }
-  return out;
+  return finalizeReadable(result.value || {});
 }

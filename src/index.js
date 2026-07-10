@@ -9,7 +9,10 @@
  */
 
 import { launch, attach, cleanupBrowser } from './chromium.js';
+import { launchFirefox, cleanupFirefox } from './firefox.js';
 import { createCDP } from './cdp.js';
+import { createBiDi } from './bidi.js';
+import { createFirefoxPage } from './firefox-page.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
@@ -192,6 +195,13 @@ export async function browse(url, opts = {}) {
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
+  // Firefox is driven over WebDriver BiDi (CDP is deprecated there) — a
+  // separate transport with its own page object. It reuses prune.js/aria.js/
+  // readable.js but none of the CDP page machinery below, so branch early.
+  if (opts.engine === 'firefox') {
+    return connectFirefox(opts);
+  }
+
   const mode = opts.mode || 'headless';
   const attachMode = !!opts.port;
   let browser = null;
@@ -706,6 +716,35 @@ async function suppressPermissions(cdp) {
       // Permission type not supported in this Chrome version — skip
     }
   }
+}
+
+/**
+ * Firefox path for connect(): launch Firefox, open a BiDi session, and return
+ * a BiDi-backed page object. Separate from the CDP path because the transport,
+ * ref model, and AX-tree source all differ (see firefox-page.js). close() is
+ * wrapped to also reap the Firefox process + temp profile.
+ * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode })
+ * @returns {Promise<object>} Firefox page object
+ */
+async function connectFirefox(opts) {
+  const browser = await launchFirefox({
+    headed: opts.mode === 'headed',
+    proxy: opts.proxy,
+    binary: opts.binary,
+    viewport: opts.viewport,
+  });
+  const bidi = await createBiDi(browser.wsUrl);
+  const page = await createFirefoxPage(bidi, {
+    pruneMode: opts.pruneMode,
+    urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
+    uploadDir: opts.uploadDir || null,
+  });
+  const closePage = page.close.bind(page);
+  page.close = async () => {
+    await closePage();
+    await cleanupFirefox(browser);
+  };
+  return page;
 }
 
 /**

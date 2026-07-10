@@ -46,6 +46,7 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   const args = [join(import.meta.dirname, '..', 'cli.js'), '--daemon-internal'];
   args.push('--output-dir', absDir);
   if (initialUrl) args.push('--url', initialUrl);
+  if (opts.engine) args.push('--engine', opts.engine);
   if (opts.mode) args.push('--mode', opts.mode);
   if (opts.port) args.push('--port', String(opts.port));
   if (opts.cookies === false) args.push('--no-cookies');
@@ -104,6 +105,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
 
   // Connect to browser
   const page = await connect({
+    engine: opts.engine,
     mode: opts.mode || 'headless',
     port: opts.port ? Number(opts.port) : undefined,
     consent: opts.consent,
@@ -117,53 +119,58 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     uploadDir: opts.uploadDir,
   });
 
-  // Console log capture
+  // Console + network log capture is CDP-specific (page.cdp). The Firefox/BiDi
+  // engine exposes page.bidi instead, so these captures are skipped there —
+  // console-logs / network-log commands return empty for a Firefox session.
+  // (BiDi log.entryAdded / network.* events could back these later.)
   const consoleLogs = [];
-  await page.cdp.send('Runtime.enable');
-  page.cdp.on('Runtime.consoleAPICalled', (params) => {
-    consoleLogs.push({
-      type: params.type,
-      timestamp: new Date().toISOString(),
-      args: params.args.map((a) => a.value ?? a.description ?? a.type),
-    });
-  });
-
-  // Network log capture (Network.enable already called by connect)
   const networkLogs = [];
   const pendingRequests = new Map();
 
-  page.cdp.on('Network.requestWillBeSent', (params) => {
-    pendingRequests.set(params.requestId, {
-      url: params.request.url,
-      method: params.request.method,
-      timestamp: new Date().toISOString(),
+  if (page.cdp) {
+    await page.cdp.send('Runtime.enable');
+    page.cdp.on('Runtime.consoleAPICalled', (params) => {
+      consoleLogs.push({
+        type: params.type,
+        timestamp: new Date().toISOString(),
+        args: params.args.map((a) => a.value ?? a.description ?? a.type),
+      });
     });
-  });
 
-  page.cdp.on('Network.responseReceived', (params) => {
-    const req = pendingRequests.get(params.requestId);
-    if (req) {
-      networkLogs.push({
-        ...req,
-        status: params.response.status,
-        statusText: params.response.statusText,
-        mimeType: params.response.mimeType,
+    // Network log capture (Network.enable already called by connect)
+    page.cdp.on('Network.requestWillBeSent', (params) => {
+      pendingRequests.set(params.requestId, {
+        url: params.request.url,
+        method: params.request.method,
+        timestamp: new Date().toISOString(),
       });
-      pendingRequests.delete(params.requestId);
-    }
-  });
+    });
 
-  page.cdp.on('Network.loadingFailed', (params) => {
-    const req = pendingRequests.get(params.requestId);
-    if (req) {
-      networkLogs.push({
-        ...req,
-        status: 0,
-        error: params.errorText,
-      });
-      pendingRequests.delete(params.requestId);
-    }
-  });
+    page.cdp.on('Network.responseReceived', (params) => {
+      const req = pendingRequests.get(params.requestId);
+      if (req) {
+        networkLogs.push({
+          ...req,
+          status: params.response.status,
+          statusText: params.response.statusText,
+          mimeType: params.response.mimeType,
+        });
+        pendingRequests.delete(params.requestId);
+      }
+    });
+
+    page.cdp.on('Network.loadingFailed', (params) => {
+      const req = pendingRequests.get(params.requestId);
+      if (req) {
+        networkLogs.push({
+          ...req,
+          status: 0,
+          error: params.errorText,
+        });
+        pendingRequests.delete(params.requestId);
+      }
+    });
+  }
 
   // Navigate to initial URL if provided
   if (initialUrl) {
@@ -316,6 +323,15 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     },
 
     async eval({ expression }) {
+      // Firefox/BiDi has no page.cdp — evaluate over BiDi in the active context.
+      if (!page.cdp) {
+        try {
+          const value = await page.bidi.evaluate(page.context, expression, true);
+          return { ok: true, value };
+        } catch (err) {
+          return { ok: false, error: err.message || 'eval error' };
+        }
+      }
       const result = await page.cdp.send('Runtime.evaluate', {
         expression,
         returnByValue: true,

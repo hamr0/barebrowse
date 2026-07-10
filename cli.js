@@ -108,6 +108,7 @@ async function cmdOpen() {
 
   const url = args[1] && !args[1].startsWith('--') ? args[1] : undefined;
   const opts = {
+    engine: parseFlag('--engine'),
     mode: parseFlag('--mode') || 'headless',
     port: parseFlag('--port'),
     cookies: !hasFlag('--no-cookies'),
@@ -213,6 +214,7 @@ async function oneShot() {
 async function runDaemonInternal() {
   const { runDaemon } = await import('./src/daemon.js');
   const opts = {
+    engine: parseFlag('--engine'),
     mode: parseFlag('--mode') || 'headless',
     port: parseFlag('--port'),
     cookies: !hasFlag('--no-cookies'),
@@ -480,7 +482,10 @@ Session:
   barebrowse status                 Check session status
 
   Open flags:
-    --mode=headless|headed|hybrid   Browser mode (default: headless)
+    --engine=chromium|firefox       Browser engine (default: chromium/CDP;
+                                    firefox drives over WebDriver BiDi)
+    --mode=headless|headed|hybrid   Browser mode (default: headless;
+                                    hybrid is chromium-only)
     --port=N                        CDP port for headed mode
     --no-cookies                    Skip cookie injection
     --browser=firefox|chromium      Cookie source browser
