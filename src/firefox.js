@@ -175,11 +175,12 @@ export async function launchFirefox(opts = {}) {
 export async function cleanupFirefox(browser) {
   if (!browser) return;
   activeBrowsers.delete(browser);
+  const pid = browser.process.pid;
   try { if (!browser.process.killed) browser.process.kill('SIGKILL'); } catch {}
-  try { process.kill(-browser.process.pid, 'SIGKILL'); } catch {}
+  if (pid != null) try { process.kill(-pid, 'SIGKILL'); } catch {}
   // Wait for death so rmSync doesn't race Firefox's profile file handles.
-  for (let i = 0; i < 40; i++) {
-    try { process.kill(browser.process.pid, 0); } catch { break; }
+  for (let i = 0; pid != null && i < 40; i++) {
+    try { process.kill(pid, 0); } catch { break; }
     await new Promise((r) => setTimeout(r, 50));
   }
   if (browser.ownedProfileDir) {

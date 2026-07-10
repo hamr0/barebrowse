@@ -117,6 +117,9 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     blockUrls: opts.blockUrls,
     blockPrivateNetwork: opts.blockPrivateNetwork,
     uploadDir: opts.uploadDir,
+    // incognito neuters injectCookies() session-wide; cookies:false (below)
+    // is the legacy per-open equivalent. Either yields a logged-out session.
+    incognito: opts.incognito || opts.cookies === false,
   });
 
   // Console + network log capture is CDP-specific (page.cdp). The Firefox/BiDi

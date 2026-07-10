@@ -36,6 +36,7 @@ export async function createBiDi(wsUrl) {
   const pending = new Map();   // id → { resolve, reject }
   const listeners = new Map(); // "method" → Set<callback>
 
+  /** @type {Promise<void>} */
   const connected = new Promise((resolve, reject) => {
     const timeout = setTimeout(() => reject(new Error('BiDi connection timeout (5s)')), 5000);
     ws.onopen = () => { clearTimeout(timeout); resolve(); };

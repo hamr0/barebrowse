@@ -36,12 +36,15 @@ const BIDI_KEYS = {
  * @param {object} [opts]
  * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Default prune mode.
  * @param {{allowLocalUrls?: boolean, blockPrivateNetwork?: boolean}} [opts.urlGuard] - Navigation safety policy, applied on every goto().
+ * @param {string} [opts.uploadDir] - When set, upload() rejects files outside this dir.
+ * @param {boolean} [opts.incognito=false] - Clean session: injectCookies() is a no-op.
  * @returns {Promise<object>} page object
  */
 export async function createFirefoxPage(bidi, opts = {}) {
   const defaultPruneMode = opts.pruneMode || 'act';
   const urlGuard = opts.urlGuard || {};
   const uploadDir = opts.uploadDir || null;
+  const incognito = !!opts.incognito;
   // The active browsing context. Starts at the initial tab; switchTab() points
   // it at another top-level context, so it's mutable and read via a getter.
   const { contexts } = await bidi.send('browsingContext.getTree', {});
@@ -214,6 +217,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
      * via BiDi storage.setCookie. Same-engine reuse: Firefox cookies → Firefox.
      */
     async injectCookies(url, cookieOpts) {
+      if (incognito) return 0;
       const cookies = extractCookies({ browser: cookieOpts?.browser, domain: cookieOpts?.domain });
       for (const c of cookies) {
         const cookie = {

@@ -1,3 +1,8 @@
+// @ts-nocheck — AX_FN below is browser-context code (document, getComputedStyle,
+// CSS, real regex literals) serialized via .toString() and run inside Firefox,
+// never in Node. tsc's Node lib (no DOM) can't meaningfully check it, and the
+// readable.js string convention would corrupt its regex backslashes, so the
+// file opts out of type-checking. The Node-side exports are trivial.
 /**
  * ax-snapshot.js — Reconstruct a CDP-shaped accessibility tree in-page.
  *

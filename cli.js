@@ -112,6 +112,7 @@ async function cmdOpen() {
     mode: parseFlag('--mode') || 'headless',
     port: parseFlag('--port'),
     cookies: !hasFlag('--no-cookies'),
+    incognito: hasFlag('--incognito') || undefined,
     browser: parseFlag('--browser'),
     timeout: parseFlag('--timeout'),
     pruneMode: parseFlag('--prune-mode') || 'act',
@@ -202,7 +203,7 @@ async function oneShot() {
   const url = args[1];
   const mode = args[2] || 'headless';
   try {
-    const snapshot = await browse(url, { mode });
+    const snapshot = await browse(url, { mode, incognito: hasFlag('--incognito') || undefined });
     process.stdout.write(snapshot + '\n');
     process.exit(0);
   } catch (err) {
@@ -218,6 +219,7 @@ async function runDaemonInternal() {
     mode: parseFlag('--mode') || 'headless',
     port: parseFlag('--port'),
     cookies: !hasFlag('--no-cookies'),
+    incognito: hasFlag('--incognito') || undefined,
     browser: parseFlag('--browser'),
     timeout: parseFlag('--timeout'),
     pruneMode: parseFlag('--prune-mode') || 'act',
@@ -488,6 +490,7 @@ Session:
                                     hybrid is chromium-only)
     --port=N                        CDP port for headed mode
     --no-cookies                    Skip cookie injection
+    --incognito                     Clean, unauthenticated session (skip all auth injection)
     --browser=firefox|chromium      Cookie source browser
     --timeout=N                     Navigation timeout in ms
     --prune-mode=act|read           Default pruning mode
