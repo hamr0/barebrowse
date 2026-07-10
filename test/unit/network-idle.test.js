@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { waitForNetworkIdle } from '../../src/network-idle.js';
+import { waitForNetworkIdle, waitForNetworkIdleBiDi } from '../../src/network-idle.js';
 
 /**
  * Build a fake CDP session whose .on(event, handler) registers a handler
@@ -108,5 +108,114 @@ describe('waitForNetworkIdle', () => {
     session.emit('Network.loadingFinished', { requestId: 'after' });
     assert.equal(counts.req, 0);
     assert.equal(counts.fin, 0);
+  });
+});
+
+/**
+ * Firefox/BiDi variant — same orphan-resilient core, but wired to the BiDi
+ * `network.*` events, keyed by `params.request.request`, and gated behind an
+ * async `subscribe()` the CDP path doesn't need.
+ */
+function fakeBiDi() {
+  const handlers = new Map();
+  return {
+    subscribed: [],
+    async subscribe(events) { this.subscribed.push(...events); },
+    on(method, handler) {
+      if (!handlers.has(method)) handlers.set(method, new Set());
+      handlers.get(method).add(handler);
+      return () => handlers.get(method)?.delete(handler);
+    },
+    emit(method, params) {
+      const set = handlers.get(method);
+      if (!set) return;
+      for (const h of [...set]) h(params);
+    },
+  };
+}
+/** BiDi request-event params shape: the id lives at params.request.request. */
+const req = (id) => ({ request: { request: id } });
+
+describe('waitForNetworkIdleBiDi', () => {
+  it('subscribes the three network events before waiting', async () => {
+    const bidi = fakeBiDi();
+    await waitForNetworkIdleBiDi(bidi, { idle: 30, timeout: 1000 });
+    assert.deepEqual(bidi.subscribed, [
+      'network.beforeRequestSent',
+      'network.responseCompleted',
+      'network.fetchError',
+    ]);
+  });
+
+  it('resolves after the idle window with no events', async () => {
+    const bidi = fakeBiDi();
+    const t = Date.now();
+    await waitForNetworkIdleBiDi(bidi, { idle: 50, timeout: 1000 });
+    const elapsed = Date.now() - t;
+    assert.ok(elapsed >= 45 && elapsed < 500, `expected ~50ms, got ${elapsed}ms`);
+  });
+
+  it('waits while a request is in flight, then resolves after idle', async () => {
+    const bidi = fakeBiDi();
+    const start = Date.now();
+    const p = waitForNetworkIdleBiDi(bidi, { idle: 50, timeout: 2000 });
+    setTimeout(() => bidi.emit('network.beforeRequestSent', req('r1')), 10);
+    setTimeout(() => bidi.emit('network.responseCompleted', req('r1')), 110);
+    await p;
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed >= 155, `should wait for request + idle, got ${elapsed}ms`);
+  });
+
+  it('keys distinct concurrent requests by request.request (mis-keying collapses them)', async () => {
+    // Two overlapping requests with DIFFERENT ids. If the id path were wrong
+    // (e.g. p.requestId → undefined for every event), both would collapse to a
+    // single Set key and the first completion would falsely mark idle. Only
+    // correct per-id keying keeps r2 in flight until its own completion.
+    const bidi = fakeBiDi();
+    const start = Date.now();
+    const p = waitForNetworkIdleBiDi(bidi, { idle: 50, timeout: 2000 });
+    // Defer emits: listeners attach only after the async subscribe() resolves.
+    setTimeout(() => bidi.emit('network.beforeRequestSent', req('r1')), 10);
+    setTimeout(() => bidi.emit('network.beforeRequestSent', req('r2')), 10);
+    setTimeout(() => bidi.emit('network.responseCompleted', req('r1')), 30);   // r1 done, r2 still open
+    setTimeout(() => bidi.emit('network.responseCompleted', req('r2')), 200);  // now truly idle
+    await p;
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed >= 240, `must stay busy until BOTH ids complete, got ${elapsed}ms`);
+  });
+
+  it('counts fetchError as a request completion (not a leak)', async () => {
+    const bidi = fakeBiDi();
+    const start = Date.now();
+    const p = waitForNetworkIdleBiDi(bidi, { idle: 50, timeout: 2000 });
+    setTimeout(() => bidi.emit('network.beforeRequestSent', req('bad')), 10);
+    setTimeout(() => bidi.emit('network.fetchError', req('bad')), 90);
+    await p;
+    const elapsed = Date.now() - start;
+    // Resolves ~90+50; if fetchError didn't clear the in-flight req it'd hit
+    // the 2000ms timeout instead.
+    assert.ok(elapsed >= 135 && elapsed < 500, `fetchError must end the wait, got ${elapsed}ms`);
+  });
+
+  it('orphan completions do not resolve early', async () => {
+    const bidi = fakeBiDi();
+    const start = Date.now();
+    const p = waitForNetworkIdleBiDi(bidi, { idle: 50, timeout: 2000 });
+    setTimeout(() => bidi.emit('network.responseCompleted', req('orphan-1')), 5);
+    setTimeout(() => bidi.emit('network.fetchError', req('orphan-2')), 10);
+    setTimeout(() => bidi.emit('network.beforeRequestSent', req('real')), 20);
+    setTimeout(() => bidi.emit('network.responseCompleted', req('real')), 200);
+    await p;
+    const elapsed = Date.now() - start;
+    assert.ok(elapsed >= 240, `orphan completions must not short-circuit, got ${elapsed}ms`);
+  });
+
+  it('rejects on timeout when requests never finish', async () => {
+    const bidi = fakeBiDi();
+    setTimeout(() => bidi.emit('network.beforeRequestSent', req('stuck')), 5);
+    await assert.rejects(
+      waitForNetworkIdleBiDi(bidi, { idle: 50, timeout: 200 }),
+      /timed out after 200ms/,
+    );
   });
 });

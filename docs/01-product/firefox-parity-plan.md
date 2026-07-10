@@ -30,8 +30,8 @@ not impossible:
 | Stealth / anti-detection | `Page.addScriptToEvaluateOnNewDocument` | `script.addPreloadScript` | **done (v0.16.0)** |
 | Consent auto-dismiss | ARIA scan + jsClick (engine-agnostic) | run over the BiDi snapshot | **done (v0.16.0)** |
 | Ad / tracker block | `Network.setBlockedURLs` | `network.addIntercept` | port |
-| Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | port |
-| Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | port |
+| Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | **done (Phase 2)** |
+| Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | **done (Phase 2)** |
 | Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened/Closed` | port |
 | Hybrid (headless→headed) | orchestration (engine-agnostic) | same logic on FF path | reuse |
 | Downloads | `Browser.downloadWillBegin` | BiDi download events (Firefox: partial) | partial |
@@ -50,9 +50,12 @@ snapshot fixes.
 **Added in v0.16.0 (Phase 1):** stealth (headless anti-detection, FF-specific)
 and consent auto-dismiss.
 
-**Remaining gaps (documented known-limitations):** ad-block, hybrid,
-console/network capture, dialogs, `saveState`, `waitForNavigation`,
-`waitForNetworkIdle`, downloads, `reload({ignoreCache})`.
+**Added in Phase 2 (Unreleased):** console/network capture +
+`waitForNetworkIdle` over BiDi events (daemon `console-logs`/`network-log`/
+`wait-idle` now work on Firefox).
+
+**Remaining gaps (documented known-limitations):** ad-block, hybrid, dialogs,
+`saveState`, `waitForNavigation`, downloads, `reload({ignoreCache})`.
 
 ## Phased roadmap
 
@@ -90,14 +93,21 @@ than the one removed. Measured baseline: only `navigator.webdriver` was a tell
   `window.chrome` spoof, consent auto-dismiss + a `consent:false` control that
   proves the test can fail).
 
-### Phase 2 — Observability parity *(restores CLI/daemon)*
-- **Console:** subscribe `log.entryAdded` → `consoleLogs`.
+### Phase 2 — Observability parity *(restores CLI/daemon)* — ✅ shipped (Unreleased)
+- **Console:** subscribe `log.entryAdded` → `consoleLogs`. *(done —
+  `attachBiDiCapture` in `daemon.js`; BiDi `warn` normalized to CDP `warning`.)*
 - **Network:** subscribe `network.beforeRequestSent` / `responseCompleted` /
   `fetchError` → `networkLogs`, mirroring the CDP request/response bookkeeping.
-- **`waitForNetworkIdle`:** in-flight counter over those events (same shape as
-  `network-idle.js`), replacing the current "not supported" stub.
-- **Daemon:** drop the `console-logs`/`network-log`/`wait-idle` "Firefox skips
-  these" caveat once wired.
+  *(done — keyed on `request.request`; captures status/statusText/mimeType and
+  `status:0`+errorText for failures.)*
+- **`waitForNetworkIdle`:** in-flight counter over those events, sharing the
+  orphan-resilient core with the CDP path. *(done — `waitForNetworkIdleBiDi`;
+  the CDP + BiDi waiters both feed one `idleWaiter` in `network-idle.js`.)*
+- **Daemon:** the `console-logs`/`network-log`/`wait-idle` commands now return
+  real data on a `--engine firefox` session (caveat dropped).
+- **Measured, not assumed:** BiDi event shapes were captured against real
+  Firefox before wiring (Phase 1 lesson), then unit-tested against those shapes
+  (`daemon.test.js`, `network-idle.test.js`) + live-verified (`firefox.test.js`).
 
 ### Phase 3 — Noise reduction + dialogs
 - **Ad/tracker block:** feed the existing `blocklist.js` patterns into

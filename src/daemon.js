@@ -68,6 +68,74 @@ export function buildDaemonArgs(opts, absDir, initialUrl, cliPath) {
 }
 
 /**
+ * Wire Firefox/BiDi console + network capture onto the daemon's log arrays.
+ * The BiDi analogue of the CDP `Runtime.consoleAPICalled` / `Network.*`
+ * capture — measured event shapes: `log.entryAdded` carries {method, level,
+ * args:[{type,value}], text}; the network events key in-flight requests by
+ * `request.request` and expose `response.{status,statusText,mimeType}` /
+ * top-level `errorText`. Pure + exported so the shape mapping (warn→warning
+ * normalization, arg extraction, orphan-safe response/error pairing) is
+ * unit-testable against a fake bidi without launching Firefox.
+ *
+ * @param {object} bidi - BiDi client (async .subscribe(), .on(method, cb))
+ * @param {object} sinks
+ * @param {Array} sinks.consoleLogs - push-target for console entries
+ * @param {Array} sinks.networkLogs - push-target for completed/failed requests
+ * @param {Map} sinks.pendingRequests - in-flight request bookkeeping
+ * @returns {Promise<void>}
+ */
+export async function attachBiDiCapture(bidi, { consoleLogs, networkLogs, pendingRequests }) {
+  await bidi.subscribe([
+    'log.entryAdded',
+    'network.beforeRequestSent',
+    'network.responseCompleted',
+    'network.fetchError',
+  ]);
+
+  bidi.on('log.entryAdded', (e) => {
+    consoleLogs.push({
+      // Map BiDi's console method (or level for uncaught JS errors) to CDP's
+      // `type` vocabulary so `console-logs --level warning` matches on both
+      // engines — BiDi says 'warn', CDP says 'warning'.
+      type: e.method === 'warn' ? 'warning' : (e.method || e.level),
+      timestamp: new Date().toISOString(),
+      args: Array.isArray(e.args) && e.args.length
+        ? e.args.map((a) => a.value ?? a.type)
+        : [e.text],
+    });
+  });
+
+  bidi.on('network.beforeRequestSent', (e) => {
+    pendingRequests.set(e.request.request, {
+      url: e.request.url,
+      method: e.request.method,
+      timestamp: new Date().toISOString(),
+    });
+  });
+
+  bidi.on('network.responseCompleted', (e) => {
+    const req = pendingRequests.get(e.request.request);
+    if (req) {
+      networkLogs.push({
+        ...req,
+        status: e.response.status,
+        statusText: e.response.statusText,
+        mimeType: e.response.mimeType,
+      });
+      pendingRequests.delete(e.request.request);
+    }
+  });
+
+  bidi.on('network.fetchError', (e) => {
+    const req = pendingRequests.get(e.request.request);
+    if (req) {
+      networkLogs.push({ ...req, status: 0, error: e.errorText });
+      pendingRequests.delete(e.request.request);
+    }
+  });
+}
+
+/**
  * Spawn a detached child process that runs the daemon.
  * Parent polls for session.json, then exits.
  */
@@ -139,10 +207,10 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     incognito: opts.incognito || opts.cookies === false,
   });
 
-  // Console + network log capture is CDP-specific (page.cdp). The Firefox/BiDi
-  // engine exposes page.bidi instead, so these captures are skipped there —
-  // console-logs / network-log commands return empty for a Firefox session.
-  // (BiDi log.entryAdded / network.* events could back these later.)
+  // Console + network log capture. CDP uses Runtime/Network events off
+  // page.cdp; the Firefox/BiDi engine (page.bidi) captures the same shape over
+  // log.entryAdded / network.* events (Phase 2 — attachBiDiCapture). Either
+  // way console-logs / network-log / wait-idle behave the same for both.
   const consoleLogs = [];
   const networkLogs = [];
   const pendingRequests = new Map();
@@ -190,6 +258,8 @@ export async function runDaemon(opts, outputDir, initialUrl) {
         pendingRequests.delete(params.requestId);
       }
     });
+  } else if (page.bidi) {
+    await attachBiDiCapture(page.bidi, { consoleLogs, networkLogs, pendingRequests });
   }
 
   // Navigate to initial URL if provided
