@@ -1,6 +1,6 @@
 {
   "name": "barebrowse",
-  "version": "0.16.1",
+  "version": "0.17.0",
   "description": "Authenticated web browsing for autonomous agents via CDP. URL in, pruned ARIA snapshot out.",
   "repository": {
     "type": "git",
