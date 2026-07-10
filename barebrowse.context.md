@@ -189,8 +189,8 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 
 | Obstacle | How | Mode |
 |---|---|---|
-| Cookie consent | ARIA scan + jsClick accept button, 29 languages | Both |
-| Consent behind iframes | JS `.click()` via DOM.resolveNode bypasses overlays, real mouse click fallback for CMPs that ignore synthetic clicks | Both |
+| Cookie consent | ARIA scan for the accept button, 29 languages. CDP: `jsClick` (overlay-bypassing) then a real-mouse-click fallback for CMPs that ignore synthetic clicks. Firefox/BiDi: a single real pointer click. A page-wide accept scan runs only for banner-style consent (no dialog) — when a dialog is detected but has no in-dialog accept button, no page-wide scan runs, to avoid clicking an unrelated `Accept all …` control | Both engines |
+| Consent behind iframes | Scanned/clicked in the owning frame (CDP `DOM.resolveNode`; Firefox resolves the ref in its browsing context) | Both engines |
 | Permission prompts | Launch flags + CDP Browser.setPermission auto-deny | Both |
 | Media autoplay blocked | `--autoplay-policy=no-user-gesture-required` | Both |
 | Login walls | Cookie extraction from Firefox/Chromium + CDP injection | Both |

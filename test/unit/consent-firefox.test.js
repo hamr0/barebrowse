@@ -107,6 +107,26 @@ describe('dismissConsentFirefox — banner fallback', () => {
     assert.equal(await dismissConsentFirefox(root, spy.fn), false);
     assert.deepEqual(spy.clicked, [], 'no click on an ordinary OK button');
   });
+
+  it('does NOT page-wide scan when a dialog was detected but had no accept button', async () => {
+    counter = 0;
+    // Regression for the validated false-positive: a consent dialog IS detected
+    // (cookie text) but has no in-dialog accept button, while an UNRELATED
+    // "Accept all terms" button sits elsewhere on the page. The page-wide scan
+    // must NOT fire here — clicking that unrelated button would be an automatic
+    // wrong mutation. (We accept missing the rare outside-the-dialog button.)
+    const unrelated = node('button', 'Accept all terms');
+    const root = node('RootWebArea', '', [
+      node('dialog', 'Cookie notice', [
+        node('StaticText', 'We use cookies.'),
+        node('button', 'Manage preferences'), // no accept-pattern match
+      ]),
+      node('form', 'Signup', [unrelated]),
+    ]);
+    const spy = spyClick();
+    assert.equal(await dismissConsentFirefox(root, spy.fn), false);
+    assert.deepEqual(spy.clicked, [], 'must not click the unrelated Accept-all-terms button');
+  });
 });
 
 describe('dismissConsentFirefox — no-op cases', () => {

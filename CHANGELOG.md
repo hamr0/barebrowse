@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.16.1] - 2026-07-10
+
+### Fixed
+
+- **Firefox consent auto-dismiss no longer risks clicking an unrelated button.**
+  A code review of v0.16.0 found (and reproduced) a false-positive: when a
+  consent *dialog* was detected but contained no in-dialog accept button, the
+  Firefox walker fell back to a page-wide "accept" scan that could auto-click an
+  unrelated `Accept all …` control elsewhere on the page (e.g. a ToS/signup
+  button) during `goto()`. The page-wide scan now runs **only** for banner-style
+  consent (no dialog container at all). Trade-off: an accept button rendered
+  *outside* its own dialog (some SourcePoint deployments) is no longer
+  auto-dismissed on Firefox — we accept that miss rather than risk a wrong
+  click. Regression-tested in `test/unit/consent-firefox.test.js`.
+
+### Documentation
+
+- **Firefox stealth + consent known limitations** captured in the PRD
+  (`docs/01-product/prd.md`), slated for the Phase 5 cross-engine fidelity
+  harness: the consent double AX-build per navigate (bounded latency, parity
+  with CDP), the single-click-without-re-verify behavior (`consent: false` to
+  opt out), and the latent `navigator.webdriver` own-property fallback. All
+  three were validated in the same review; none is a correctness defect on
+  current engines.
+
 ## [0.16.0] - 2026-07-10
 
 ### Added
