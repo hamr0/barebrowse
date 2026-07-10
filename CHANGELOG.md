@@ -23,7 +23,13 @@
     parity with CDP.
   - Fidelity validated against real CDP snapshots; iframes (incl. nested +
     multi-tab), shadow DOM, CSP, and SPA timing covered in
-    `test/integration/firefox.test.js` (15 tests).
+    `test/integration/firefox.test.js` (18 tests).
+  - `goto`/`reload`/history navigation honour a timeout (a page that never
+    finishes loading rejects instead of hanging). Proxy honours the URL scheme
+    (`http`/`https` → HTTP+SSL, `socks`/`socks5`/`socks4` → SOCKS). Cookie
+    injection is host-scoped like CDP (shared `scopedCookiesForUrl`, not the
+    whole jar). Snapshot fidelity: a collapsed `<select>` surfaces as its value
+    (not every `<option>`), and bare text directly under `<body>` is kept.
 
 - **Incognito mode — a clean, unauthenticated session (`incognito: true`).**
   Skips ALL auth injection: no cookie extraction/injection and no

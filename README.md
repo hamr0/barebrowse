@@ -149,6 +149,21 @@ engine. Chromium (CDP) remains the default; `hybrid` mode is Chromium-only.
 
 No clone profile, no fresh cookies — the agent sees what you see.
 
+### Incognito (clean session)
+
+Pass `incognito: true` for a clean, **unauthenticated** session — barebrowse
+skips *all* auth injection (cookies + storage state), so the agent browses
+logged out. It is not Chrome's `--incognito` flag: the session already runs in
+a throwaway profile, so this gates the *other* auth source — your real browser
+cookies. Works on both engines:
+
+```js
+const page = await connect({ incognito: true });
+```
+
+From the CLI: `barebrowse open <url> --incognito`. From MCP: set
+`BAREBROWSE_INCOGNITO=1`.
+
 ## What it handles automatically
 
 Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (ARIA node count heuristic + stealth patches + automatic headed fallback — snapshot shows `[BOT CHALLENGE DETECTED]` warning when blocked), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
