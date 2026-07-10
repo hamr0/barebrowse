@@ -94,7 +94,8 @@ export function findFirefox() {
  * @param {string} [opts.binary] - Firefox binary (auto-detected if omitted)
  * @param {number} [opts.port=0] - Remote-agent port (0 = OS-assigned)
  * @param {boolean} [opts.headed=false] - Launch with a visible window
- * @param {string} [opts.proxy] - Proxy 'host:port' (applied via profile prefs)
+ * @param {string} [opts.proxy] - Proxy 'host:port' or 'scheme://host:port'
+ *   (http/https → HTTP+SSL proxy; socks/socks5/socks4 → SOCKS), via prefs
  * @param {{width:number,height:number}} [opts.viewport] - Initial window size
  * @returns {Promise<{wsUrl: string, process: import('node:child_process').ChildProcess, port: number, ownedProfileDir: string}>}
  */
@@ -114,17 +115,30 @@ export async function launchFirefox(opts = {}) {
     'user_pref("geo.prompt.testing.allow", true);',
   ];
   if (opts.proxy) {
-    // opts.proxy is 'host:port' (optionally with scheme). Strip any scheme.
-    const hostPort = String(opts.proxy).replace(/^\w+:\/\//, '');
-    const [host, pport] = hostPort.split(':');
-    prefs.push(
-      'user_pref("network.proxy.type", 1);',
-      `user_pref("network.proxy.http", "${host}");`,
-      `user_pref("network.proxy.http_port", ${Number(pport) || 8080});`,
-      `user_pref("network.proxy.ssl", "${host}");`,
-      `user_pref("network.proxy.ssl_port", ${Number(pport) || 8080});`,
-      'user_pref("network.proxy.share_proxy_settings", true);',
-    );
+    // Honor the scheme: a socks:// proxy must be wired as SOCKS, not HTTP —
+    // otherwise SOCKS traffic is silently sent to an HTTP proxy and fails.
+    const raw = String(opts.proxy);
+    const scheme = (raw.match(/^(\w+):\/\//)?.[1] || '').toLowerCase();
+    const [host, pport] = raw.replace(/^\w+:\/\//, '').split(':');
+    const isSocks = scheme.startsWith('socks');
+    const port = Number(pport) || (isSocks ? 1080 : 8080);
+    prefs.push('user_pref("network.proxy.type", 1);');
+    if (isSocks) {
+      prefs.push(
+        `user_pref("network.proxy.socks", "${host}");`,
+        `user_pref("network.proxy.socks_port", ${port});`,
+        `user_pref("network.proxy.socks_version", ${scheme === 'socks4' ? 4 : 5});`,
+        'user_pref("network.proxy.socks_remote_dns", true);',
+      );
+    } else {
+      prefs.push(
+        `user_pref("network.proxy.http", "${host}");`,
+        `user_pref("network.proxy.http_port", ${port});`,
+        `user_pref("network.proxy.ssl", "${host}");`,
+        `user_pref("network.proxy.ssl_port", ${port});`,
+        'user_pref("network.proxy.share_proxy_settings", true);',
+      );
+    }
   }
   writeFileSync(join(profileDir, 'user.js'), prefs.join('\n'));
 

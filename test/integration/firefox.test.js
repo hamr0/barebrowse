@@ -12,6 +12,7 @@
 
 import { describe, it, before } from 'node:test';
 import assert from 'node:assert/strict';
+import { createServer } from 'node:http';
 import { connect } from '../../src/index.js';
 import { findFirefox } from '../../src/firefox.js';
 
@@ -280,6 +281,54 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
       assert.doesNotMatch(tree, /INNER-A/, 'tab A iframe must NOT leak into tab B snapshot');
     } finally {
       await page.close();
+    }
+  });
+
+  it('does not expand a collapsed <select> option list into the tree', async () => {
+    // Regression: a native single <select> should surface as one combobox with
+    // its current value, NOT one node per <option> (a 200-item select bloats).
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<select><option>Afghanistan</option><option>Belgium</option><option>Chad</option></select>'));
+      const tree = treeOnly(await page.snapshot({ mode: 'read' }));
+      assert.match(tree, /combobox/, 'select surfaces as a combobox');
+      assert.doesNotMatch(tree, /Belgium|Chad/, 'unselected options must not become nodes');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('keeps bare text directly under <body> (childNodes, not children)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('LOOSE-BODY-TEXT<div>wrapped</div>'));
+      const tree = treeOnly(await page.snapshot({ mode: 'read' }));
+      assert.match(tree, /LOOSE-BODY-TEXT/, 'bare body text must not be dropped');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('goto() rejects (does not hang) when a page never finishes loading', async () => {
+    // Regression: goto must honor its timeout. A server that accepts the
+    // request but never responds would hang navigate({wait:'complete'}) forever
+    // without the timeout race.
+    const held = [];
+    const server = createServer((_req, res) => { held.push(res); /* never end */ });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      const started = Date.now();
+      await assert.rejects(
+        () => page.goto(`http://127.0.0.1:${server.address().port}/hang`, 2000),
+        /timed out/,
+        'goto must reject on a non-completing load',
+      );
+      assert.ok(Date.now() - started < 6000, 'rejects near the timeout, not much later');
+    } finally {
+      for (const r of held) { try { r.destroy(); } catch { /* ignore */ } }
+      await page.close();
+      server.close();
     }
   });
 

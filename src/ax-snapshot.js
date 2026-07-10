@@ -195,6 +195,11 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     const node = makeNode(role, name, props(el, role));
     el.setAttribute(REF_ATTR, node.nodeId);
 
+    // A collapsed native <select> exposes its current value via props/name;
+    // don't expand its <option> list into the tree (a 200-item country select
+    // would otherwise flood every snapshot). A multi/size listbox keeps them.
+    if (el.tagName === 'SELECT' && !el.multiple) return node;
+
     if (!NAME_FROM_CONTENT.has(role)) {
       for (const child of kidsOf(el)) {
         if (child.nodeType === 3) {
@@ -256,9 +261,16 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
   const root = makeNode('RootWebArea', document.title || '', {});
   const body = makeNode('none', '', {});
   body.ignored = true;
-  for (const child of document.body ? document.body.children : []) {
-    const c = walk(child);
-    if (c) Array.isArray(c) ? body.children.push(...c) : body.children.push(c);
+  // childNodes (not .children) so bare text directly under <body> is kept as
+  // StaticText, matching walk()/CDP; .children would silently drop it.
+  for (const child of document.body ? document.body.childNodes : []) {
+    if (child.nodeType === 3) {
+      const t = child.textContent.replace(/\s+/g, ' ').trim();
+      if (t) body.children.push(makeNode('StaticText', t, {}));
+    } else if (child.nodeType === 1) {
+      const c = walk(child);
+      if (c) Array.isArray(c) ? body.children.push(...c) : body.children.push(c);
+    }
   }
   root.children.push(body);
   return JSON.stringify({ tree: root, count: ref - base });

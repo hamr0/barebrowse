@@ -346,8 +346,13 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       // Firefox/BiDi has no page.cdp — evaluate over BiDi in the active context.
       if (!page.cdp) {
         try {
-          const value = await page.bidi.evaluate(page.context, expression, true);
-          return { ok: true, value };
+          // BiDi's raw result.value serializes objects into a {type,value}
+          // entries structure, not a plain object (CDP's returnByValue does).
+          // Stringify + parse in-page so an object/array eval matches the CDP
+          // shape (same trick readable() uses). `undefined` → JSON `null`.
+          const wrapped = `(async () => { const v = await (${expression}); return JSON.stringify(v === undefined ? null : v); })()`;
+          const raw = await page.bidi.evaluate(page.context, wrapped, true);
+          return { ok: true, value: raw == null ? null : JSON.parse(raw) };
         } catch (err) {
           return { ok: false, error: err.message || 'eval error' };
         }

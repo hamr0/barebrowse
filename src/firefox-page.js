@@ -108,6 +108,17 @@ export async function createFirefoxPage(bidi, opts = {}) {
     });
   }
 
+  /**
+   * Reject if `p` doesn't settle within `ms`. BiDi commands have no built-in
+   * timeout, so a navigate/reload/traverse whose `wait:'complete'` never fires
+   * (a page that never loads) would otherwise hang the call forever.
+   */
+  function withTimeout(p, ms, label) {
+    let timer;
+    const t = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms); });
+    return Promise.race([p, t]).finally(() => clearTimeout(timer));
+  }
+
   const page = {
     /** The BiDi escape hatch, analogous to connect()'s page.cdp. */
     get bidi() { return bidi; },
@@ -118,7 +129,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
       // Same navigation guard the CDP path enforces — block file:/chrome:/
       // view-source: and (optionally) private-network hosts before navigating.
       assertNavigable(url, urlGuard);
-      await bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' });
+      await withTimeout(
+        bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
+        timeout, `goto(${url})`);
       // Brief settle for dynamic/SPA content, matching the CDP path.
       await new Promise((r) => setTimeout(r, 500));
     },
@@ -306,7 +319,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     async reload() {
       // Note: Firefox BiDi does not yet support the ignoreCache argument, so
       // (unlike the CDP path) reload() always does a normal reload.
-      await bidi.send('browsingContext.reload', { context: topContext, wait: 'complete' });
+      await withTimeout(
+        bidi.send('browsingContext.reload', { context: topContext, wait: 'complete' }),
+        30000, 'reload');
       refContexts = new Map();
       await new Promise((r) => setTimeout(r, 300));
     },
@@ -390,7 +405,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
   /** Walk session history by delta and settle (BiDi has no load-wait here). */
   async function traverse(delta) {
-    await bidi.send('browsingContext.traverseHistory', { context: topContext, delta });
+    await withTimeout(
+      bidi.send('browsingContext.traverseHistory', { context: topContext, delta }),
+      30000, 'history navigation');
     refContexts = new Map();
     await new Promise((r) => setTimeout(r, 500));
   }
