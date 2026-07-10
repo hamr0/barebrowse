@@ -39,9 +39,17 @@ describe('stealth patches in headless (H4)', () => {
     try {
       await page.goto(server.url);
 
-      // 1. webdriver: must be undefined (the load-bearing automation tell).
+      // 1. webdriver: must be undefined (the load-bearing automation tell) AND
+      //    leave no hasOwnProperty/'in' tell — the hardened WEBDRIVER_PATCH
+      //    deletes it off Navigator.prototype rather than shadowing it with an
+      //    own property, so advanced detection (sannysoft "WebDriver New") sees
+      //    a stock browser. Shared with the Firefox path (WEBDRIVER_PATCH).
       const webdriver = await readWindow(page, 'navigator.webdriver');
       assert.equal(webdriver, undefined, 'navigator.webdriver must read as undefined');
+      const ownProp = await readWindow(page, "Object.prototype.hasOwnProperty.call(navigator, 'webdriver')");
+      assert.equal(ownProp, false, 'webdriver must not be an own property (no hasOwnProperty tell)');
+      const inNav = await readWindow(page, "'webdriver' in navigator");
+      assert.equal(inNav, false, "'webdriver' in navigator must be false");
 
       // 2. User-Agent: --headless=new leaves "HeadlessChrome" in the UA string.
       //    Network.setUserAgentOverride must strip it out (H4).

@@ -365,6 +365,26 @@ describe('connect({ engine: firefox }) — stealth (headless anti-detection)', {
     }
   });
 
+  it('hides webdriver without the hasOwnProperty tell (defeats advanced detection)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<p>x</p>'));
+      // A naive own-property override would leave hasOwnProperty === true, which
+      // real browsers report false (webdriver lives on Navigator.prototype).
+      // The hardened patch deletes it off the prototype, so all three hold.
+      const probe = JSON.parse(await page.bidi.evaluate(page.context, `JSON.stringify({
+        undef: navigator.webdriver === undefined,
+        ownFalse: !Object.prototype.hasOwnProperty.call(navigator, 'webdriver'),
+        inFalse: !('webdriver' in navigator),
+      })`, false));
+      assert.equal(probe.undef, true, 'navigator.webdriver is undefined');
+      assert.equal(probe.ownFalse, true, 'no own-property tell (hasOwnProperty false)');
+      assert.equal(probe.inFalse, true, "'webdriver' in navigator is false");
+    } finally {
+      await page.close();
+    }
+  });
+
   it('does NOT fake window.chrome (that would be a Firefox spoof tell)', async () => {
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {

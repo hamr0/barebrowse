@@ -10,9 +10,27 @@
  * (Chromium headless AND Firefox-under-BiDi both report `true`). Split out so
  * the Firefox stealth path (stealth-firefox.js) reuses the exact same patch
  * instead of duplicating it. Measured baseline on both engines: `true`.
+ *
+ * A naive `Object.defineProperty(navigator, 'webdriver', …)` hides the *value*
+ * but leaves an advanced tell: it creates an OWN property on the instance, so
+ * `navigator.hasOwnProperty('webdriver')` becomes `true` where a real browser
+ * (property lives on Navigator.prototype) reports `false` — sophisticated
+ * anti-bot checks (e.g. sannysoft's "WebDriver New") catch that inconsistency.
+ * So we DELETE the getter off the prototype instead: then `navigator.webdriver`
+ * is `undefined` AND `'webdriver' in navigator` AND `hasOwnProperty` are both
+ * `false`, matching a stock browser. POC-verified on Chromium and Firefox
+ * (own/in both false, prototype descriptor gone). The defineProperty fallback
+ * only fires if the descriptor is somehow non-configurable (delete a no-op).
  */
 export const WEBDRIVER_PATCH = `
-  Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+  try {
+    const proto = Object.getPrototypeOf(navigator);
+    const desc = proto && Object.getOwnPropertyDescriptor(proto, 'webdriver');
+    if (desc && desc.configurable) delete proto.webdriver;
+    if (navigator.webdriver) {
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined, configurable: true });
+    }
+  } catch {}
 `;
 
 /**

@@ -20,6 +20,15 @@
     `WEBDRIVER_PATCH` and `CANVAS_NOISE_PATCH` are now exported from
     `stealth.js` and shared by both engines (single-sourcing the canvas
     double-XOR fix).
+- **Hardened `navigator.webdriver` hiding on both engines.** The shared
+  `WEBDRIVER_PATCH` now *deletes* the getter off `Navigator.prototype` instead
+  of shadowing it with an own property. A naive override hid the value but left
+  `navigator.hasOwnProperty('webdriver') === true` — a tell that advanced
+  anti-bot checks (e.g. sannysoft's "WebDriver New") detect. After the change
+  `navigator.webdriver` is `undefined` and both `hasOwnProperty` and
+  `'webdriver' in navigator` read `false`, matching a stock browser
+  (POC-verified on Chromium and Firefox). This improves the Chromium engine
+  too, not just Firefox.
   - **Consent** (`src/consent-firefox.js`). A walker over the reconstructed
     nested AX tree that clicks the "accept" button via the existing BiDi
     `pointerClick`. The multilingual accept/dialog patterns were extracted to
