@@ -748,11 +748,14 @@ async function suppressPermissions(cdp) {
  * wrapped to also reap the Firefox process + temp profile.
  *
  * Chromium-only options NOT applied on this path: `blockAds`/`blockUrls` and
- * `hybrid` mode. `saveState`, `waitForNavigation`, `waitForNetworkIdle`, and
- * download/dialog capture are CDP-only too (the page object stubs them — see
- * firefox-page.js). `consent` (auto-dismiss) and stealth patches DO apply here
- * as of v0.16.0 (stealth headless-only, via BiDi preload script — see
- * stealth-firefox.js / consent-firefox.js), alongside the navigation guard
+ * `hybrid` mode. `saveState`, `waitForNavigation`, and download/dialog capture
+ * are CDP-only too (the page object stubs them — see firefox-page.js).
+ * `waitForNetworkIdle` and daemon console/network capture DO apply as of Phase
+ * 2 (over BiDi `network.*` and `log.entryAdded` events). `consent`
+ * (auto-dismiss) and
+ * stealth patches DO apply here as of v0.16.0 (stealth headless-only, via BiDi
+ * preload script — see stealth-firefox.js / consent-firefox.js), alongside the
+ * navigation guard
  * (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir` sandbox, `incognito`,
  * `proxy`, `viewport`, and `pruneMode`.
  * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito })

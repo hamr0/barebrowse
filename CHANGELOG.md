@@ -1,5 +1,30 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Firefox/BiDi observability parity (parity plan Phase 2).** The Firefox
+  engine now backs the same console/network capture and network-idle wait the
+  Chromium/CDP engine has, over WebDriver BiDi events instead of CDP:
+  - **`page.waitForNetworkIdle()`** works on Firefox (was a CDP-only stub that
+    threw). Wired to `network.beforeRequestSent` / `responseCompleted` /
+    `fetchError`, reusing the same orphan-resilient idle core as the CDP path
+    (`waitForNetworkIdleBiDi` in `network-idle.js`).
+  - **Daemon console + network log capture** on Firefox: the `console-logs`,
+    `network-log`, and `wait-idle` CLI commands now return real data for a
+    `--engine firefox` session (previously empty / unsupported). Backed by
+    `log.entryAdded` + `network.*` events (`attachBiDiCapture` in `daemon.js`),
+    mirroring the CDP `Runtime.consoleAPICalled` / `Network.*` capture. BiDi's
+    `warn` console level is normalized to CDP's `warning` so `--level` filters
+    match cross-engine.
+
+  Event shapes were measured against real Firefox before wiring (per the Phase 1
+  lesson). Unit-tested against those shapes in `test/unit/network-idle.test.js`
+  and `test/unit/daemon.test.js`; live-verified in `test/integration/firefox.test.js`.
+  Still Firefox gaps (Phase 3+): ad/tracker block, dialog capture, `saveState`,
+  `waitForNavigation`, hybrid mode.
+
 ## [0.16.1] - 2026-07-10
 
 ### Fixed

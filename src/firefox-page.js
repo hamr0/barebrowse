@@ -22,6 +22,7 @@ import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
 import { scopedCookiesForUrl } from './auth.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { dismissConsentFirefox } from './consent-firefox.js';
+import { waitForNetworkIdleBiDi } from './network-idle.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -402,12 +403,20 @@ export async function createFirefoxPage(bidi, opts = {}) {
       throw new Error(`waitFor timed out after ${timeout}ms`);
     },
 
+    /**
+     * Wait until the network has been idle for `idle` ms, over BiDi
+     * network.* events. Parity with the CDP page.waitForNetworkIdle (Phase 2).
+     */
+    async waitForNetworkIdle(idleOpts = {}) {
+      return waitForNetworkIdleBiDi(bidi, idleOpts);
+    },
+
     // --- CDP-only surfaces, stubbed for daemon parity ---------------------
     // The daemon (src/daemon.js) dispatches these unconditionally. On the
-    // Firefox/BiDi engine download tracking and dialog capture aren't wired,
-    // so the two logs are genuinely empty; the three actions are CDP-only and
-    // fail with a clear, intentional message instead of an incidental
-    // TypeError. Documented as a known gap in CHANGELOG (Firefox engine).
+    // Firefox/BiDi engine download tracking and dialog capture aren't wired
+    // (Phase 3/4), so the two logs are genuinely empty; the two actions are
+    // CDP-only and fail with a clear, intentional message instead of an
+    // incidental TypeError. Documented as a known gap in CHANGELOG.
     get downloads() { return []; },
     get dialogLog() { return []; },
     async saveState() {
@@ -415,9 +424,6 @@ export async function createFirefoxPage(bidi, opts = {}) {
     },
     async waitForNavigation() {
       throw new Error('waitForNavigation() is not supported on the Firefox/BiDi engine (CDP-only)');
-    },
-    async waitForNetworkIdle() {
-      throw new Error('waitForNetworkIdle() is not supported on the Firefox/BiDi engine (CDP-only)');
     },
 
     async close() {

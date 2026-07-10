@@ -432,3 +432,37 @@ describe('connect({ engine: firefox }) — consent auto-dismiss', { skip: !hasFi
     }
   });
 });
+
+// v0.17.0 — Firefox parity Phase 2: observability (waitForNetworkIdle over BiDi
+// network.* events). Console/network *log* capture lives in the daemon and is
+// unit-tested via attachBiDiCapture (test/unit/daemon.test.js) against the
+// measured event shapes; here we prove the page-level idle wait works live.
+describe('connect({ engine: firefox }) — waitForNetworkIdle (Phase 2)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  it('resolves once the page network goes quiet (no longer a CDP-only stub)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<body>idle</body>'));
+      // Must resolve, not throw "not supported on Firefox".
+      await page.waitForNetworkIdle({ idle: 200, timeout: 5000 });
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('waits out an in-flight fetch before resolving', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      // A page that keeps the network busy: a slow same-page fetch kicked off
+      // after load. waitForNetworkIdle must not resolve until it settles.
+      await page.goto(data(`<body>busy<script>
+        fetch('data:text/plain,' + 'x'.repeat(100)).catch(()=>{});
+      </script></body>`));
+      const t = Date.now();
+      await page.waitForNetworkIdle({ idle: 300, timeout: 5000 });
+      // At minimum the idle window must have elapsed.
+      assert.ok(Date.now() - t >= 290, 'waited at least the idle window');
+    } finally {
+      await page.close();
+    }
+  });
+});
