@@ -9,7 +9,10 @@
  */
 
 import { launch, attach, cleanupBrowser } from './chromium.js';
+import { launchFirefox, cleanupFirefox } from './firefox.js';
 import { createCDP } from './cdp.js';
+import { createBiDi } from './bidi.js';
+import { createFirefoxPage } from './firefox-page.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
@@ -31,6 +34,8 @@ import { chmodSync } from 'node:fs';
  * @param {object} [opts]
  * @param {'headless'|'headed'|'hybrid'} [opts.mode='headless'] - Browser mode
  * @param {boolean} [opts.cookies=true] - Inject user's cookies (Phase 2)
+ * @param {boolean} [opts.incognito=false] - Clean, unauthenticated session:
+ *   skip cookie/auth injection entirely (equivalent to cookies:false here).
  * @param {boolean} [opts.prune=true] - Apply ARIA pruning (Phase 2)
  * @param {number} [opts.timeout=30000] - Navigation timeout in ms
  * @param {boolean} [opts.blockAds=true] - Block ~120 common ad/tracker
@@ -54,6 +59,8 @@ import { chmodSync } from 'node:fs';
 export async function browse(url, opts = {}) {
   const mode = opts.mode || 'headless';
   const timeout = opts.timeout || 30000;
+  // Skip all auth injection when incognito (or the legacy cookies:false).
+  const noAuth = !!opts.incognito || opts.cookies === false;
 
   // Reject local-resource schemes (and optionally private hosts) before we
   // spend a browser launch on a URL we won't navigate to.
@@ -84,7 +91,7 @@ export async function browse(url, opts = {}) {
     await suppressPermissions(cdp);
 
     // Step 3: Cookie injection — extract from user's browser, inject via CDP
-    if (opts.cookies !== false) {
+    if (!noAuth) {
       try {
         await authenticate(page.session, url, { browser: opts.browser });
       } catch {
@@ -114,7 +121,7 @@ export async function browse(url, opts = {}) {
         cdp = await createCDP(browser.wsUrl);
         page = await createPage(cdp, false, pageOpts);
         await suppressPermissions(cdp);
-        if (opts.cookies !== false) {
+        if (!noAuth) {
           try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
         }
         await navigate(page, url, timeout);
@@ -188,12 +195,32 @@ export async function browse(url, opts = {}) {
  * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs.
  * @param {string} [opts.storageState] - Path to a storage-state JSON file
  *   (cookies + localStorage) to load before navigation.
+ * @param {boolean} [opts.incognito=false] - Clean, unauthenticated session:
+ *   skip storageState loading and make injectCookies() a no-op, so no auth
+ *   ever enters the session even if a caller injects unconditionally.
  * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Pruning mode.
+ * @param {'chromium'|'firefox'} [opts.engine='chromium'] - Browser engine.
+ *   'firefox' drives over WebDriver BiDi (a separate transport / page object);
+ *   'chromium' (default) uses CDP.
  * @returns {Promise<object>} Page handle with goto, snapshot, close
  */
 export async function connect(opts = {}) {
+  // Firefox is driven over WebDriver BiDi (CDP is deprecated there) — a
+  // separate transport with its own page object. It reuses prune.js/aria.js/
+  // readable.js but none of the CDP page machinery below, so branch early.
+  if (opts.engine === 'firefox') {
+    return connectFirefox(opts);
+  }
+
   const mode = opts.mode || 'headless';
   const attachMode = !!opts.port;
+  // Incognito: run a clean, unauthenticated session. Skips storageState loading
+  // and neuters injectCookies() so no auth ever enters the session — even when
+  // a caller (MCP goto, daemon) calls injectCookies() unconditionally. The
+  // temp profile is already throwaway; this gates the OTHER auth source: the
+  // user's real browser cookies. Not Chrome's --incognito flag (redundant with
+  // the temp profile and would break the cookie-injection path when off).
+  const incognito = !!opts.incognito;
   let browser = null;
   let cdp;
   // Forward caller-supplied launch knobs into every launch() below,
@@ -243,8 +270,9 @@ export async function connect(opts = {}) {
     await suppressPermissions(cdp);
   }
 
-  // Load storage state (cookies + localStorage) from file
-  if (opts.storageState) {
+  // Load storage state (cookies + localStorage) from file.
+  // Skipped under incognito — storageState is an auth source too.
+  if (opts.storageState && !incognito) {
     try {
       const { readFileSync } = await import('node:fs');
       const state = JSON.parse(readFileSync(opts.storageState, 'utf8'));
@@ -439,7 +467,10 @@ export async function connect(opts = {}) {
     },
 
     async injectCookies(url, cookieOpts) {
-      await authenticate(page.session, url, { browser: cookieOpts?.browser });
+      // No-op under incognito: callers (MCP goto, daemon) inject unconditionally,
+      // so the gate has to live here, not just at the call site.
+      if (incognito) return 0;
+      return authenticate(page.session, url, { browser: cookieOpts?.browser });
     },
 
     async snapshot(pruneOpts) {
@@ -655,7 +686,8 @@ export async function connect(opts = {}) {
         },
         get botBlocked() { return tabBotBlocked; },
         async injectCookies(url, cookieOpts) {
-          await authenticate(tab.session, url, { browser: cookieOpts?.browser });
+          if (incognito) return 0;
+          return authenticate(tab.session, url, { browser: cookieOpts?.browser });
         },
         waitForNetworkIdle(idleOpts = {}) {
           return waitForNetworkIdle(tab.session, idleOpts);
@@ -706,6 +738,43 @@ async function suppressPermissions(cdp) {
       // Permission type not supported in this Chrome version — skip
     }
   }
+}
+
+/**
+ * Firefox path for connect(): launch Firefox, open a BiDi session, and return
+ * a BiDi-backed page object. Separate from the CDP path because the transport,
+ * ref model, and AX-tree source all differ (see firefox-page.js). close() is
+ * wrapped to also reap the Firefox process + temp profile.
+ *
+ * Chromium-only options NOT applied on this path: `consent` (auto-dismiss),
+ * `blockAds`/`blockUrls`, stealth patches, and `hybrid` mode. `saveState`,
+ * `waitForNavigation`, `waitForNetworkIdle`, and download/dialog capture are
+ * CDP-only too (the page object stubs them — see firefox-page.js). The
+ * navigation guard (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir`
+ * sandbox, `incognito`, `proxy`, `viewport`, and `pruneMode` DO apply.
+ * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito })
+ * @returns {Promise<object>} Firefox page object
+ */
+async function connectFirefox(opts) {
+  const browser = await launchFirefox({
+    headed: opts.mode === 'headed',
+    proxy: opts.proxy,
+    binary: opts.binary,
+    viewport: opts.viewport,
+  });
+  const bidi = await createBiDi(browser.wsUrl);
+  const page = await createFirefoxPage(bidi, {
+    pruneMode: opts.pruneMode,
+    urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
+    uploadDir: opts.uploadDir || null,
+    incognito: !!opts.incognito,
+  });
+  const closePage = page.close.bind(page);
+  page.close = async () => {
+    await closePage();
+    await cleanupFirefox(browser);
+  };
+  return page;
 }
 
 /**

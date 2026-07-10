@@ -22,3 +22,7 @@
 - **Docs:** `docs/README.md` (navigation guide to all documentation)
 
 For full development and testing standards, see `.claude/memory/AGENT_RULES.md`.
+
+<!-- MEMORY:START -->
+@.claude/remember/MEMORY.md
+<!-- MEMORY:END -->

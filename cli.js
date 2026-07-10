@@ -108,9 +108,11 @@ async function cmdOpen() {
 
   const url = args[1] && !args[1].startsWith('--') ? args[1] : undefined;
   const opts = {
+    engine: parseFlag('--engine'),
     mode: parseFlag('--mode') || 'headless',
     port: parseFlag('--port'),
     cookies: !hasFlag('--no-cookies'),
+    incognito: hasFlag('--incognito') || undefined,
     browser: parseFlag('--browser'),
     timeout: parseFlag('--timeout'),
     pruneMode: parseFlag('--prune-mode') || 'act',
@@ -201,7 +203,7 @@ async function oneShot() {
   const url = args[1];
   const mode = args[2] || 'headless';
   try {
-    const snapshot = await browse(url, { mode });
+    const snapshot = await browse(url, { mode, incognito: hasFlag('--incognito') || undefined });
     process.stdout.write(snapshot + '\n');
     process.exit(0);
   } catch (err) {
@@ -213,9 +215,11 @@ async function oneShot() {
 async function runDaemonInternal() {
   const { runDaemon } = await import('./src/daemon.js');
   const opts = {
+    engine: parseFlag('--engine'),
     mode: parseFlag('--mode') || 'headless',
     port: parseFlag('--port'),
     cookies: !hasFlag('--no-cookies'),
+    incognito: hasFlag('--incognito') || undefined,
     browser: parseFlag('--browser'),
     timeout: parseFlag('--timeout'),
     pruneMode: parseFlag('--prune-mode') || 'act',
@@ -480,9 +484,13 @@ Session:
   barebrowse status                 Check session status
 
   Open flags:
-    --mode=headless|headed|hybrid   Browser mode (default: headless)
+    --engine=chromium|firefox       Browser engine (default: chromium/CDP;
+                                    firefox drives over WebDriver BiDi)
+    --mode=headless|headed|hybrid   Browser mode (default: headless;
+                                    hybrid is chromium-only)
     --port=N                        CDP port for headed mode
     --no-cookies                    Skip cookie injection
+    --incognito                     Clean, unauthenticated session (skip all auth injection)
     --browser=firefox|chromium      Cookie source browser
     --timeout=N                     Navigation timeout in ms
     --prune-mode=act|read           Default pruning mode

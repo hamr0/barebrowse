@@ -121,7 +121,18 @@ let _pageConnecting = null;
 async function getPage() {
   if (_page) return _page;
   if (_pageConnecting) return _pageConnecting;
-  _pageConnecting = connect({ mode: 'hybrid' });
+  // Engine selection is a launch-time setting (the browser persists across
+  // tool calls), so it's an env var, not a per-request flag. Firefox is driven
+  // over WebDriver BiDi and has no hybrid fallback — default it to headless
+  // (override with BAREBROWSE_MODE=headed).
+  // Incognito is a launch-time setting like engine/mode: the session persists
+  // across tool calls, so it's an env var (BAREBROWSE_INCOGNITO=1), not a
+  // per-request flag. Skips all auth injection for a clean, logged-out session.
+  const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
+  const connectOpts = process.env.BAREBROWSE_ENGINE === 'firefox'
+    ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'headless', incognito }
+    : { mode: 'hybrid', incognito };
+  _pageConnecting = connect(connectOpts);
   try {
     _page = await _pageConnecting;
     return _page;
@@ -156,6 +167,7 @@ export const TOOLS = [
         url: { type: 'string', description: 'URL to browse' },
         mode: { type: 'string', enum: ['headless', 'headed', 'hybrid'], description: 'Browser mode (default: headless)' },
         pruneMode: { type: 'string', enum: ['act', 'read'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If the page is content-heavy and act-mode returns mostly empty, retry with "read".' },
+        incognito: { type: 'boolean', description: 'Clean, unauthenticated session: skip cookie injection so the page loads logged-out (default: false).' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
       required: ['url'],
@@ -391,7 +403,7 @@ async function handleToolCall(name, args) {
     case 'browse': {
       let timer;
       const text = await Promise.race([
-        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode }),
+        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode, incognito: args.incognito }),
         new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('browse timed out after 60s')), 60000); }),
       ]);
       clearTimeout(timer);

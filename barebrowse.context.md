@@ -46,6 +46,7 @@ const snapshot = await browse('https://example.com');
 const snapshot = await browse('https://example.com', {
   mode: 'headless',      // 'headless' | 'headed' | 'hybrid'
   cookies: true,         // inject user's browser cookies
+  incognito: false,      // clean, unauthenticated session: skip ALL auth injection
   browser: 'firefox',    // cookie source: 'firefox' | 'chromium' (auto-detected)
   prune: true,           // apply ARIA pruning (47-95% token reduction)
   pruneMode: 'act',      // 'act' (interactive elements) | 'read' (all content)
@@ -94,10 +95,12 @@ const snapshot = await browse('https://example.com', {
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless) |
 
 **connect() options** (in addition to mode/port/consent):
+- `engine: 'chromium'|'firefox'` — Browser engine. Default `chromium` (CDP). `firefox` drives Firefox over WebDriver BiDi (CDP is deprecated there) — a separate transport with the same `page.*` API; the ARIA snapshot is reconstructed in-page since BiDi has no `getFullAXTree`. Chromium-only: `hybrid` mode, consent auto-dismiss, stealth, and the CLI daemon's console/network capture. `reload()` ignores `ignoreCache` on Firefox (BiDi limitation).
 - `port: 9222` — Attach to a Chromium already running with `--remote-debugging-port=N` instead of spawning one. The browser keeps running on `close()`. Stealth + permission denial + download capture are skipped to avoid mutating the user's running browser.
 - `proxy: 'http://...'` — HTTP/SOCKS proxy for browser
 - `viewport: '1280x720'` — Set viewport dimensions
 - `storageState: 'file.json'` — Load cookies/localStorage from saved state
+- `incognito: true|false` — Default `false`. When `true`, run a clean, unauthenticated session: skips `storageState` loading AND makes `injectCookies()` a no-op, so no auth ever enters the session even though callers (MCP `goto`, daemon) inject unconditionally. The temp profile is already throwaway; this gates the *other* auth source — the user's real browser cookies. Not Chrome's `--incognito` flag. Surfaced everywhere: library, MCP (`browse` tool param + `BAREBROWSE_INCOGNITO=1` env for the session), CLI (`--incognito`), bareagent (via `connect` opts).
 - `downloadPath: '/abs/dir'` — Where downloads land. Default: per-session `mkdtemp` under `/tmp/barebrowse-dl-*` that gets removed on `close()`. Caller-supplied paths are not cleaned up — caller owns the lifecycle.
 - `blockAds: true|false` — CDP-level URL blocking of 128 common ad/tracker patterns (Google ads/analytics, FB/Amazon/MS/Adobe ad+analytics, Segment/Amplitude/Mixpanel/Heap/PostHog, Hotjar/FullStory/LogRocket, Criteo/Taboola/Outbrain, the consumer-pixel cluster, AppNexus/Rubicon/PubMatic supply, marketing automation; v0.10.1 added AppsFlyer/Branch/Adjust, Cloudflare Web Analytics, Matomo Cloud). Default `true` for launched browsers, `false` in attach mode (would affect any tab in the user's running browser). Explicit `true` in attach mode is honored and follows the session across `switchTab()` (regression-tested). Shrinks ARIA snapshots and speeds page loads. On legacy Chromium lacking `Network.setBlockedURLs` a one-time `console.warn` surfaces the fallback.
 - `blockUrls: ['*://foo.com/*', ...]` — Extra glob patterns (CDP `Network.setBlockedURLs` format) to block in addition to the default. Merged with the default unless `blockAds: false`.

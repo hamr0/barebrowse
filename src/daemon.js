@@ -31,24 +31,25 @@ function tokenMatches(expected, got) {
 const SESSION_FILE = 'session.json';
 
 /**
- * Spawn a detached child process that runs the daemon.
- * Parent polls for session.json, then exits.
+ * Build the argv for the detached daemon child. Pure + exported so the
+ * flag-forwarding contract is unit-testable: a forward that's silently
+ * dropped here (as `--incognito` was in v0.15.0, turning `open --incognito`
+ * into a fully-authenticated session) becomes a failing test, not a leak.
+ * @param {object} opts - the session options parsed in cli.js cmdOpen
+ * @param {string} absDir - resolved output directory
+ * @param {string|undefined} initialUrl - URL to navigate on start (may be undefined)
+ * @param {string} cliPath - path to cli.js for the child to run
+ * @returns {string[]}
  */
-export async function startDaemon(opts, outputDir, initialUrl) {
-  const absDir = resolve(outputDir);
-  mkdirSync(absDir, { recursive: true, mode: 0o700 });
-
-  // Clean stale session
-  const sessionPath = join(absDir, SESSION_FILE);
-  if (existsSync(sessionPath)) unlinkSync(sessionPath);
-
-  // Build child args
-  const args = [join(import.meta.dirname, '..', 'cli.js'), '--daemon-internal'];
+export function buildDaemonArgs(opts, absDir, initialUrl, cliPath) {
+  const args = [cliPath, '--daemon-internal'];
   args.push('--output-dir', absDir);
   if (initialUrl) args.push('--url', initialUrl);
+  if (opts.engine) args.push('--engine', opts.engine);
   if (opts.mode) args.push('--mode', opts.mode);
   if (opts.port) args.push('--port', String(opts.port));
   if (opts.cookies === false) args.push('--no-cookies');
+  if (opts.incognito) args.push('--incognito');
   if (opts.browser) args.push('--browser', opts.browser);
   if (opts.timeout) args.push('--timeout', String(opts.timeout));
   if (opts.pruneMode) args.push('--prune-mode', opts.pruneMode);
@@ -63,6 +64,23 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   }
   if (opts.blockPrivateNetwork) args.push('--block-private-network');
   if (opts.uploadDir) args.push('--upload-dir', opts.uploadDir);
+  return args;
+}
+
+/**
+ * Spawn a detached child process that runs the daemon.
+ * Parent polls for session.json, then exits.
+ */
+export async function startDaemon(opts, outputDir, initialUrl) {
+  const absDir = resolve(outputDir);
+  mkdirSync(absDir, { recursive: true, mode: 0o700 });
+
+  // Clean stale session
+  const sessionPath = join(absDir, SESSION_FILE);
+  if (existsSync(sessionPath)) unlinkSync(sessionPath);
+
+  // Build child args (pure + testable — see buildDaemonArgs).
+  const args = buildDaemonArgs(opts, absDir, initialUrl, join(import.meta.dirname, '..', 'cli.js'));
 
   const child = spawn(process.execPath, args, {
     detached: true,
@@ -104,6 +122,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
 
   // Connect to browser
   const page = await connect({
+    engine: opts.engine,
     mode: opts.mode || 'headless',
     port: opts.port ? Number(opts.port) : undefined,
     consent: opts.consent,
@@ -115,55 +134,63 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     blockUrls: opts.blockUrls,
     blockPrivateNetwork: opts.blockPrivateNetwork,
     uploadDir: opts.uploadDir,
+    // incognito neuters injectCookies() session-wide; cookies:false (below)
+    // is the legacy per-open equivalent. Either yields a logged-out session.
+    incognito: opts.incognito || opts.cookies === false,
   });
 
-  // Console log capture
+  // Console + network log capture is CDP-specific (page.cdp). The Firefox/BiDi
+  // engine exposes page.bidi instead, so these captures are skipped there —
+  // console-logs / network-log commands return empty for a Firefox session.
+  // (BiDi log.entryAdded / network.* events could back these later.)
   const consoleLogs = [];
-  await page.cdp.send('Runtime.enable');
-  page.cdp.on('Runtime.consoleAPICalled', (params) => {
-    consoleLogs.push({
-      type: params.type,
-      timestamp: new Date().toISOString(),
-      args: params.args.map((a) => a.value ?? a.description ?? a.type),
-    });
-  });
-
-  // Network log capture (Network.enable already called by connect)
   const networkLogs = [];
   const pendingRequests = new Map();
 
-  page.cdp.on('Network.requestWillBeSent', (params) => {
-    pendingRequests.set(params.requestId, {
-      url: params.request.url,
-      method: params.request.method,
-      timestamp: new Date().toISOString(),
+  if (page.cdp) {
+    await page.cdp.send('Runtime.enable');
+    page.cdp.on('Runtime.consoleAPICalled', (params) => {
+      consoleLogs.push({
+        type: params.type,
+        timestamp: new Date().toISOString(),
+        args: params.args.map((a) => a.value ?? a.description ?? a.type),
+      });
     });
-  });
 
-  page.cdp.on('Network.responseReceived', (params) => {
-    const req = pendingRequests.get(params.requestId);
-    if (req) {
-      networkLogs.push({
-        ...req,
-        status: params.response.status,
-        statusText: params.response.statusText,
-        mimeType: params.response.mimeType,
+    // Network log capture (Network.enable already called by connect)
+    page.cdp.on('Network.requestWillBeSent', (params) => {
+      pendingRequests.set(params.requestId, {
+        url: params.request.url,
+        method: params.request.method,
+        timestamp: new Date().toISOString(),
       });
-      pendingRequests.delete(params.requestId);
-    }
-  });
+    });
 
-  page.cdp.on('Network.loadingFailed', (params) => {
-    const req = pendingRequests.get(params.requestId);
-    if (req) {
-      networkLogs.push({
-        ...req,
-        status: 0,
-        error: params.errorText,
-      });
-      pendingRequests.delete(params.requestId);
-    }
-  });
+    page.cdp.on('Network.responseReceived', (params) => {
+      const req = pendingRequests.get(params.requestId);
+      if (req) {
+        networkLogs.push({
+          ...req,
+          status: params.response.status,
+          statusText: params.response.statusText,
+          mimeType: params.response.mimeType,
+        });
+        pendingRequests.delete(params.requestId);
+      }
+    });
+
+    page.cdp.on('Network.loadingFailed', (params) => {
+      const req = pendingRequests.get(params.requestId);
+      if (req) {
+        networkLogs.push({
+          ...req,
+          status: 0,
+          error: params.errorText,
+        });
+        pendingRequests.delete(params.requestId);
+      }
+    });
+  }
 
   // Navigate to initial URL if provided
   if (initialUrl) {
@@ -316,6 +343,20 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     },
 
     async eval({ expression }) {
+      // Firefox/BiDi has no page.cdp — evaluate over BiDi in the active context.
+      if (!page.cdp) {
+        try {
+          // BiDi's raw result.value serializes objects into a {type,value}
+          // entries structure, not a plain object (CDP's returnByValue does).
+          // Stringify + parse in-page so an object/array eval matches the CDP
+          // shape (same trick readable() uses). `undefined` → JSON `null`.
+          const wrapped = `(async () => { const v = await (${expression}); return JSON.stringify(v === undefined ? null : v); })()`;
+          const raw = await page.bidi.evaluate(page.context, wrapped, true);
+          return { ok: true, value: raw == null ? null : JSON.parse(raw) };
+        } catch (err) {
+          return { ok: false, error: err.message || 'eval error' };
+        }
+      }
       const result = await page.cdp.send('Runtime.evaluate', {
         expression,
         returnByValue: true,

@@ -288,25 +288,39 @@ export function cookieDomainMatch(host, cookieDomain) {
 }
 
 /**
+ * Select the user's cookies that are in-scope for `url`. Shared by BOTH engines
+ * (CDP `authenticate` and Firefox/BiDi `injectCookies`) so they can't drift on
+ * scoping — a divergence here re-opens loading the entire cookie jar into an
+ * agent session. Returns the filtered cookie array; never injects.
+ *
+ * Coarse SQL pre-filter strips to a registrable-ish domain so the LIKE query
+ * returns a superset (incl. parent-domain cookies). slice(-2) is a cheap
+ * heuristic — it over-selects for multi-part eTLDs (co.uk) and as a substring
+ * match, so the precise RFC-6265 domain-match is what actually decides which
+ * cookies pass. Without it, browsing apple.com would match apple.com.evil.org
+ * and every *.co.uk site (verified).
+ * @param {string} url - URL whose host the cookies must match
+ * @param {object} [opts] - passed to extractCookies (e.g. { browser })
+ * @returns {Array<object>} cookies whose domain matches the URL host
+ */
+export function scopedCookiesForUrl(url, opts = {}) {
+  const fullHost = new URL(url).hostname.toLowerCase();
+  const noWww = fullHost.replace(/^www\./, '');
+  const parts = noWww.split('.');
+  const coarseDomain = parts.length > 2 ? parts.slice(-2).join('.') : noWww;
+  const candidates = extractCookies({ ...opts, domain: coarseDomain });
+  return candidates.filter((c) => cookieDomainMatch(fullHost, c.domain));
+}
+
+/**
  * Extract cookies for a URL and inject them into a CDP session.
- * Convenience function combining extractCookies + injectCookies.
+ * Convenience function combining scopedCookiesForUrl + injectCookies.
  * @param {object} session - CDP session handle
  * @param {string} url - URL to extract cookies for
  * @param {object} [opts] - Options passed to extractCookies
  */
 export async function authenticate(session, url, opts = {}) {
-  const fullHost = new URL(url).hostname.toLowerCase();
-  // Coarse SQL pre-filter: strip to a registrable-ish domain so the LIKE query
-  // returns a superset (incl. parent-domain cookies). slice(-2) is a cheap
-  // heuristic — it over-selects for multi-part eTLDs (co.uk) and as a substring
-  // match, so the precise RFC-6265 domain-match below is what actually decides
-  // which cookies get injected. Without it, browsing apple.com would inject
-  // cookies for apple.com.evil.org and every *.co.uk site (verified).
-  const noWww = fullHost.replace(/^www\./, '');
-  const parts = noWww.split('.');
-  const coarseDomain = parts.length > 2 ? parts.slice(-2).join('.') : noWww;
-  const candidates = extractCookies({ ...opts, domain: coarseDomain });
-  const cookies = candidates.filter((c) => cookieDomainMatch(fullHost, c.domain));
+  const cookies = scopedCookiesForUrl(url, opts);
   if (cookies.length > 0) {
     await injectCookies(session, cookies);
   }

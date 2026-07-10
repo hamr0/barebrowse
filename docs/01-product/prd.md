@@ -59,9 +59,22 @@ CDP (Chrome DevTools Protocol) lets us connect to any Chromium-based browser —
 - CDP gives us everything: `Accessibility.getFullAXTree`, `Page.navigate`, `Runtime.evaluate`, `Input.dispatch*Event`, `Network.setCookie`, `Page.captureScreenshot`.
 - The CDP WebSocket client is ~165 lines of vanilla JS (over the `ws` package). Playwright is ~50,000.
 
-**What we lose:** Cross-engine support (Firefox, WebKit). CDP only works with Chromium-family browsers (Chrome, Chromium, Edge, Brave, Vivaldi, Arc, Opera). This covers ~80% of desktop browsers. Firefox support could come later via WebDriver BiDi.
+**What we lose:** WebKit/Safari. CDP only works with Chromium-family browsers (Chrome, Chromium, Edge, Brave, Vivaldi, Arc, Opera). Firefox — which deprecated CDP — is now supported through a second transport over the same `ws` dependency (see *BiDi-Direct* below), so the CDP path covers Chromium (~80% of desktop) and BiDi covers Firefox.
 
 **What we gain:** Zero heavy deps, uses the user's real browser, same code path for headless/headed/hybrid, drastically simpler codebase.
+
+### BiDi-Direct (Why Firefox Is Its Own Transport)
+
+**Decision:** Drive Firefox over W3C **WebDriver BiDi**, not CDP — a second transport (`src/bidi.js`) beside the CDP client, selected with `connect({ engine: 'firefox' })`. No geckodriver, no new dependency: BiDi rides the same `ws` WebSocket as CDP.
+
+**Why:**
+- CDP was deprecated in Firefox; BiDi is the W3C-standard successor (and Chrome implements it too, so this is not a Firefox-only detour).
+- A direct BiDi socket at `ws://HOST:PORT/session` speaks `session.new` / `browsingContext.navigate` / `script.evaluate` / `input.performActions` / `storage.setCookie` — a near 1:1 map onto the existing `page.*` surface.
+- Firefox cookies are already extracted by `auth.js` (plaintext SQLite, no keyring) and inject back via `storage.setCookie` — same-engine reuse (Firefox → Firefox), strictly more faithful than the cross-engine cookie path.
+
+**The load-bearing risk — and how it was retired:** BiDi has **no `Accessibility.getFullAXTree`**. The entire value prop (a pruned ARIA snapshot) depends on an AX tree. So Firefox reconstructs a **CDP-vocabulary** AX tree *in-page* via one `script.evaluate` (`src/ax-snapshot.js`): implicit ARIA roles, accessible-name computation, `aria-hidden`/visibility filtering, and shadow-DOM/`<slot>` traversal — emitting the exact `{ nodeId, role, name, properties, children, ignored }` shape `prune.js` and `aria.js` already consume, so both are reused unchanged. A POC proved (measured, not asserted) that a 12k-node page serializes as ~1 MB in ~67 ms and the socket survives — the same large-payload failure that forced the `ws` dependency on the CDP side. Fidelity was validated against real CDP snapshots of identical fixtures; the hard cases (nested iframes with cross-context clicks, open shadow DOM, strict CSP, SPA late-DOM) are covered by `test/integration/firefox.test.js`.
+
+**What we gain:** Firefox as a first-class target, W3C-standard alignment, no bundled driver, and the pruning/formatting/reader pipeline shared verbatim across engines.
 
 ### ARIA-First (Why Not DOM)
 
@@ -110,6 +123,8 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 - For headed mode, cookies are already present in the browser — no extraction needed.
 - For headless mode, we extract from the user's profile and inject into the headless instance.
 
+**Opt-out — incognito (`incognito: true`):** A clean, unauthenticated session. Skips *all* auth injection — no cookie extraction/injection and no `storageState` — so the agent browses logged-out. (The session profile is already a throwaway temp dir; incognito gates the *other* auth source: the user's real browser cookies. It is not Chrome's `--incognito` flag.) The gate is enforced at the page-object level, so it holds even when a caller injects unconditionally (MCP `goto`, the daemon). Exposed on `browse()`, `connect()`, both engines, MCP (`browse` arg + `BAREBROWSE_INCOGNITO=1`), and CLI (`--incognito`).
+
 **Limitation:** Cookies expire. This works for existing sessions, not new logins. For sites requiring fresh auth, headed mode with user interaction is the fallback.
 
 ### Security Model & Safe Defaults
@@ -125,7 +140,7 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 | **Artifact permissions** | **On.** output dir `0700`, files `0600`, across both the daemon *and* MCP surfaces | Snapshots/articles/screenshots (authenticated content) and `saveState` output (cookies + localStorage = session tokens) must not be world-readable on a multi-user host. Modes are set explicitly, so they hold regardless of the process umask. (The MCP path previously inherited a `0644`/umask default — closed and regression-guarded.) |
 | **MCP `eval`** | **Opt-in** (`BAREBROWSE_MCP_EVAL=1`) | `Runtime.evaluate` in an authenticated session is full access. The agent acts with less judgment than a developer, so the MCP surface gates it; CLI/connect/daemon keep it (developer is the caller) but the daemon now requires the auth token. |
 
-Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `LIKE`), so browsing one site can't pull look-alike or unrelated-eTLD cookies into the session. Every safety control is expressed identically across the library, MCP, bareagent, and CLI surfaces — no entry point is a less-securable path.
+Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `LIKE`), so browsing one site can't pull look-alike or unrelated-eTLD cookies into the session. Both engines share one `scopedCookiesForUrl` (CDP `authenticate` and Firefox/BiDi `injectCookies`) so they cannot drift — the Firefox path scopes to the target host exactly like CDP rather than loading the whole jar. Every safety control is expressed identically across the library, MCP, bareagent, and CLI surfaces — no entry point is a less-securable path.
 
 **Known limitation:** the private-network guard matches the URL hostname; a public DNS name that resolves to a private IP (DNS rebinding) is not caught — that needs connection-time IP inspection.
 
@@ -195,6 +210,7 @@ const tree = await browse('https://example.com');
 const tree = await browse('https://example.com', {
   mode: 'hybrid',        // 'headless' (default) | 'headed' | 'hybrid'
   cookies: true,          // inject user's cookies (default: true)
+  incognito: false,       // clean, unauthenticated session: skip all auth injection
   prune: true,            // apply ARIA pruning (default: true)
   browser: 'chrome',      // which browser profile for cookies
   timeout: 30000,         // navigation timeout ms
@@ -268,7 +284,9 @@ This section exists so we don't re-debate settled decisions.
 | Pruning | Built-in | Agents always need pruned output | Optional/separate | Two deps for one job, pruning isn't optional |
 | Cookie auth | Own auth.js + CDP inject | User's existing sessions (Firefox or Chromium), cross-browser injection into headless Chromium | OAuth/credential storage | Complex, security liability, reinventing what the browser already solved |
 | Three modes | One flag | Same CDP code, ~20 lines difference | Separate packages | Same code, artificial separation |
-| Chromium only | CDP constraint | ~80% browser share, user's real browser | Cross-browser (Playwright) | Requires Playwright, loses "use your own browser" benefit |
+| Chromium via CDP | CDP constraint | ~80% browser share, user's real browser | Cross-browser (Playwright) | Requires Playwright, loses "use your own browser" benefit |
+| Firefox via BiDi | `connect({ engine: 'firefox' })` | CDP is deprecated in Firefox; BiDi is the W3C-standard successor. Second transport (`bidi.js`) over the *same* `ws` dep — no geckodriver, no new dependency. Reuses `prune.js`/`aria.js`/`readable.js` verbatim | Playwright / geckodriver / drop Firefox | Playwright = 200MB + abstraction; geckodriver = an extra binary + process; dropping Firefox cedes a real engine |
+| BiDi AX tree | In-page reconstruction (`ax-snapshot.js`) | BiDi has no `getFullAXTree`. Rebuild a CDP-vocabulary tree in one `script.evaluate` (implicit roles, accname, hidden-filtering, shadow-DOM) so pruning/formatting are shared unchanged. POC-measured: 12k nodes → ~1 MB / ~67 ms, socket survives | Native AX API / incremental DOM walk | BiDi exposes no AX API; a naive per-node walk is slow and lossy. Validated against real CDP snapshots |
 | Anti-detection | Runtime.evaluate patches | Minimal stealth for headless mode | Full stealth framework | Over-engineering; headless + real cookies handles 90% |
 | Daemon/server | None | CDP is direct, no intermediary needed | sweetlink daemon pattern | Unnecessary complexity for local agent→browser |
 | Framework | None (vanilla JS) | Matches bare- philosophy, minimal deps (only `ws` + `@mozilla/readability`, both lightweight) | Express/Fastify wrapper | Not a server, not needed |
@@ -298,7 +316,7 @@ This section exists so we don't re-debate settled decisions.
 - **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Still queued.
 
 ### Medium-term
-- **Firefox support** — Via WebDriver BiDi protocol (cross-browser standard, still maturing). Second protocol adapter alongside CDP.
+- **Firefox support** — *(Done: `connect({ engine: 'firefox' })` drives Firefox over WebDriver BiDi via `bidi.js` + `firefox.js`, with the AX tree reconstructed in-page by `ax-snapshot.js`. Covers `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `upload`, `goBack`/`goForward`, `reload`, `screenshot`, `pdf`, `tabs`/`switchTab`, `waitFor`, `readable`, `injectCookies`, `close`. Selectable from MCP via `BAREBROWSE_ENGINE=firefox` and from the CLI via `barebrowse open --engine firefox`. Verified for accname fidelity, iframes, shadow DOM, CSP, SPA timing, navigation, capture, and the CLI/MCP paths in `test/integration/firefox.test.js` + smoke tests. **Known gaps:** consent auto-dismiss, stealth, and hybrid fallback are chromium-only; accname is a high-value subset of the W3C spec; `reload` can't honour `ignoreCache` (Firefox BiDi doesn't support it yet); and the daemon's console/network capture is CDP-only, so those logs are empty for a Firefox session.)*
 - **Cookie sync** — In hybrid mode, extract fresh cookies from headed session and cache for future headless use. Self-refreshing auth.
 - **Selector discovery** — Port sweetlink's `discoverSelectors` — crawl ARIA tree, score interactive elements, return ranked action targets.
 - **Form understanding** — Detect forms in ARIA tree, map fields to semantic purposes, enable agents to fill forms intelligently.
