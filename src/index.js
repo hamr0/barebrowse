@@ -745,7 +745,14 @@ async function suppressPermissions(cdp) {
  * a BiDi-backed page object. Separate from the CDP path because the transport,
  * ref model, and AX-tree source all differ (see firefox-page.js). close() is
  * wrapped to also reap the Firefox process + temp profile.
- * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode })
+ *
+ * Chromium-only options NOT applied on this path: `consent` (auto-dismiss),
+ * `blockAds`/`blockUrls`, stealth patches, and `hybrid` mode. `saveState`,
+ * `waitForNavigation`, `waitForNetworkIdle`, and download/dialog capture are
+ * CDP-only too (the page object stubs them — see firefox-page.js). The
+ * navigation guard (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir`
+ * sandbox, `incognito`, `proxy`, `viewport`, and `pruneMode` DO apply.
+ * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito })
  * @returns {Promise<object>} Firefox page object
  */
 async function connectFirefox(opts) {

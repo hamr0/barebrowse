@@ -24,7 +24,8 @@
  *      the hidden attribute).
  *
  * Each kept element is tagged with a data-bb-ref attribute carrying its ref,
- * so interact-bidi.js can resolve a ref back to its element via querySelector.
+ * so firefox-page.js (resolveRef) can resolve a ref back to its element via
+ * querySelector.
  * Refs are assigned from a caller-supplied `base` so they stay globally unique
  * across browsing contexts (iframes), matching CDP's flat integer refs.
  */

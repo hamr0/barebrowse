@@ -241,6 +241,48 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
     }
   });
 
+  it('nests multi-level iframes correctly (parent → child → grandchild + sibling)', async () => {
+    // Guards the positional iframe-splice on the hard case the single-level
+    // test doesn't cover: a grandchild frame plus a sibling frame must each
+    // land under their real parent, in document order.
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data(`<main><h1>PARENT</h1>` +
+        `<iframe srcdoc="<h1>CHILD</h1><iframe srcdoc='&lt;h1&gt;GRANDCHILD&lt;/h1&gt;'></iframe>"></iframe>` +
+        `<iframe srcdoc="<h1>SIBLING</h1>"></iframe></main>`));
+      await new Promise((r) => setTimeout(r, 600));
+      const tree = treeOnly(await page.snapshot({ mode: 'read' }));
+      for (const label of ['PARENT', 'CHILD', 'GRANDCHILD', 'SIBLING']) {
+        assert.match(tree, new RegExp(label), `${label} present in the spliced tree`);
+      }
+      // GRANDCHILD must sit deeper than CHILD (real nesting, not flattened).
+      const indent = (l) => (tree.match(new RegExp(`^(\\s*)[^\\n]*${l}`, 'm')) || [, ''])[1].length;
+      assert.ok(indent('GRANDCHILD') > indent('CHILD'), 'GRANDCHILD nested under CHILD');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('switchTab() does not leak another tab\'s iframe into the active snapshot', async () => {
+    // Regression: allContexts() must be scoped to the active tab. Before the
+    // getTree({root}) fix, snapshotting tab B after switchTab spliced tab A's
+    // frame (INNER-A) into B's iframe and dropped INNER-B.
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<title>TABA</title><main><h1>TABA</h1><iframe srcdoc="<h1>INNER-A</h1>"></iframe></main>'));
+      const created = await page.bidi.send('browsingContext.create', { type: 'tab' });
+      await page.bidi.send('browsingContext.navigate', { context: created.context, url: data('<title>TABB</title><main><h1>TABB</h1><iframe srcdoc="<h1>INNER-B</h1>"></iframe></main>'), wait: 'complete' });
+      await new Promise((r) => setTimeout(r, 400));
+      const tabs = await page.tabs();
+      await page.switchTab(tabs.findIndex((t) => /TABB/.test(t.title)));
+      const tree = treeOnly(await page.snapshot({ mode: 'read' }));
+      assert.match(tree, /INNER-B/, 'active tab B shows its own iframe content');
+      assert.doesNotMatch(tree, /INNER-A/, 'tab A iframe must NOT leak into tab B snapshot');
+    } finally {
+      await page.close();
+    }
+  });
+
   it('readable() returns the same result shape as the CDP path', async () => {
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {

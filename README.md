@@ -132,6 +132,21 @@ const snap = await page.snapshot();
 await page.close(); // closes only the tab barebrowse opened — your browser keeps running
 ```
 
+### Firefox (WebDriver BiDi)
+
+CDP is deprecated in Firefox, so barebrowse drives it over the W3C WebDriver
+BiDi protocol instead — a second transport over the same `ws` dependency, no
+extra download. Same `page.*` API (the ARIA snapshot is reconstructed in-page
+since BiDi has no `getFullAXTree`):
+
+```js
+const page = await connect({ engine: 'firefox' }); // headless by default
+```
+
+From the CLI: `barebrowse open <url> --engine firefox`. From MCP: set
+`BAREBROWSE_ENGINE=firefox`. Firefox cookies (plaintext) reuse into the same
+engine. Chromium (CDP) remains the default; `hybrid` mode is Chromium-only.
+
 No clone profile, no fresh cookies — the agent sees what you see.
 
 ## What it handles automatically
@@ -223,7 +238,7 @@ URL -> find/launch browser (chromium.js)
 ## Requirements
 
 - Node.js >= 22 (built-in WebSocket, built-in SQLite)
-- Any Chromium-based browser installed (Chrome, Chromium, Brave, Edge, Vivaldi)
+- Any Chromium-based browser installed (Chrome, Chromium, Brave, Edge, Vivaldi) — or Firefox (>= 121) for the `engine: 'firefox'` BiDi path
 - Linux tested (Fedora/KDE). macOS/Windows cookie paths exist but untested.
 
 ## The bare ecosystem

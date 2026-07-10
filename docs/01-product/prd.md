@@ -123,6 +123,8 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 - For headed mode, cookies are already present in the browser — no extraction needed.
 - For headless mode, we extract from the user's profile and inject into the headless instance.
 
+**Opt-out — incognito (`incognito: true`):** A clean, unauthenticated session. Skips *all* auth injection — no cookie extraction/injection and no `storageState` — so the agent browses logged-out. (The session profile is already a throwaway temp dir; incognito gates the *other* auth source: the user's real browser cookies. It is not Chrome's `--incognito` flag.) The gate is enforced at the page-object level, so it holds even when a caller injects unconditionally (MCP `goto`, the daemon). Exposed on `browse()`, `connect()`, both engines, MCP (`browse` arg + `BAREBROWSE_INCOGNITO=1`), and CLI (`--incognito`).
+
 **Limitation:** Cookies expire. This works for existing sessions, not new logins. For sites requiring fresh auth, headed mode with user interaction is the fallback.
 
 ### Security Model & Safe Defaults
@@ -138,7 +140,7 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 | **Artifact permissions** | **On.** output dir `0700`, files `0600`, across both the daemon *and* MCP surfaces | Snapshots/articles/screenshots (authenticated content) and `saveState` output (cookies + localStorage = session tokens) must not be world-readable on a multi-user host. Modes are set explicitly, so they hold regardless of the process umask. (The MCP path previously inherited a `0644`/umask default — closed and regression-guarded.) |
 | **MCP `eval`** | **Opt-in** (`BAREBROWSE_MCP_EVAL=1`) | `Runtime.evaluate` in an authenticated session is full access. The agent acts with less judgment than a developer, so the MCP surface gates it; CLI/connect/daemon keep it (developer is the caller) but the daemon now requires the auth token. |
 
-Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `LIKE`), so browsing one site can't pull look-alike or unrelated-eTLD cookies into the session. Every safety control is expressed identically across the library, MCP, bareagent, and CLI surfaces — no entry point is a less-securable path.
+Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `LIKE`), so browsing one site can't pull look-alike or unrelated-eTLD cookies into the session. Both engines share one `scopedCookiesForUrl` (CDP `authenticate` and Firefox/BiDi `injectCookies`) so they cannot drift — the Firefox path scopes to the target host exactly like CDP rather than loading the whole jar. Every safety control is expressed identically across the library, MCP, bareagent, and CLI surfaces — no entry point is a less-securable path.
 
 **Known limitation:** the private-network guard matches the URL hostname; a public DNS name that resolves to a private IP (DNS rebinding) is not caught — that needs connection-time IP inspection.
 
@@ -208,6 +210,7 @@ const tree = await browse('https://example.com');
 const tree = await browse('https://example.com', {
   mode: 'hybrid',        // 'headless' (default) | 'headed' | 'hybrid'
   cookies: true,          // inject user's cookies (default: true)
+  incognito: false,       // clean, unauthenticated session: skip all auth injection
   prune: true,            // apply ARIA pruning (default: true)
   browser: 'chrome',      // which browser profile for cookies
   timeout: 30000,         // navigation timeout ms

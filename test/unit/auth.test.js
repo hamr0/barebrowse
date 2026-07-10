@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCookies, cookieDomainMatch } from '../../src/auth.js';
+import { extractCookies, cookieDomainMatch, scopedCookiesForUrl } from '../../src/auth.js';
 
 // extractCookies() reads the real on-disk browser cookie database; skip when
 // none exists (e.g. a CI runner with no browser profile). The pure
@@ -89,5 +89,35 @@ describe('cookieDomainMatch() — precise injection filter', () => {
 
   it('is case-insensitive', () => {
     assert.equal(cookieDomainMatch('Mail.Google.COM', '.GOOGLE.com'), true);
+  });
+});
+
+// Shared scoping used by BOTH engines (CDP authenticate + Firefox injectCookies).
+// The invariant — every returned cookie matches the URL host — holds regardless
+// of which cookies this machine has, and fails loudly if the domain filter is
+// ever dropped (the Firefox v0.15.0 whole-jar bug).
+describe('scopedCookiesForUrl() — cross-engine cookie scoping', { skip: cookiesSkip }, () => {
+  it('returns only cookies whose domain matches the URL host', () => {
+    // Pick a host the jar actually owns, so scoping yields a real (non-empty)
+    // set — then assert every cookie in it matches that host. Fails loudly if
+    // the domain filter is ever dropped (the Firefox whole-jar bug).
+    const sample = extractCookies().find((c) => c.domain);
+    if (!sample) return;
+    const host = sample.domain.replace(/^\./, '');
+    const scoped = scopedCookiesForUrl(`https://${host}/`);
+    assert.ok(scoped.length > 0, 'a host that owns cookies must yield a non-empty scoped set');
+    for (const c of scoped) {
+      assert.ok(cookieDomainMatch(host, c.domain),
+        `leaked out-of-scope cookie for ${c.domain} when scoping to ${host}`);
+    }
+  });
+
+  it('yields nothing for a host that owns no cookies', () => {
+    // extractCookies throws "No browser cookie database found" when a domain
+    // matches zero rows (existing quirk shared with CDP authenticate — callers
+    // wrap in try/catch). Either way, the effective scoped set is empty.
+    let scoped = [];
+    try { scoped = scopedCookiesForUrl('https://no-such-host.invalid-tld-zzz/'); } catch { scoped = []; }
+    assert.equal(scoped.length, 0, 'an unowned host must contribute no cookies');
   });
 });

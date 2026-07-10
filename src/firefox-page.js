@@ -19,7 +19,7 @@ import { formatTree } from './aria.js';
 import { prune as pruneTree } from './prune.js';
 import { axSnapshotExpression, REF_ATTR } from './ax-snapshot.js';
 import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
-import { extractCookies } from './auth.js';
+import { scopedCookiesForUrl } from './auth.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
@@ -54,9 +54,16 @@ export async function createFirefoxPage(bidi, opts = {}) {
   // click after a snapshot routes to the frame the element actually lives in.
   let refContexts = new Map();
 
-  /** Depth-first list of every browsing context (main + descendant frames). */
+  /**
+   * Depth-first list of the ACTIVE tab's contexts (main frame + descendant
+   * frames). Scoped to `topContext` via getTree's `root` param — without it
+   * getTree returns every open tab flat, and after switchTab() to a non-first
+   * tab the positional iframe-splice in snapshot() grafts another tab's frame
+   * into the active tab (verified: INNER1 leaked into TAB2). Root-scoping keeps
+   * topContext at index 0 so the splice stays aligned and cross-tab-safe.
+   */
   async function allContexts() {
-    const { contexts: tree } = await bidi.send('browsingContext.getTree', {});
+    const { contexts: tree } = await bidi.send('browsingContext.getTree', { root: topContext });
     const flat = [];
     (function walk(nodes) {
       for (const n of nodes) { flat.push(n.context); walk(n.children || []); }
@@ -214,11 +221,13 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     /**
      * Inject cookies from the user's real browser into this Firefox session,
-     * via BiDi storage.setCookie. Same-engine reuse: Firefox cookies → Firefox.
+     * via BiDi storage.setCookie. Scoped to the URL host via the SHARED
+     * scopedCookiesForUrl (same as the CDP path) — never the whole jar.
      */
     async injectCookies(url, cookieOpts) {
       if (incognito) return 0;
-      const cookies = extractCookies({ browser: cookieOpts?.browser, domain: cookieOpts?.domain });
+      const cookies = scopedCookiesForUrl(url, { browser: cookieOpts?.browser });
+      let injected = 0;
       for (const c of cookies) {
         const cookie = {
           name: c.name,
@@ -230,8 +239,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
         if (c.httpOnly) cookie.httpOnly = true;
         if (c.sameSite) cookie.sameSite = String(c.sameSite).toLowerCase();
         if (c.expires && c.expires > 0) cookie.expiry = Math.floor(c.expires);
-        try { await bidi.send('storage.setCookie', { cookie }); } catch { /* skip bad cookie */ }
+        try { await bidi.send('storage.setCookie', { cookie }); injected++; } catch { /* skip bad cookie */ }
       }
+      return injected;
     },
 
     async select(ref, value) {
@@ -352,6 +362,24 @@ export async function createFirefoxPage(bidi, opts = {}) {
         await new Promise((r) => setTimeout(r, 200));
       }
       throw new Error(`waitFor timed out after ${timeout}ms`);
+    },
+
+    // --- CDP-only surfaces, stubbed for daemon parity ---------------------
+    // The daemon (src/daemon.js) dispatches these unconditionally. On the
+    // Firefox/BiDi engine download tracking and dialog capture aren't wired,
+    // so the two logs are genuinely empty; the three actions are CDP-only and
+    // fail with a clear, intentional message instead of an incidental
+    // TypeError. Documented as a known gap in CHANGELOG (Firefox engine).
+    get downloads() { return []; },
+    get dialogLog() { return []; },
+    async saveState() {
+      throw new Error('saveState() is not supported on the Firefox/BiDi engine (CDP-only)');
+    },
+    async waitForNavigation() {
+      throw new Error('waitForNavigation() is not supported on the Firefox/BiDi engine (CDP-only)');
+    },
+    async waitForNetworkIdle() {
+      throw new Error('waitForNetworkIdle() is not supported on the Firefox/BiDi engine (CDP-only)');
     },
 
     async close() {

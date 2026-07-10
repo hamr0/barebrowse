@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.15.0] - 2026-07-10
+
+### Added
+
+- **Firefox support via WebDriver BiDi (`connect({ engine: 'firefox' })`).** CDP
+  is deprecated in Firefox, so Firefox is driven over the W3C-standard BiDi
+  protocol — a second transport (`src/bidi.js`) over the *same* `ws` dependency,
+  with no geckodriver and no new package. Selectable from the CLI
+  (`barebrowse open <url> --engine firefox`) and MCP (`BAREBROWSE_ENGINE=firefox`).
+  - New modules: `bidi.js` (BiDi JSON-RPC transport), `firefox.js` (launch/find/
+    reap), `ax-snapshot.js` (reconstructs a CDP-vocabulary ARIA tree in-page —
+    BiDi has no `getFullAXTree` — with implicit roles, accessible-name
+    computation, `aria-hidden`/visibility filtering, and shadow-DOM/`<slot>`
+    traversal), `firefox-page.js` (the BiDi-backed page object).
+  - `prune.js`, `aria.js`, and `readable.js` are reused unchanged across engines
+    (readable.js refactored to share `EXTRACT_EXPRESSION` + `finalizeReadable`).
+  - Covers `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`,
+    `select`, `drag`, `upload`, `goBack`/`goForward`, `reload`, `screenshot`,
+    `pdf`, `tabs`/`switchTab`, `waitFor`, `readable`, `injectCookies`, `close`.
+    The navigation guard and upload sandbox are enforced on the Firefox path for
+    parity with CDP.
+  - Fidelity validated against real CDP snapshots; iframes (incl. nested +
+    multi-tab), shadow DOM, CSP, and SPA timing covered in
+    `test/integration/firefox.test.js` (15 tests).
+
+- **Incognito mode — a clean, unauthenticated session (`incognito: true`).**
+  Skips ALL auth injection: no cookie extraction/injection and no
+  `storageState` loading, so the agent browses logged-out even though the
+  default throwaway profile is unchanged. The gate lives at the page-object
+  level, so it holds even when a caller (MCP `goto`, the daemon) injects
+  unconditionally. Available on `browse()`, `connect()`, both engines, MCP
+  (`browse` tool arg + `BAREBROWSE_INCOGNITO=1`), and CLI (`--incognito`).
+  Cookie injection is scoped to the target host on **both** engines via a
+  shared `scopedCookiesForUrl` (the Firefox path no longer loads the whole
+  cookie jar).
+
+### Known gaps (Firefox engine)
+
+- Consent auto-dismiss, stealth patches, and `hybrid` mode remain Chromium-only.
+- `reload()` cannot honour `ignoreCache` (Firefox BiDi does not support it yet).
+- The CLI daemon's console/network log capture is CDP-only, so those logs are
+  empty for a Firefox session. `saveState`, `waitForNavigation`, and
+  `waitForNetworkIdle` are CDP-only too — on Firefox they throw a clear
+  "not supported on the Firefox/BiDi engine" error, and download/dialog logs
+  read empty. Accessible-name computation is a high-value subset of the full
+  W3C accname spec.
+
 ## [0.14.0] - 2026-06-15
 
 ### Documentation

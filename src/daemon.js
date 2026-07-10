@@ -31,25 +31,25 @@ function tokenMatches(expected, got) {
 const SESSION_FILE = 'session.json';
 
 /**
- * Spawn a detached child process that runs the daemon.
- * Parent polls for session.json, then exits.
+ * Build the argv for the detached daemon child. Pure + exported so the
+ * flag-forwarding contract is unit-testable: a forward that's silently
+ * dropped here (as `--incognito` was in v0.15.0, turning `open --incognito`
+ * into a fully-authenticated session) becomes a failing test, not a leak.
+ * @param {object} opts - the session options parsed in cli.js cmdOpen
+ * @param {string} absDir - resolved output directory
+ * @param {string|undefined} initialUrl - URL to navigate on start (may be undefined)
+ * @param {string} cliPath - path to cli.js for the child to run
+ * @returns {string[]}
  */
-export async function startDaemon(opts, outputDir, initialUrl) {
-  const absDir = resolve(outputDir);
-  mkdirSync(absDir, { recursive: true, mode: 0o700 });
-
-  // Clean stale session
-  const sessionPath = join(absDir, SESSION_FILE);
-  if (existsSync(sessionPath)) unlinkSync(sessionPath);
-
-  // Build child args
-  const args = [join(import.meta.dirname, '..', 'cli.js'), '--daemon-internal'];
+export function buildDaemonArgs(opts, absDir, initialUrl, cliPath) {
+  const args = [cliPath, '--daemon-internal'];
   args.push('--output-dir', absDir);
   if (initialUrl) args.push('--url', initialUrl);
   if (opts.engine) args.push('--engine', opts.engine);
   if (opts.mode) args.push('--mode', opts.mode);
   if (opts.port) args.push('--port', String(opts.port));
   if (opts.cookies === false) args.push('--no-cookies');
+  if (opts.incognito) args.push('--incognito');
   if (opts.browser) args.push('--browser', opts.browser);
   if (opts.timeout) args.push('--timeout', String(opts.timeout));
   if (opts.pruneMode) args.push('--prune-mode', opts.pruneMode);
@@ -64,6 +64,23 @@ export async function startDaemon(opts, outputDir, initialUrl) {
   }
   if (opts.blockPrivateNetwork) args.push('--block-private-network');
   if (opts.uploadDir) args.push('--upload-dir', opts.uploadDir);
+  return args;
+}
+
+/**
+ * Spawn a detached child process that runs the daemon.
+ * Parent polls for session.json, then exits.
+ */
+export async function startDaemon(opts, outputDir, initialUrl) {
+  const absDir = resolve(outputDir);
+  mkdirSync(absDir, { recursive: true, mode: 0o700 });
+
+  // Clean stale session
+  const sessionPath = join(absDir, SESSION_FILE);
+  if (existsSync(sessionPath)) unlinkSync(sessionPath);
+
+  // Build child args (pure + testable — see buildDaemonArgs).
+  const args = buildDaemonArgs(opts, absDir, initialUrl, join(import.meta.dirname, '..', 'cli.js'));
 
   const child = spawn(process.execPath, args, {
     detached: true,
