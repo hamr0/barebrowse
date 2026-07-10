@@ -102,15 +102,23 @@ export async function dismissConsentFirefox(root, click) {
     }
   }
 
-  // No dialog (banner-style consent) or dialog with no in-scope button: fall
-  // back to a page-wide strong-pattern scan.
-  const global = findGlobalAcceptButton(root);
-  if (global?.nodeId) {
-    try {
-      await click(global.nodeId);
-      return true;
-    } catch {
-      return false;
+  // Banner-style consent (no dialog container at all): scan the page for a
+  // strong accept button. We deliberately DO NOT run this page-wide scan when a
+  // consent dialog WAS detected but had no in-scope accept button — a page-wide
+  // match there can click an UNRELATED "Accept all …" control elsewhere (e.g. a
+  // ToS/signup button), an automatic wrong mutation on goto(). The trade-off is
+  // losing the rare "accept button rendered outside its own dialog" pattern; we
+  // accept that miss rather than risk a wrong click. See the PRD "known
+  // limitations" note for the validated false-positive this guards against.
+  if (consentDialogs.length === 0) {
+    const global = findGlobalAcceptButton(root);
+    if (global?.nodeId) {
+      try {
+        await click(global.nodeId);
+        return true;
+      } catch {
+        return false;
+      }
     }
   }
   return false;

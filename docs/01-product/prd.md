@@ -317,6 +317,36 @@ This section exists so we don't re-debate settled decisions.
 
 ### Medium-term
 - **Firefox support** — *(Done: `connect({ engine: 'firefox' })` drives Firefox over WebDriver BiDi via `bidi.js` + `firefox.js`, with the AX tree reconstructed in-page by `ax-snapshot.js`. Covers `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `upload`, `goBack`/`goForward`, `reload`, `screenshot`, `pdf`, `tabs`/`switchTab`, `waitFor`, `readable`, `injectCookies`, `close`. Selectable from MCP via `BAREBROWSE_ENGINE=firefox` and from the CLI via `barebrowse open --engine firefox`. Verified for accname fidelity, iframes, shadow DOM, CSP, SPA timing, navigation, capture, and the CLI/MCP paths in `test/integration/firefox.test.js` + smoke tests. **Known gaps:** consent auto-dismiss and stealth landed on Firefox in v0.16.0 (BiDi parity Phase 1); hybrid fallback, ad/tracker blocking, and the daemon's console/network capture remain chromium-only; accname is a high-value subset of the W3C spec; and `reload` can't honour `ignoreCache` (Firefox BiDi doesn't support it yet).)*
+
+  **Known limitations — Firefox stealth + consent (v0.16.0, validated in a code
+  review; slated for Phase 5 revisit with a cross-engine fidelity harness):**
+  - *Consent false-positive — **fixed** in v0.16.0.* The page-wide accept-button
+    scan now runs **only** for banner-style consent (no dialog container). When a
+    consent dialog is detected but has no in-dialog accept button, barebrowse no
+    longer scans the whole page — a page-wide match there could auto-click an
+    unrelated "Accept all …" control (e.g. a ToS/signup button) on `goto()`.
+    Trade-off: the rare pattern of an accept button rendered *outside* its own
+    dialog (some SourcePoint deployments) is no longer auto-dismissed on Firefox;
+    we accept that miss rather than risk a wrong click. Regression-tested in
+    `test/unit/consent-firefox.test.js`. (The CDP path still does the page-wide
+    scan and carries the original false-positive risk — unchanged here.)
+  - *Consent double AX build (performance).* With consent on (default), each
+    `goto()` reconstructs the AX tree once for the consent scan and `snapshot()`
+    rebuilds it — two in-page reconstructions per navigate. Bounded latency
+    (page-size dependent), no correctness impact; parity with the CDP path's
+    `getFullAXTree`-per-navigate. Not optimised because the safe options (a
+    cheap consent probe, tree caching) risk consent coverage or stale trees.
+  - *Consent single-click, no re-verify.* The Firefox walker clicks the accept
+    button once (a real BiDi pointer event) and does not re-check dismissal or
+    retry, unlike the CDP path's synthetic-then-real retry. A CMP that ignores
+    the first click stays up (the flow "fails open" — page loads, wall remains);
+    low likelihood since the click is already a real pointer event. Disable with
+    `consent: false` where an auto-click is unacceptable.
+  - *webdriver own-property fallback (latent).* `WEBDRIVER_PATCH` deletes
+    `navigator.webdriver` off `Navigator.prototype`; if a browser ever exposed
+    it as an *own* property instead, the delete would miss it and the
+    `defineProperty` fallback would restore the `hasOwnProperty` tell. Does not
+    occur on current Chromium/Firefox (prototype property), so it is latent.
 - **Cookie sync** — In hybrid mode, extract fresh cookies from headed session and cache for future headless use. Self-refreshing auth.
 - **Selector discovery** — Port sweetlink's `discoverSelectors` — crawl ARIA tree, score interactive elements, return ranked action targets.
 - **Form understanding** — Detect forms in ARIA tree, map fields to semantic purposes, enable agents to fill forms intelligently.

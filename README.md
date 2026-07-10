@@ -145,7 +145,9 @@ const page = await connect({ engine: 'firefox' }); // headless by default
 
 From the CLI: `barebrowse open <url> --engine firefox`. From MCP: set
 `BAREBROWSE_ENGINE=firefox`. Firefox cookies (plaintext) reuse into the same
-engine. Chromium (CDP) remains the default; `hybrid` mode is Chromium-only.
+engine. Consent auto-dismiss and headless stealth work on Firefox too (as of
+v0.16.0). Chromium (CDP) remains the default; `hybrid` mode, ad/tracker
+blocking, and the daemon's console/network capture are still Chromium-only.
 
 No clone profile, no fresh cookies — the agent sees what you see.
 
