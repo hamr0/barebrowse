@@ -1,5 +1,59 @@
 # Changelog
 
+## [0.16.0] - 2026-07-10
+
+### Added
+
+- **Firefox anti-detection + consent auto-dismiss (BiDi parity Phase 1).** The
+  two most agent-breaking Firefox gaps are closed: headless bot-detection and
+  cookie-consent dialogs that were never dismissed. Both now work on
+  `connect({ engine: 'firefox' })` (and therefore the CLI/daemon/MCP Firefox
+  paths), behind the same flags as the CDP engine.
+  - **Stealth** (`src/stealth-firefox.js`, headless only, via BiDi
+    `script.addPreloadScript`). Deliberately *not* a port of Chromium's
+    `STEALTH_SCRIPT`: a POC measured stock Firefox-under-BiDi and found it
+    already exposes a realistic surface (no `window.chrome`, a real plugin set,
+    the real GPU, a UA with no "Headless" marker) — injecting Chromium's
+    Chrome-shims would have *created* a spoof tell worse than the one removed.
+    Firefox's only real tell is `navigator.webdriver` (`true`), so it gets a
+    minimal script: `navigator.webdriver` hiding + canvas-fingerprint noise.
+    `WEBDRIVER_PATCH` and `CANVAS_NOISE_PATCH` are now exported from
+    `stealth.js` and shared by both engines (single-sourcing the canvas
+    double-XOR fix).
+- **Hardened `navigator.webdriver` hiding on both engines.** The shared
+  `WEBDRIVER_PATCH` now *deletes* the getter off `Navigator.prototype` instead
+  of shadowing it with an own property. A naive override hid the value but left
+  `navigator.hasOwnProperty('webdriver') === true` — a tell that advanced
+  anti-bot checks (e.g. sannysoft's "WebDriver New") detect. After the change
+  `navigator.webdriver` is `undefined` and both `hasOwnProperty` and
+  `'webdriver' in navigator` read `false`, matching a stock browser
+  (POC-verified on Chromium and Firefox). This improves the Chromium engine
+  too, not just Firefox.
+  - **Consent** (`src/consent-firefox.js`). A walker over the reconstructed
+    nested AX tree that clicks the "accept" button via the existing BiDi
+    `pointerClick`. The multilingual accept/dialog patterns were extracted to
+    `src/consent-patterns.js`, now imported by both the CDP (`consent.js`) and
+    BiDi walkers, so language coverage stays single-sourced. Runs after
+    `goto()` behind the same `consent !== false` flag as CDP.
+  - **Tests:** `test/unit/consent-firefox.test.js` (pure walker: dialog
+    scoping, pattern priority, non-English, banner fallback, false-positive
+    guard) plus Firefox integration tests (webdriver hidden at page-parse time,
+    no `window.chrome` spoof, consent auto-dismiss + a `consent: false` control
+    that proves the test can fail).
+
+### Known gaps (Firefox engine)
+
+- `hybrid` mode, ad/tracker blocking, and console/network log capture remain
+  Chromium-only (BiDi parity Phases 2–4). `saveState`, `waitForNavigation`,
+  and `waitForNetworkIdle` still throw a clear "not supported on the
+  Firefox/BiDi engine" error; download/dialog logs read empty.
+- `reload()` still cannot honour `ignoreCache` (Firefox BiDi does not support
+  it yet).
+- Consent auto-dismiss clicks once without re-verifying dismissal (the CDP
+  path's synthetic→real retry is unnecessary here — BiDi `pointerClick` is
+  already a real pointer event). Accessible-name computation remains a
+  high-value subset of the full W3C accname spec.
+
 ## [0.15.0] - 2026-07-10
 
 ### Added

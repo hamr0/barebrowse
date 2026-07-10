@@ -21,6 +21,7 @@ import { axSnapshotExpression, REF_ATTR } from './ax-snapshot.js';
 import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
 import { scopedCookiesForUrl } from './auth.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
+import { dismissConsentFirefox } from './consent-firefox.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -38,6 +39,7 @@ const BIDI_KEYS = {
  * @param {{allowLocalUrls?: boolean, blockPrivateNetwork?: boolean}} [opts.urlGuard] - Navigation safety policy, applied on every goto().
  * @param {string} [opts.uploadDir] - When set, upload() rejects files outside this dir.
  * @param {boolean} [opts.incognito=false] - Clean session: injectCookies() is a no-op.
+ * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs after goto().
  * @returns {Promise<object>} page object
  */
 export async function createFirefoxPage(bidi, opts = {}) {
@@ -45,6 +47,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   const urlGuard = opts.urlGuard || {};
   const uploadDir = opts.uploadDir || null;
   const incognito = !!opts.incognito;
+  const consent = opts.consent !== false;
   // The active browsing context. Starts at the initial tab; switchTab() points
   // it at another top-level context, so it's mutable and read via a getter.
   const { contexts } = await bidi.send('browsingContext.getTree', {});
@@ -69,6 +72,53 @@ export async function createFirefoxPage(bidi, opts = {}) {
       for (const n of nodes) { flat.push(n.context); walk(n.children || []); }
     })(tree);
     return flat;
+  }
+
+  /**
+   * Build the spliced AX tree for the active tab (main frame + child frames)
+   * and (re)populate refContexts so a subsequent click routes to the right
+   * frame. Returns the top context's root node, or null if it couldn't be
+   * snapshotted. Shared by snapshot() and the consent auto-dismiss so the
+   * iframe-splice logic lives in one place.
+   */
+  async function buildTree() {
+    const contextIds = await allContexts();
+    refContexts = new Map();
+
+    // Snapshot each context, assigning refs from a shared running counter so
+    // they're globally unique (matching CDP's flat integer refs).
+    let base = 0;
+    const treesByContext = new Map();
+    for (const ctx of contextIds) {
+      let raw;
+      try {
+        raw = await bidi.evaluate(ctx, axSnapshotExpression(base), false);
+      } catch { continue; } // frame navigated mid-snapshot — skip it
+      const { tree, count } = JSON.parse(raw);
+      for (let r = base + 1; r <= base + count; r++) refContexts.set(String(r), ctx);
+      base += count;
+      treesByContext.set(ctx, tree);
+    }
+
+    // Splice each child frame's tree under an <iframe> (role 'Iframe')
+    // placeholder in its parent, matched by document order — BiDi getTree
+    // lists children in frame order, and the AX walk emits Iframe nodes in
+    // the same order.
+    const iframeNodes = (tree) => {
+      const out = [];
+      (function walk(n) { if (n.role === 'Iframe') out.push(n); for (const c of n.children) walk(c); })(tree);
+      return out;
+    };
+    for (let i = 1; i < contextIds.length; i++) {
+      const childTree = treesByContext.get(contextIds[i]);
+      if (!childTree) continue;
+      // Attach to the next unfilled Iframe placeholder in the top tree.
+      const holders = iframeNodes(treesByContext.get(topContext) || { role: '', children: [] });
+      const holder = holders[i - 1];
+      if (holder) holder.children = [childTree];
+    }
+
+    return treesByContext.get(topContext) || null;
   }
 
   /** Resolve a ref to a BiDi element sharedId in its owning context. */
@@ -134,46 +184,19 @@ export async function createFirefoxPage(bidi, opts = {}) {
         timeout, `goto(${url})`);
       // Brief settle for dynamic/SPA content, matching the CDP path.
       await new Promise((r) => setTimeout(r, 500));
+      // Auto-dismiss cookie consent, mirroring the CDP path (index.js runs
+      // dismissConsent right after navigate). Best-effort: a failure here must
+      // never fail the navigation.
+      if (consent) {
+        try {
+          const root = await buildTree();
+          if (root) await dismissConsentFirefox(root, (ref) => pointerClick(ref));
+        } catch { /* consent dismissal is best-effort */ }
+      }
     },
 
     async snapshot(pruneOpts) {
-      const contextIds = await allContexts();
-      refContexts = new Map();
-
-      // Snapshot each context, assigning refs from a shared running counter so
-      // they're globally unique (matching CDP's flat integer refs).
-      let base = 0;
-      const treesByContext = new Map();
-      for (const ctx of contextIds) {
-        let raw;
-        try {
-          raw = await bidi.evaluate(ctx, axSnapshotExpression(base), false);
-        } catch { continue; } // frame navigated mid-snapshot — skip it
-        const { tree, count } = JSON.parse(raw);
-        for (let r = base + 1; r <= base + count; r++) refContexts.set(String(r), ctx);
-        base += count;
-        treesByContext.set(ctx, tree);
-      }
-
-      // Splice each child frame's tree under an <iframe> (role 'Iframe')
-      // placeholder in its parent, matched by document order — BiDi getTree
-      // lists children in frame order, and the AX walk emits Iframe nodes in
-      // the same order.
-      const iframeNodes = (tree) => {
-        const out = [];
-        (function walk(n) { if (n.role === 'Iframe') out.push(n); for (const c of n.children) walk(c); })(tree);
-        return out;
-      };
-      for (let i = 1; i < contextIds.length; i++) {
-        const childTree = treesByContext.get(contextIds[i]);
-        if (!childTree) continue;
-        // Attach to the next unfilled Iframe placeholder in the top tree.
-        const holders = iframeNodes(treesByContext.get(topContext) || { role: '', children: [] });
-        const holder = holders[i - 1];
-        if (holder) holder.children = [childTree];
-      }
-
-      const root = treesByContext.get(topContext);
+      const root = await buildTree();
       if (!root) return '';
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');

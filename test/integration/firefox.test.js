@@ -347,3 +347,88 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
     }
   });
 });
+
+// v0.16.0 — Firefox parity Phase 1: anti-detection + consent auto-dismiss.
+describe('connect({ engine: firefox }) — stealth (headless anti-detection)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  it('hides navigator.webdriver before any page script runs', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      // Inline script captures navigator.webdriver at parse time — if the BiDi
+      // preload script ran first (as it must), the page sees `undefined`.
+      await page.goto(data('<script>window.__wd = navigator.webdriver;</script><p>x</p>'));
+      const atParse = await page.bidi.evaluate(page.context, 'window.__wd', false);
+      const now = await page.bidi.evaluate(page.context, 'navigator.webdriver', false);
+      assert.equal(atParse, undefined, 'preload beat page JS: navigator.webdriver undefined at parse');
+      assert.equal(now, undefined, 'navigator.webdriver reads undefined');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('hides webdriver without the hasOwnProperty tell (defeats advanced detection)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<p>x</p>'));
+      // A naive own-property override would leave hasOwnProperty === true, which
+      // real browsers report false (webdriver lives on Navigator.prototype).
+      // The hardened patch deletes it off the prototype, so all three hold.
+      const probe = JSON.parse(await page.bidi.evaluate(page.context, `JSON.stringify({
+        undef: navigator.webdriver === undefined,
+        ownFalse: !Object.prototype.hasOwnProperty.call(navigator, 'webdriver'),
+        inFalse: !('webdriver' in navigator),
+      })`, false));
+      assert.equal(probe.undef, true, 'navigator.webdriver is undefined');
+      assert.equal(probe.ownFalse, true, 'no own-property tell (hasOwnProperty false)');
+      assert.equal(probe.inFalse, true, "'webdriver' in navigator is false");
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('does NOT fake window.chrome (that would be a Firefox spoof tell)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<p>x</p>'));
+      const hasChrome = await page.bidi.evaluate(page.context, 'typeof window.chrome', false);
+      assert.equal(hasChrome, 'undefined', 'Firefox must not grow a window.chrome object');
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe('connect({ engine: firefox }) — consent auto-dismiss', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  // A consent dialog whose Accept-all button flips document.title, so the click
+  // is observable from outside. The Reject button flips it differently — if the
+  // walker ever clicked the wrong one, the assertion would catch it.
+  const consentPage = data(`
+    <title>unclicked</title>
+    <div role="dialog" aria-label="Cookie consent">
+      <h2>We value your privacy</h2>
+      <p>We use cookies to improve your experience.</p>
+      <button onclick="document.title='ACCEPTED'">Accept all</button>
+      <button onclick="document.title='REJECTED'">Reject</button>
+    </div>`);
+
+  it('clicks the accept button on goto() by default', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(consentPage);
+      const title = await page.bidi.evaluate(page.context, 'document.title', false);
+      assert.equal(title, 'ACCEPTED', 'consent Accept-all was clicked');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('leaves the dialog untouched when consent:false (control — proves the test can fail)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless', consent: false });
+    try {
+      await page.goto(consentPage);
+      const title = await page.bidi.evaluate(page.context, 'document.title', false);
+      assert.equal(title, 'unclicked', 'consent:false must not click anything');
+    } finally {
+      await page.close();
+    }
+  });
+});
