@@ -29,10 +29,10 @@ not impossible:
 |---|---|---|---|
 | Stealth / anti-detection | `Page.addScriptToEvaluateOnNewDocument` | `script.addPreloadScript` | **done (v0.16.0)** |
 | Consent auto-dismiss | ARIA scan + jsClick (engine-agnostic) | run over the BiDi snapshot | **done (v0.16.0)** |
-| Ad / tracker block | `Network.setBlockedURLs` | `network.addIntercept` (catch-all + in-process match) | **done (Phase 3)** |
-| Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | **done (Phase 2)** |
-| Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | **done (Phase 2)** |
-| Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened` + `handleUserPrompt` | **done (Phase 3)** |
+| Ad / tracker block | `Network.setBlockedURLs` | `network.addIntercept` (catch-all + in-process match) | **done (v0.18.0)** |
+| Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | **done (v0.17.0)** |
+| Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | **done (v0.17.0)** |
+| Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened` + `handleUserPrompt` | **done (v0.18.0)** |
 | Hybrid (headless→headed) | orchestration (engine-agnostic) | same logic on FF path | reuse |
 | Downloads | `Browser.downloadWillBegin` | BiDi download events (Firefox: partial) | partial |
 | `reload({ignoreCache})` | CDP flag | not yet in Firefox BiDi | upstream |
@@ -54,7 +54,7 @@ and consent auto-dismiss.
 `waitForNetworkIdle` over BiDi events (daemon `console-logs`/`network-log`/
 `wait-idle` now work on Firefox).
 
-**Added in Phase 3 (Unreleased):** ad/tracker block (`network.addIntercept`
+**Added in Phase 3 (v0.18.0):** ad/tracker block (`network.addIntercept`
 catch-all + in-process glob match against the shared blocklist) and JS dialog
 handling (`browsingContext.userPromptOpened` → `handleUserPrompt`, with
 `dialogLog` + `page.onDialog`).
@@ -98,7 +98,7 @@ than the one removed. Measured baseline: only `navigator.webdriver` was a tell
   `window.chrome` spoof, consent auto-dismiss + a `consent:false` control that
   proves the test can fail).
 
-### Phase 2 — Observability parity *(restores CLI/daemon)* — ✅ shipped (Unreleased)
+### Phase 2 — Observability parity *(restores CLI/daemon)* — ✅ shipped (v0.17.0)
 - **Console:** subscribe `log.entryAdded` → `consoleLogs`. *(done —
   `attachBiDiCapture` in `daemon.js`; BiDi `warn` normalized to CDP `warning`.)*
 - **Network:** subscribe `network.beforeRequestSent` / `responseCompleted` /
@@ -114,7 +114,7 @@ than the one removed. Measured baseline: only `navigator.webdriver` was a tell
   Firefox before wiring (Phase 1 lesson), then unit-tested against those shapes
   (`daemon.test.js`, `network-idle.test.js`) + live-verified (`firefox.test.js`).
 
-### Phase 3 — Noise reduction + dialogs — ✅ shipped (Unreleased)
+### Phase 3 — Noise reduction + dialogs — ✅ shipped (v0.18.0)
 - **Ad/tracker block** (`src/blocklist-firefox.js`): BiDi's `network.addIntercept`
   can't express our globs — `urlPatterns` reject `*` outright ("forbidden
   character *") and have no subdomain wildcard (POC-measured). So we register a
