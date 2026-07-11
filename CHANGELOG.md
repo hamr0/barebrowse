@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.19.2] - 2026-07-11
+
+### Fixed
+
+- **Firefox `saveState()` now writes `sameSite` capitalized** (`Lax`/`Strict`/`None`,
+  was BiDi's lowercase `lax`/`strict`/`none`). The only loader for a state file is
+  `connect({ storageState })`, which is CDP-only (`Network.setCookies`) and rejects
+  a lowercase enum — so the whole batch threw and every cookie was silently dropped,
+  making a Firefox-saved state useless for auth restore. Found by `/code-review` and
+  confirmed against real Firefox.
+- **Firefox CLI/daemon `eval` accepts statement-form expressions again**
+  (`var x = 2; x * 3`). A Phase-4 wrapper (`await (${expr})`, added to flatten
+  objects) turned every statement list into a `SyntaxError` — a regression versus
+  the CDP `Runtime.evaluate` path. Now evaluates the raw expression (BiDi
+  `script.evaluate` has eval-semantics) and deserializes the `{type,value}` remote
+  value back to the plain value CDP's `returnByValue` yields, so deep objects stay
+  clean *and* statements work.
+- **Firefox daemon console capture no longer dumps nested serialization** for
+  object/array console arguments — it falls back to the type name, matching the CDP
+  capture's `RemoteObject.description` ("Object").
+
 ## [0.19.1] - 2026-07-11
 
 ### Changed
