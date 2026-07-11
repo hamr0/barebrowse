@@ -568,7 +568,7 @@ describe('connect({ engine: firefox }) — saveState (Phase 4)', { skip: !hasFir
   let server, origin;
   before(async () => {
     server = createServer((_req, res) => {
-      res.writeHead(200, { 'set-cookie': 'sess=abc123; Path=/', 'content-type': 'text/html' });
+      res.writeHead(200, { 'set-cookie': 'sess=abc123; Path=/; SameSite=Lax', 'content-type': 'text/html' });
       res.end('<script>localStorage.setItem("token","xyz")</script>hello');
     });
     await new Promise((r) => server.listen(0, '127.0.0.1', r));
@@ -591,6 +591,9 @@ describe('connect({ engine: firefox }) — saveState (Phase 4)', { skip: !hasFir
       assert.ok(c, 'session cookie captured');
       assert.equal(c.value, 'abc123', 'cookie value flattened to a string');
       assert.equal(c.domain, '127.0.0.1');
+      // sameSite capitalized to CDP's vocabulary (Lax, not BiDi's 'lax') so the
+      // state file reloads via connect()'s CDP-only storageState loader.
+      assert.equal(c.sameSite, 'Lax', 'sameSite capitalized for CDP setCookies');
       assert.equal(state.localStorage.token, 'xyz', 'localStorage captured');
       // Owner-only — it holds session tokens (security invariant).
       assert.equal(statSync(file).mode & 0o777, 0o600, 'state file is 0600');

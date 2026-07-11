@@ -575,7 +575,14 @@ export async function createFirefoxPage(bidi, opts = {}) {
           secure: !!c.secure,
           httpOnly: !!c.httpOnly,
         };
-        if (c.sameSite && c.sameSite !== 'default') out.sameSite = c.sameSite;
+        // BiDi reports sameSite lowercase (strict|lax|none); the CDP saveState /
+        // Network.setCookies vocabulary is capitalized (Strict|Lax|None). The only
+        // loader for a state file is connect()'s storageState (CDP-only), which
+        // rejects a lowercase enum and silently drops every cookie — so capitalize
+        // here to keep the format truly symmetric and the round-trip working.
+        if (c.sameSite && c.sameSite !== 'default') {
+          out.sameSite = c.sameSite.charAt(0).toUpperCase() + c.sameSite.slice(1);
+        }
         if (c.expiry && c.expiry > 0) out.expires = c.expiry;
         return out;
       });
