@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.19.1] - 2026-07-11
+
+### Changed
+
+- **MCP: Firefox sessions now default to `hybrid`** (was `headless`), matching the
+  Chromium default — Phase 4 gave Firefox the same headless→headed challenge
+  fallback, so there's no reason to hold it back. A failed headed relaunch (no
+  display) falls back to the headless result. Override with `BAREBROWSE_MODE`;
+  the Chromium path now honors `BAREBROWSE_MODE` too (was hardcoded `hybrid`).
+
+### Docs
+
+- **README** refocused on primitives and value — Firefox stated as a capability
+  set rather than a version-by-version log; stale counts/versions and a redundant
+  section removed.
+- **Single PRD** — the Firefox parity plan is merged into `docs/01-product/prd.md`
+  as a "Firefox Parity" section (capability matrix + goal/non-goals + forward
+  plan); the standalone `firefox-parity-plan.md` is removed.
+- Fixed stale "hybrid is chromium-only" strings in the CLI help and MCP comments.
+
 ## [0.19.0] - 2026-07-11
 
 ### Added

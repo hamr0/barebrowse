@@ -123,15 +123,17 @@ async function getPage() {
   if (_pageConnecting) return _pageConnecting;
   // Engine selection is a launch-time setting (the browser persists across
   // tool calls), so it's an env var, not a per-request flag. Firefox is driven
-  // over WebDriver BiDi and has no hybrid fallback — default it to headless
-  // (override with BAREBROWSE_MODE=headed).
+  // over WebDriver BiDi and, as of parity Phase 4, has the same hybrid fallback
+  // as Chromium (relaunch headed on a bot-challenge page) — so it defaults to
+  // hybrid too, matching the Chromium default (override with BAREBROWSE_MODE).
+  // A failed headed relaunch (no display) falls back to the headless result.
   // Incognito is a launch-time setting like engine/mode: the session persists
   // across tool calls, so it's an env var (BAREBROWSE_INCOGNITO=1), not a
   // per-request flag. Skips all auth injection for a clean, logged-out session.
   const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
   const connectOpts = process.env.BAREBROWSE_ENGINE === 'firefox'
-    ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'headless', incognito }
-    : { mode: 'hybrid', incognito };
+    ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito }
+    : { mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito };
   _pageConnecting = connect(connectOpts);
   try {
     _page = await _pageConnecting;

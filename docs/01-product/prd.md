@@ -76,6 +76,33 @@ CDP (Chrome DevTools Protocol) lets us connect to any Chromium-based browser —
 
 **What we gain:** Firefox as a first-class target, W3C-standard alignment, no bundled driver, and the pruning/formatting/reader pipeline shared verbatim across engines.
 
+### Firefox Parity (Chromium ↔ BiDi)
+
+**Goal:** *practical* parity — the capabilities an autonomous agent relies on behave the same on both engines, driven by the same `page.*` code. Playwright-style parity (unified API + the common capability subset), not identical internals.
+
+**Non-goals:** no patched browser builds (Playwright ships a ~200 MB custom Firefox; barebrowse drives stock Firefox over standard BiDi only), and not 100% AX-tree fidelity (CDP's `getFullAXTree` is browser-native; BiDi has none, so the tree is reconstructed in-page — the gap is source-tree accuracy only, since pruning is already identical).
+
+Almost every "Chromium-only" gap turned out to be *wiring*, not R&D — each CDP mechanism has a clean BiDi equivalent:
+
+| Capability | CDP mechanism | BiDi equivalent | Status |
+|---|---|---|---|
+| Stealth / anti-detection | `Page.addScriptToEvaluateOnNewDocument` | `script.addPreloadScript` | done (v0.16.0) |
+| Consent auto-dismiss | ARIA scan + click (engine-agnostic) | run over the BiDi snapshot | done (v0.16.0) |
+| Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | done (v0.17.0) |
+| Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | done (v0.17.0) |
+| Ad / tracker block | `Network.setBlockedURLs` | `network.addIntercept` (catch-all + in-process match) | done (v0.18.0) |
+| Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened` + `handleUserPrompt` | done (v0.18.0) |
+| Hybrid (headless→headed) | relaunch orchestration | relaunch + page rebind on the FF path | done (v0.19.0) |
+| `saveState` | `Network.getAllCookies` + localStorage | `storage.getCookies` + `script.evaluate` | done (v0.19.0) |
+| `waitForNavigation` | `Page.loadEventFired` | `browsingContext.load` | done (v0.19.0) |
+| Downloads | `Browser.downloadWillBegin` | `browsingContext.downloadWillBegin`/`downloadEnd` | done (v0.19.0) |
+| `reload({ignoreCache})` | CDP flag | not yet in Firefox BiDi | upstream gap |
+| Full AX-tree fidelity | `Accessibility.getFullAXTree` | none — reconstruct in-page | ongoing (Phase 5) |
+
+Two shared cores keep the engines from drifting: `challenge.js` (`isChallengePage`, the hybrid gate) and `dialog.js` (`decideDialog`, the JS-dialog decision).
+
+**Still ahead (Phase 5 + cross-cutting):** an AX-tree **fidelity harness** — snapshot a fixture corpus on both engines, diff the reconstructed FF tree against the native CDP tree, and drive `ax-snapshot.js` toward the full W3C accname algorithm by measured divergence. Plus capability introspection (`page.engine` + a `page.capabilities` map so an agent can *check* rather than assume), a loud fallback when no Chromium is installed, and `doctor` reporting detected engines + the effective default.
+
 ### ARIA-First (Why Not DOM)
 
 **Decision:** Use `Accessibility.getFullAXTree` (ARIA/accessibility tree) as the primary page representation, not DOM.
@@ -316,7 +343,7 @@ This section exists so we don't re-debate settled decisions.
 - **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Still queued.
 
 ### Medium-term
-- **Firefox support** — *(Done: `connect({ engine: 'firefox' })` drives Firefox over WebDriver BiDi via `bidi.js` + `firefox.js`, with the AX tree reconstructed in-page by `ax-snapshot.js`. Covers `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `upload`, `goBack`/`goForward`, `reload`, `screenshot`, `pdf`, `tabs`/`switchTab`, `waitFor`, `readable`, `injectCookies`, `close`. Selectable from MCP via `BAREBROWSE_ENGINE=firefox` and from the CLI via `barebrowse open --engine firefox`. Verified for accname fidelity, iframes, shadow DOM, CSP, SPA timing, navigation, capture, and the CLI/MCP paths in `test/integration/firefox.test.js` + smoke tests. **Known gaps:** consent auto-dismiss and stealth landed on Firefox in v0.16.0 (BiDi parity Phase 1); the daemon's console/network capture and `waitForNetworkIdle` landed in v0.17.0 (Phase 2, over BiDi `log.entryAdded`/`network.*` events); ad/tracker blocking and JS dialog handling (`dialogLog`/`onDialog`) landed in Phase 3 (over a catch-all `network.addIntercept` + in-process glob match, and `browsingContext.userPromptOpened`/`handleUserPrompt`); hybrid fallback, `saveState`, `waitForNavigation`, and download tracking (`page.downloads`, into a throwaway dir) landed in Phase 4 (relaunch-headed + page rebind on a shared `isChallengePage`; `storage.getCookies` + localStorage; `browsingContext.load`; `browsingContext.downloadWillBegin`/`downloadEnd`); accname is a high-value subset of the W3C spec; and `reload` can't honour `ignoreCache` (Firefox BiDi doesn't support it yet — the only remaining functional gap).)*
+- **Firefox support** — *(Done — the capability matrix, goal/non-goals, and forward plan live under **Firefox Parity** in Core Architecture above.)* `connect({ engine: 'firefox' })` drives Firefox over WebDriver BiDi (`bidi.js` + `firefox.js`), AX tree reconstructed in-page (`ax-snapshot.js`), the full `page.*` surface covered, selectable from MCP (`BAREBROWSE_ENGINE=firefox`) and CLI (`--engine firefox`). Phases 1–4 reached practical parity (stealth/consent → console/network → ad-block/dialogs → hybrid/saveState/waitForNavigation/downloads); only `reload({ignoreCache})` remains gapped (upstream BiDi). Validated in `test/integration/firefox.test.js` + `test/unit/firefox-hybrid.test.js`. Accepted known-limitations follow.
 
   **Known limitations — Firefox stealth + consent (v0.16.0, validated in a code
   review; slated for Phase 5 revisit with a cross-engine fidelity harness):**
