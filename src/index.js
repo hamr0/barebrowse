@@ -23,6 +23,8 @@ import { applyFirefoxStealth } from './stealth-firefox.js';
 import { applyFirefoxBlocklist } from './blocklist-firefox.js';
 import { resolveBlocklistPatterns } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
+import { decideDialog, dialogLogEntry } from './dialog.js';
+import { isChallengePage } from './challenge.js';
 import { readable as extractReadable } from './readable.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
@@ -352,29 +354,11 @@ export async function connect(opts = {}) {
   let onDialogHandler = null;
   function setupDialogHandler(session) {
     session.on('Page.javascriptDialogOpening', async (params) => {
-      dialogLog.push({
-        type: params.type,
-        message: params.message,
-        timestamp: new Date().toISOString(),
-      });
-      let accept = params.type !== 'beforeunload';
-      let promptText = params.defaultPrompt || '';
-      if (onDialogHandler) {
-        try {
-          const decision = await onDialogHandler({
-            type: params.type,
-            message: params.message,
-            defaultPrompt: params.defaultPrompt || '',
-          });
-          if (decision && typeof decision === 'object') {
-            if (typeof decision.accept === 'boolean') accept = decision.accept;
-            if (typeof decision.promptText === 'string') promptText = decision.promptText;
-          }
-        } catch {
-          // Handler threw — fall back to defaults so the page doesn't hang
-          // waiting for a never-arriving handleJavaScriptDialog reply.
-        }
-      }
+      dialogLog.push(dialogLogEntry(params.type, params.message));
+      const { accept, promptText } = await decideDialog(
+        { type: params.type, message: params.message, defaultPrompt: params.defaultPrompt },
+        onDialogHandler,
+      );
       await session.send('Page.handleJavaScriptDialog', { accept, promptText });
     });
   }
@@ -748,56 +732,89 @@ async function suppressPermissions(cdp) {
  * ref model, and AX-tree source all differ (see firefox-page.js). close() is
  * wrapped to also reap the Firefox process + temp profile.
  *
- * Chromium-only options NOT applied on this path: `hybrid` mode. `saveState`,
- * `waitForNavigation`, and download capture are CDP-only too (the page object
- * stubs them — see firefox-page.js). `blockAds`/`blockUrls` and JS dialog
- * handling (`dialogLog`/`onDialog`) DO apply as of Phase 3 (ad-block via a
- * catch-all `network.addIntercept` + in-process glob match; dialogs via
- * `browsingContext.userPromptOpened` → `handleUserPrompt`).
- * `waitForNetworkIdle` and daemon console/network capture DO apply as of Phase
- * 2 (over BiDi `network.*` and `log.entryAdded` events). `consent`
- * (auto-dismiss) and
- * stealth patches DO apply here as of v0.16.0 (stealth headless-only, via BiDi
- * preload script — see stealth-firefox.js / consent-firefox.js), alongside the
- * navigation guard
- * (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir` sandbox, `incognito`,
- * `proxy`, `viewport`, and `pruneMode`.
- * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito })
+ * As of Phase 4, the Firefox path reaches practical parity with the CDP path:
+ * `hybrid` mode (relaunch headed on a bot-challenge page), `saveState`
+ * (`storage.getCookies` + localStorage), `waitForNavigation`
+ * (`browsingContext.load`), and download capture (`page.downloads` via
+ * `browsingContext.downloadWillBegin`/`downloadEnd`) all work here now.
+ * `blockAds`/`blockUrls` + JS dialog handling arrived in Phase 3; console/
+ * network capture + `waitForNetworkIdle` in Phase 2; stealth + consent in
+ * v0.16.0. Still Firefox-limited: `reload({ignoreCache})` (upstream BiDi gap).
+ * The navigation guard (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir`
+ * sandbox, `incognito`, `proxy`, `viewport`, and `pruneMode` all apply.
+ * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito, downloadPath, blockAds, blockUrls })
  * @returns {Promise<object>} Firefox page object
  */
 async function connectFirefox(opts) {
-  const browser = await launchFirefox({
-    headed: opts.mode === 'headed',
-    proxy: opts.proxy,
-    binary: opts.binary,
-    viewport: opts.viewport,
-  });
-  const bidi = await createBiDi(browser.wsUrl);
-  // Stealth patches (headless only, mirroring the CDP path's `mode !== 'headed'`
-  // gate). Registered before the first navigation via script.addPreloadScript.
-  // Firefox needs a much smaller script than Chromium — see stealth-firefox.js.
-  if (opts.mode !== 'headed') {
-    await applyFirefoxStealth(bidi);
-  }
-  // Ad/tracker blocking (parity with the CDP applyBlocklist). Firefox is always
-  // a launched, throwaway profile (never attach mode), so the default is on —
-  // unlike the CDP path, which defaults off in attach mode. Must run before the
-  // first navigation so the catch-all intercept is live when the page loads.
-  await applyFirefoxBlocklist(bidi, {
+  const hybrid = opts.mode === 'hybrid';
+  const blockOpts = {
     blockAds: opts.blockAds !== undefined ? opts.blockAds : true,
     blockUrls: opts.blockUrls,
-  });
+  };
+
+  // Downloads land in a throwaway dir (parity with CDP's setDownloadBehavior).
+  // A caller-supplied opts.downloadPath is honored and left alone; otherwise we
+  // own + reap a temp dir on close.
+  let ownedDownloadDir = null;
+  let downloadDir = opts.downloadPath || null;
+  if (!downloadDir) {
+    const { mkdtempSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), 'barebrowse-ff-dl-'));
+    downloadDir = ownedDownloadDir;
+  }
+
+  // Launch Firefox, open a BiDi session, and apply stealth (headless-only,
+  // mirroring the CDP `mode !== 'headed'` gate) + ad/tracker blocking. Shared
+  // by the initial launch and the hybrid headed relaunch so both are wired
+  // identically. Blocking defaults on — Firefox is always a throwaway profile,
+  // never attach mode — and must be live before the first navigation.
+  async function launchAndSetup(headed) {
+    const browser = await launchFirefox({
+      headed, proxy: opts.proxy, binary: opts.binary, viewport: opts.viewport, downloadDir,
+    });
+    const bidi = await createBiDi(browser.wsUrl);
+    if (!headed) await applyFirefoxStealth(bidi);
+    await applyFirefoxBlocklist(bidi, blockOpts);
+    const { contexts } = await bidi.send('browsingContext.getTree', {});
+    return { browser, bidi, topContext: contexts[0].context };
+  }
+
+  let { browser, bidi } = await launchAndSetup(opts.mode === 'headed');
+
+  // Hybrid relaunch: launch a headed Firefox FIRST (so a failure leaves the
+  // current session intact), then tear down the old headless one and hand the
+  // fresh bidi/topContext back to the page, which rebinds to it.
+  async function relaunchHeaded() {
+    const next = await launchAndSetup(true);
+    const old = browser;
+    browser = next.browser;
+    try { bidi.close(); } catch {}
+    try { await cleanupFirefox(old); } catch {}
+    bidi = next.bidi;
+    return { bidi: next.bidi, topContext: next.topContext };
+  }
+
   const page = await createFirefoxPage(bidi, {
     pruneMode: opts.pruneMode,
     urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
     uploadDir: opts.uploadDir || null,
     incognito: !!opts.incognito,
     consent: opts.consent,
+    hybrid,
+    headed: opts.mode === 'headed',
+    relaunchHeaded: hybrid ? relaunchHeaded : null,
   });
   const closePage = page.close.bind(page);
   page.close = async () => {
     await closePage();
-    await cleanupFirefox(browser);
+    await cleanupFirefox(browser); // `browser` tracks the relaunched one if hybrid fired
+    if (ownedDownloadDir) {
+      try {
+        const { rmSync } = await import('node:fs');
+        rmSync(ownedDownloadDir, { recursive: true, force: true });
+      } catch { /* best-effort reap */ }
+    }
   };
   return page;
 }
@@ -1105,66 +1122,8 @@ function extractProps(props) {
   return result;
 }
 
-/**
- * Detect if a page is a bot-challenge page (Cloudflare, hCaptcha, etc.).
- *
- * Pre-H9 this was over-aggressive: `nodeCount < 50` alone fired on any
- * legitimate small page (404s, simple landings, error pages), and generic
- * phrases like "access denied" / "unknown error" / "permission denied"
- * triggered on real HTTP 4xx/5xx pages, kicking hybrid mode into a costly
- * headed fallback for nothing.
- *
- * H9 split: STRONG_PHRASES are essentially-unambiguous challenge UI and
- * fire regardless of page size; WEAK_PHRASES only fire when the page is
- * ALSO tiny (so a legitimate-looking error page with "access denied" in
- * its body doesn't trip the fallback).
- *
- * @param {object} tree - Nested ARIA tree (from buildTree)
- * @param {number} [nodeCount] - Raw CDP node count (from Accessibility.getFullAXTree)
- */
-export function isChallengePage(tree, nodeCount) {
-  if (!tree) return true; // truly empty AX tree — something went wrong fetching the page
-
-  const text = flattenTreeText(tree);
-  const lower = text.toLowerCase();
-
-  // Strong phrases — distinctive enough to identify the challenge product
-  // by name. Fire on their own regardless of node count.
-  const STRONG_PHRASES = [
-    'just a moment',                            // Cloudflare interstitial
-    'checking if the site connection is secure', // Cloudflare
-    'checking your browser',                     // Various JS challenges
-    'verify you are human',                      // hCaptcha / reCAPTCHA
-    'prove your humanity',
-    'attention required',                        // Cloudflare block page
-    'enable javascript and cookies to continue', // Cloudflare
-    'please complete the security check',        // Cloudflare/Akamai
-  ];
-  if (STRONG_PHRASES.some((p) => lower.includes(p))) return true;
-
-  // Weak phrases — show up on real challenge pages but ALSO on legitimate
-  // small error pages. Only count when the page is itself tiny (low node
-  // count or near-empty text), which is the corroborating signal that
-  // separates a real error UI from a challenge skeleton.
-  const WEAK_PHRASES = [
-    'please wait',
-    'request blocked',
-    'access denied',
-    'permission denied',
-    'unknown error',
-    'file a ticket',
-  ];
-  const tinyPage = (nodeCount !== undefined && nodeCount < 30) || text.trim().length < 50;
-  if (tinyPage && WEAK_PHRASES.some((p) => lower.includes(p))) return true;
-
-  return false;
-}
-
-function flattenTreeText(node) {
-  if (!node) return '';
-  let text = node.name || '';
-  for (const child of node.children || []) {
-    text += ' ' + flattenTreeText(child);
-  }
-  return text;
-}
+// isChallengePage (the hybrid-fallback gate) now lives in challenge.js so both
+// the CDP path here and the BiDi path (firefox-page.js) share it without a
+// circular import. Re-exported (from the local import above) so existing
+// importers of `src/index.js` and the public API keep working unchanged.
+export { isChallengePage };

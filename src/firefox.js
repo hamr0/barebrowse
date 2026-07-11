@@ -97,6 +97,7 @@ export function findFirefox() {
  * @param {string} [opts.proxy] - Proxy 'host:port' or 'scheme://host:port'
  *   (http/https → HTTP+SSL proxy; socks/socks5/socks4 → SOCKS), via prefs
  * @param {{width:number,height:number}} [opts.viewport] - Initial window size
+ * @param {string} [opts.downloadDir] - Route downloads here (throwaway dir), no prompt
  * @returns {Promise<{wsUrl: string, process: import('node:child_process').ChildProcess, port: number, ownedProfileDir: string}>}
  */
 export async function launchFirefox(opts = {}) {
@@ -114,6 +115,20 @@ export async function launchFirefox(opts = {}) {
     'user_pref("geo.prompt.testing", true);',
     'user_pref("geo.prompt.testing.allow", true);',
   ];
+  if (opts.downloadDir) {
+    // Route downloads to a caller-owned throwaway dir (parity with CDP's
+    // Browser.setDownloadBehavior) and never prompt — folderList:2 = custom dir.
+    // JSON.stringify emits a fully-escaped JS string literal (quotes, backslashes
+    // AND newlines/control chars), so a path can't inject extra user_pref lines.
+    const dir = JSON.stringify(String(opts.downloadDir));
+    prefs.push(
+      'user_pref("browser.download.folderList", 2);',
+      `user_pref("browser.download.dir", ${dir});`,
+      'user_pref("browser.download.useDownloadDir", true);',
+      'user_pref("browser.download.manager.showWhenStarting", false);',
+      'user_pref("browser.download.always_ask_before_handling_new_types", false);',
+    );
+  }
   if (opts.proxy) {
     // Honor the scheme: a socks:// proxy must be wired as SOCKS, not HTTP —
     // otherwise SOCKS traffic is silently sent to an HTTP proxy and fails.

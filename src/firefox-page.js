@@ -23,6 +23,8 @@ import { scopedCookiesForUrl } from './auth.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { dismissConsentFirefox } from './consent-firefox.js';
 import { waitForNetworkIdleBiDi } from './network-idle.js';
+import { decideDialog, dialogLogEntry } from './dialog.js';
+import { isChallengePage, countNodes } from './challenge.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -41,6 +43,9 @@ const BIDI_KEYS = {
  * @param {string} [opts.uploadDir] - When set, upload() rejects files outside this dir.
  * @param {boolean} [opts.incognito=false] - Clean session: injectCookies() is a no-op.
  * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs after goto().
+ * @param {boolean} [opts.hybrid=false] - Relaunch headed on a bot-challenge page and retry.
+ * @param {boolean} [opts.headed=false] - Whether the browser was launched headed (skips hybrid fallback).
+ * @param {?function(): Promise<{bidi: object, topContext: string}>} [opts.relaunchHeaded] - Hybrid relaunch hook (from connectFirefox).
  * @returns {Promise<object>} page object
  */
 export async function createFirefoxPage(bidi, opts = {}) {
@@ -49,6 +54,17 @@ export async function createFirefoxPage(bidi, opts = {}) {
   const uploadDir = opts.uploadDir || null;
   const incognito = !!opts.incognito;
   const consent = opts.consent !== false;
+  // Hybrid mode: on a bot-challenge page, relaunch headed and retry. The
+  // relaunch tears down this Firefox+BiDi and returns a fresh one, so the
+  // browser lifecycle is owned by connectFirefox, which supplies relaunchHeaded.
+  const hybrid = !!opts.hybrid;
+  const relaunchHeaded = opts.relaunchHeaded || null;
+  let currentlyHeaded = !!opts.headed; // already headed → no fallback needed
+  let botBlocked = false;
+  // Last injectCookies(url, opts) args, so a hybrid relaunch (a brand-new
+  // Firefox profile) can re-inject them — otherwise the headed retry loads
+  // unauthenticated, defeating hybrid on an auth-gated challenge page.
+  let lastInject = null;
   // The active browsing context. Starts at the initial tab; switchTab() points
   // it at another top-level context, so it's mutable and read via a getter.
   const { contexts } = await bidi.send('browsingContext.getTree', {});
@@ -170,6 +186,37 @@ export async function createFirefoxPage(bidi, opts = {}) {
     return Promise.race([p, t]).finally(() => clearTimeout(timer));
   }
 
+  // Download tracking, parity with the CDP `page.downloads` array. Firefox
+  // downloads land in `downloadDir` (a throwaway dir the caller sets via launch
+  // prefs — see connectFirefox / firefox.js), so `savedPath` is a real path the
+  // caller can read. BiDi emits browsingContext.downloadWillBegin (start) +
+  // downloadEnd (finish, with the actual filepath + status) — measured against
+  // real Firefox. Records mirror the CDP shape:
+  // { url, suggestedFilename, savedPath, state, totalBytes, receivedBytes }.
+  const downloads = [];
+  async function setupDownloads() {
+    await bidi.subscribe(['browsingContext.downloadWillBegin', 'browsingContext.downloadEnd']);
+    bidi.on('browsingContext.downloadWillBegin', (e) => {
+      downloads.push({
+        url: e.url,
+        suggestedFilename: e.suggestedFilename || '',
+        savedPath: null,
+        state: 'inProgress',
+        totalBytes: 0,
+        receivedBytes: 0,
+      });
+    });
+    bidi.on('browsingContext.downloadEnd', (e) => {
+      // Correlate to the most recent still-in-progress record for this URL.
+      const d = [...downloads].reverse().find((x) => x.url === e.url && x.state === 'inProgress');
+      if (!d) return;
+      // BiDi status is 'complete' | 'canceled'; normalize 'complete' to CDP's
+      // 'completed' so callers can branch on one vocabulary across engines.
+      d.state = e.status === 'complete' ? 'completed' : e.status || 'completed';
+      d.savedPath = e.filepath || null;
+    });
+  }
+
   // JS dialog handling (alert/confirm/prompt/beforeunload), parity with the
   // CDP path in index.js. The BiDi session is created with
   // unhandledPromptBehavior:'ignore' (see bidi.js) so prompts stay open until
@@ -182,32 +229,16 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function setupDialogs() {
     await bidi.subscribe(['browsingContext.userPromptOpened']);
     bidi.on('browsingContext.userPromptOpened', async (e) => {
-      dialogLog.push({
-        type: e.type,
-        message: e.message || '',
-        timestamp: new Date().toISOString(),
-      });
-      let accept = e.type !== 'beforeunload';
-      let userText = e.defaultValue || '';
-      if (onDialogHandler) {
-        try {
-          const decision = await onDialogHandler({
-            type: e.type,
-            message: e.message || '',
-            defaultPrompt: e.defaultValue || '',
-          });
-          if (decision && typeof decision === 'object') {
-            if (typeof decision.accept === 'boolean') accept = decision.accept;
-            if (typeof decision.promptText === 'string') userText = decision.promptText;
-          }
-        } catch {
-          // Handler threw — fall back to defaults so the prompt is still
-          // answered and the page doesn't hang on an 'ignore' dialog.
-        }
-      }
+      dialogLog.push(dialogLogEntry(e.type, e.message));
+      // Shared decision core with the CDP path (dialog.js). BiDi's userText is
+      // the CDP promptText; its defaultValue is the CDP defaultPrompt.
+      const { accept, promptText } = await decideDialog(
+        { type: e.type, message: e.message, defaultPrompt: e.defaultValue },
+        onDialogHandler,
+      );
       try {
         await bidi.send('browsingContext.handleUserPrompt', {
-          context: e.context, accept, userText,
+          context: e.context, accept, userText: promptText,
         });
       } catch {
         // Prompt already gone (closed by page JS / navigation). Nothing to do.
@@ -215,29 +246,83 @@ export async function createFirefoxPage(bidi, opts = {}) {
     });
   }
 
+  /**
+   * Wire all event subscriptions (dialogs, downloads, load) on the CURRENT
+   * bidi connection. Run once at construction, and again after a hybrid
+   * relaunch swaps in a fresh connection. Dialogs must be wired before any
+   * navigation (the 'ignore' capability would otherwise hang a prompt).
+   */
+  async function setupSubscriptions() {
+    await setupDialogs();
+    await setupDownloads();
+    await bidi.subscribe(['browsingContext.load']);
+  }
+
+  /**
+   * Post-navigation routine shared by goto() and the hybrid retry: settle for
+   * dynamic content, auto-dismiss consent (best-effort), then report whether
+   * the resulting page looks like a bot challenge.
+   */
+  async function afterNavigate() {
+    await new Promise((r) => setTimeout(r, 500));
+    // Build the tree ONCE and use it for both consent dismissal and challenge
+    // detection. A challenge page (Cloudflare/hCaptcha) never carries a consent
+    // banner, so dismissing consent can't flip the challenge verdict — reusing
+    // the pre-dismiss tree avoids a second full AX reconstruction per goto.
+    let root = null;
+    try { root = await buildTree(); } catch { /* null → treated as challenge */ }
+    if (consent && root) {
+      try { await dismissConsentFirefox(root, (ref) => pointerClick(ref)); }
+      catch { /* consent dismissal is best-effort */ }
+    }
+    return isChallengePage(root, countNodes(root));
+  }
+
   const page = {
     /** The BiDi escape hatch, analogous to connect()'s page.cdp. */
     get bidi() { return bidi; },
     /** The active browsing-context id (getter so it tracks switchTab). */
     get context() { return topContext; },
+    /** Whether the last goto() landed on a bot-challenge page (parity w/ CDP). */
+    get botBlocked() { return botBlocked; },
 
     async goto(url, timeout = 30000) {
       // Same navigation guard the CDP path enforces — block file:/chrome:/
       // view-source: and (optionally) private-network hosts before navigating.
       assertNavigable(url, urlGuard);
+      refContexts = new Map(); // refs from the previous page are now stale
       await withTimeout(
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
         timeout, `goto(${url})`);
-      // Brief settle for dynamic/SPA content, matching the CDP path.
-      await new Promise((r) => setTimeout(r, 500));
-      // Auto-dismiss cookie consent, mirroring the CDP path (index.js runs
-      // dismissConsent right after navigate). Best-effort: a failure here must
-      // never fail the navigation.
-      if (consent) {
+      // Settle + consent + challenge detection (mirrors the CDP path).
+      botBlocked = await afterNavigate();
+
+      // Hybrid fallback: on a bot-challenge page, relaunch headed once and
+      // retry — a real display often clears an interstitial headless can't.
+      // Only when hybrid mode and we're still headless. relaunchHeaded (from
+      // connectFirefox) tears down this Firefox+BiDi and returns a fresh one.
+      if (botBlocked && hybrid && !currentlyHeaded && relaunchHeaded) {
         try {
-          const root = await buildTree();
-          if (root) await dismissConsentFirefox(root, (ref) => pointerClick(ref));
-        } catch { /* consent dismissal is best-effort */ }
+          const relaunched = await relaunchHeaded();
+          bidi = relaunched.bidi;          // rebind the closure — all inner fns follow
+          topContext = relaunched.topContext;
+          currentlyHeaded = true;
+          refContexts = new Map();
+          await setupSubscriptions();      // re-wire dialogs/downloads/load on the new bidi
+          // Re-inject cookies into the fresh profile BEFORE navigating, so the
+          // headed retry is authenticated (the relaunch is a new Firefox profile
+          // — the pre-relaunch session's cookies are gone).
+          if (lastInject) {
+            try { await page.injectCookies(lastInject.url, lastInject.cookieOpts); } catch { /* best-effort */ }
+          }
+          await withTimeout(
+            bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
+            timeout, `goto(${url})`);
+          botBlocked = await afterNavigate();
+        } catch {
+          // Headed relaunch failed (no display?) — keep the headless result;
+          // botBlocked stays true so the caller can see it didn't clear.
+        }
       }
     },
 
@@ -308,6 +393,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
      */
     async injectCookies(url, cookieOpts) {
       if (incognito) return 0;
+      lastInject = { url, cookieOpts }; // remember for a hybrid re-inject
       const cookies = scopedCookiesForUrl(url, { browser: cookieOpts?.browser });
       let injected = 0;
       for (const c of cookies) {
@@ -456,14 +542,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
       return waitForNetworkIdleBiDi(bidi, idleOpts);
     },
 
-    // --- CDP-only surfaces, stubbed for daemon parity ---------------------
-    // The daemon (src/daemon.js) dispatches these unconditionally. On the
-    // Firefox/BiDi engine download tracking isn't wired (Phase 4), so downloads
-    // is genuinely empty; saveState/waitForNavigation are CDP-only and fail with
-    // a clear, intentional message instead of an incidental TypeError.
-    // (dialogLog + onDialog ARE wired — Phase 3, see setupDialogs above.)
-    // Documented as a known gap in CHANGELOG.
-    get downloads() { return []; },
+    /** Downloads that began in this session (Phase 4 — see setupDownloads). */
+    get downloads() { return downloads; },
 
     dialogLog,
 
@@ -477,11 +557,57 @@ export async function createFirefoxPage(bidi, opts = {}) {
       onDialogHandler = handler;
     },
 
-    async saveState() {
-      throw new Error('saveState() is not supported on the Firefox/BiDi engine (CDP-only)');
+    /**
+     * Persist cookies + localStorage to a JSON file (parity with the CDP
+     * saveState). Cookies come from BiDi storage.getCookies (whose value is a
+     * `{type,value}` object) and are flattened to the CDP-symmetric shape so the
+     * file format matches across engines. Written 0600 — it holds session
+     * tokens, so a multi-user host must not be able to read another user's.
+     */
+    async saveState(filePath) {
+      const { cookies } = await bidi.send('storage.getCookies', {});
+      const flat = cookies.map((c) => {
+        const out = {
+          name: c.name,
+          value: c.value && typeof c.value === 'object' ? c.value.value : c.value,
+          domain: c.domain,
+          path: c.path,
+          secure: !!c.secure,
+          httpOnly: !!c.httpOnly,
+        };
+        if (c.sameSite && c.sameSite !== 'default') out.sameSite = c.sameSite;
+        if (c.expiry && c.expiry > 0) out.expires = c.expiry;
+        return out;
+      });
+      const lsRaw = await bidi
+        .evaluate(topContext, 'JSON.stringify(Object.fromEntries(Object.entries(localStorage)))', false)
+        .catch(() => '{}'); // opaque-origin pages (about:blank) throw — treat as empty
+      const state = { cookies: flat, localStorage: JSON.parse(lsRaw || '{}') };
+      const { writeFileSync, chmodSync } = await import('node:fs');
+      writeFileSync(filePath, JSON.stringify(state, null, 2), { mode: 0o600 });
+      try { chmodSync(filePath, 0o600); } catch { /* best effort if pre-existing */ }
     },
-    async waitForNavigation() {
-      throw new Error('waitForNavigation() is not supported on the Firefox/BiDi engine (CDP-only)');
+
+    /**
+     * Resolve when the active tab fires its next load event (parity with the
+     * CDP waitForNavigation → Page.loadEventFired). Scoped to topContext so a
+     * subframe load can't resolve it early. Falls back to a short settle delay
+     * for SPA navigations that fire no load event.
+     */
+    async waitForNavigation(timeout = 30000) {
+      try {
+        await /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
+          const timer = setTimeout(() => { unsub(); reject(new Error('waitForNavigation timed out')); }, timeout);
+          const unsub = bidi.on('browsingContext.load', (e) => {
+            if (e.context !== topContext) return;
+            clearTimeout(timer); unsub(); resolve();
+          });
+        }));
+        refContexts = new Map(); // the DOM changed — old refs are stale
+      } catch {
+        // No load event (SPA pushState/replaceState) — settle for DOM updates.
+        await new Promise((r) => setTimeout(r, 500));
+      }
     },
 
     async close() {
@@ -499,9 +625,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     await new Promise((r) => setTimeout(r, 500));
   }
 
-  // Wire the dialog handler before returning — must precede any navigation so
-  // an 'ignore' prompt (see bidi.js capability) is never left hanging.
-  await setupDialogs();
+  // Wire event subscriptions before returning — dialogs must precede any
+  // navigation so an 'ignore' prompt (see bidi.js capability) is never hung.
+  await setupSubscriptions();
 
   return page;
 }

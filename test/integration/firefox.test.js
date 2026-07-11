@@ -561,3 +561,113 @@ describe('connect({ engine: firefox }) — JS dialogs (Phase 3)', { skip: !hasFi
     }
   });
 });
+
+describe('connect({ engine: firefox }) — saveState (Phase 4)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  // A real (non-opaque) origin so cookies persist and localStorage is writable
+  // — data: URLs have an opaque origin where both fail (measured in the POC).
+  let server, origin;
+  before(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'set-cookie': 'sess=abc123; Path=/', 'content-type': 'text/html' });
+      res.end('<script>localStorage.setItem("token","xyz")</script>hello');
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    origin = `http://127.0.0.1:${server.address().port}/`;
+  });
+  after(() => server?.close());
+
+  it('writes cookies + localStorage to a 0600 JSON file (CDP-symmetric shape)', async () => {
+    const { mkdtempSync, readFileSync, statSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const file = join(mkdtempSync(join(tmpdir(), 'bb-state-')), 'state.json');
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(origin);
+      await page.saveState(file);
+      const state = JSON.parse(readFileSync(file, 'utf8'));
+      // Flattened cookie shape (value is a plain string, not BiDi's {type,value}).
+      const c = state.cookies.find((x) => x.name === 'sess');
+      assert.ok(c, 'session cookie captured');
+      assert.equal(c.value, 'abc123', 'cookie value flattened to a string');
+      assert.equal(c.domain, '127.0.0.1');
+      assert.equal(state.localStorage.token, 'xyz', 'localStorage captured');
+      // Owner-only — it holds session tokens (security invariant).
+      assert.equal(statSync(file).mode & 0o777, 0o600, 'state file is 0600');
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe('connect({ engine: firefox }) — waitForNavigation (Phase 4)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  // A real http origin: Firefox blocks top-level data: navigation from links,
+  // so a data:→data: click never fires a load. Two same-origin routes let a
+  // real click drive a real navigation whose load event we wait on.
+  let server, origin;
+  before(async () => {
+    server = createServer((req, res) => {
+      res.writeHead(200, { 'content-type': 'text/html' });
+      res.end(req.url.startsWith('/second')
+        ? '<body>SECOND PAGE</body>'
+        : '<body><a id="go" href="/second">go</a></body>');
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    origin = `http://127.0.0.1:${server.address().port}/`;
+  });
+  after(() => server?.close());
+
+  it('resolves on the next top-context load event', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(origin);
+      const ref = (await page.snapshot()).match(/link[^\n]*\[ref=(\d+)\]/);
+      assert.ok(ref, 'link ref present');
+      // Kick off the nav and wait for its load — must resolve, not time out.
+      const waited = page.waitForNavigation(10000);
+      await page.click(ref[1]);
+      await waited;
+      const body = await page.bidi.evaluate(page.context, 'document.body.innerText', false);
+      assert.match(body, /SECOND PAGE/, 'navigation completed');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('falls back to a settle delay when no load event fires (SPA)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<body>spa</body>'));
+      // No navigation triggered → short timeout → resolves via settle, no throw.
+      await page.waitForNavigation(600);
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+describe('connect({ engine: firefox }) — downloads (Phase 4)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  it('records a completed download with a savedPath in the throwaway dir', async () => {
+    const { readFileSync } = await import('node:fs');
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<a id="d" href="data:application/octet-stream,helloworld" download="f.bin">dl</a>'));
+      const ref = (await page.snapshot()).match(/link[^\n]*\[ref=(\d+)\]/);
+      assert.ok(ref, 'download link ref present');
+      await page.click(ref[1]);
+      // Wait for downloadEnd to populate the record.
+      const deadline = Date.now() + 8000;
+      while (Date.now() < deadline && !(page.downloads[0] && page.downloads[0].state === 'completed')) {
+        await new Promise((r) => setTimeout(r, 200));
+      }
+      const d = page.downloads[0];
+      assert.ok(d, 'a download was recorded');
+      assert.equal(d.suggestedFilename, 'f.bin');
+      assert.equal(d.state, 'completed', 'normalized to CDP-style "completed"');
+      assert.ok(d.savedPath, 'savedPath filled from downloadEnd filepath');
+      assert.equal(readFileSync(d.savedPath, 'utf8'), 'helloworld', 'file landed on disk');
+    } finally {
+      await page.close();
+    }
+  });
+});

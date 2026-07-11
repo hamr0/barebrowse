@@ -33,8 +33,10 @@ not impossible:
 | Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | **done (v0.17.0)** |
 | Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | **done (v0.17.0)** |
 | Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened` + `handleUserPrompt` | **done (v0.18.0)** |
-| Hybrid (headless→headed) | orchestration (engine-agnostic) | same logic on FF path | reuse |
-| Downloads | `Browser.downloadWillBegin` | BiDi download events (Firefox: partial) | partial |
+| Hybrid (headless→headed) | orchestration (engine-agnostic) | relaunch + rebind on FF path | **done (Phase 4)** |
+| `saveState` | `Network.getAllCookies` + localStorage | `storage.getCookies` + `script.evaluate` | **done (Phase 4)** |
+| `waitForNavigation` | `Page.loadEventFired` | `browsingContext.load` | **done (Phase 4)** |
+| Downloads | `Browser.downloadWillBegin` | `browsingContext.downloadWillBegin`/`downloadEnd` | **done (Phase 4)** |
 | `reload({ignoreCache})` | CDP flag | not yet in Firefox BiDi | upstream |
 | **Full AX-tree fidelity** | `Accessibility.getFullAXTree` | none — reconstruct in-page | ongoing |
 
@@ -59,8 +61,15 @@ catch-all + in-process glob match against the shared blocklist) and JS dialog
 handling (`browsingContext.userPromptOpened` → `handleUserPrompt`, with
 `dialogLog` + `page.onDialog`).
 
-**Remaining gaps (documented known-limitations):** hybrid, `saveState`,
-`waitForNavigation`, downloads, `reload({ignoreCache})`.
+**Added in Phase 4:** hybrid mode (relaunch headed on a bot-challenge page and
+rebind the page to the fresh BiDi connection), `saveState` (`storage.getCookies`
++ localStorage), `waitForNavigation` (`browsingContext.load`), and download
+tracking (`browsingContext.downloadWillBegin`/`downloadEnd` → `page.downloads`,
+into a throwaway download dir). The challenge heuristic and the JS-dialog
+decision core are now shared across engines (`challenge.js`, `dialog.js`).
+
+**Remaining gaps (documented known-limitations):** `reload({ignoreCache})`
+(upstream BiDi gap — no local fix), and AX-tree fidelity (Phase 5, ongoing).
 
 ## Phased roadmap
 
@@ -151,17 +160,49 @@ than the one removed. Measured baseline: only `navigator.webdriver` was a tell
   dialog-handler coupling + CDP↔BiDi decision duplication) — see the PRD
   "Firefox ad-block + dialogs" limitations block.
 
-### Phase 4 — Resilience + remaining methods
-- **Hybrid-equivalent:** on a detected challenge page, relaunch headed — reuse
-  the CDP orchestration; it's engine-agnostic.
-- **`saveState`:** cookies via `storage.getCookies` + localStorage via
-  `script.evaluate`; replace that stub.
-- **`waitForNavigation`:** resolve on `browsingContext.navigationStarted` →
-  `load`; replace that stub.
-- **Downloads:** wire BiDi download events where Firefox supports them; document
-  residual gaps.
-- **`reload({ignoreCache})`:** track the Firefox BiDi feature; enable when
-  available (upstream-blocked, no local fix).
+### Phase 4 — Resilience + remaining methods — ✅ shipped
+
+POC-first measured real Firefox before wiring (the Phase 1–3 lesson held again):
+cookie/localStorage shapes differ on real vs opaque (`data:`) origins;
+`browsingContext.load` fires reliably on the top context; Firefox **does** emit
+`downloadWillBegin`/`downloadEnd` (with `suggestedFilename`/`filepath`/`status`)
+and honors `browser.download.*` prefs to redirect off the user's `~/Downloads`.
+
+- **Hybrid** (`mode:'hybrid'`): the FF browser+BiDi lifecycle lives in
+  `connectFirefox`, not the page, so hybrid needed a **relaunch hook**. On a
+  challenge (`isChallengePage`, now shared in `challenge.js`), `goto()` calls
+  `relaunchHeaded()` — launch headed *first* (failure leaves the session
+  intact), tear down the headless one, hand back the fresh `{bidi, topContext}`.
+  The page reassigns its closure `bidi`/`topContext`, re-wires subscriptions
+  (dialogs/downloads/load), re-navigates, and re-checks. A failed relaunch (no
+  display) keeps the headless result with `botBlocked` visible.
+- **`saveState`:** `storage.getCookies` (whose value is a `{type,value}` object)
+  flattened to the CDP-symmetric cookie shape + localStorage via
+  `script.evaluate`; written `0600` (holds session tokens).
+- **`waitForNavigation`:** resolves on the next `browsingContext.load` scoped to
+  `topContext` (a subframe load can't resolve it early), SPA settle fallback.
+- **Downloads:** `browsingContext.downloadWillBegin`/`downloadEnd` →
+  `page.downloads` (CDP-shaped: `{url, suggestedFilename, savedPath, state,
+  totalBytes, receivedBytes}`; BiDi `complete` → CDP `completed`). Files land in
+  a throwaway dir `connectFirefox` owns + reaps (or the caller's `downloadPath`).
+- **`reload({ignoreCache})`:** still upstream-blocked — Firefox BiDi has no
+  ignoreCache argument. Documented; no local fix.
+- **Accepted parity limitation:** `page.botBlocked` is refreshed only by
+  `goto()`, not by `reload`/`goBack`/`goForward` — identical to the CDP path, so
+  left as-is rather than diverging (a refresh would add a full AX rebuild to
+  those paths). Surfaced by a medium code review; the review also hardened the
+  hybrid path (re-inject cookies on relaunch), collapsed the post-nav double AX
+  build into one, and switched the download-dir pref to `JSON.stringify`
+  escaping.
+- **Shared cores:** `challenge.js` (`isChallengePage` + `countNodes`) and
+  `dialog.js` (`decideDialog` + `dialogLogEntry`) now single-source the
+  challenge heuristic and the JS-dialog decision across both engines — the
+  latter folds in Phase-3 review finding #5.
+- **Tests:** `test/unit/firefox-hybrid.test.js` (5, fake-BiDi orchestration:
+  relaunch-once, and the four suppression cases) + Firefox integration
+  (saveState 0600 + flattened shape; waitForNavigation on a hermetic two-route
+  server + SPA fallback; download lands on disk with a normalized `completed`
+  state).
 
 ### Phase 5 — AX-tree fidelity *(ongoing, never 100%)*
 - **Fidelity harness:** snapshot a fixture corpus on **both** engines, diff the

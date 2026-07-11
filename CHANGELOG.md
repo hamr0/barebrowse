@@ -1,5 +1,43 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Firefox/BiDi resilience + remaining methods (parity plan Phase 4).** The
+  Firefox engine reaches practical parity with the Chromium/CDP engine — four
+  CDP-only surfaces now work the same over WebDriver BiDi:
+  - **Hybrid mode** (`mode: 'hybrid'`). On a bot-challenge page (Cloudflare "Just
+    a moment", hCaptcha, etc.) the Firefox engine now relaunches **headed** and
+    retries, exactly like the CDP path — a real display often clears an
+    interstitial headless can't. The relaunch tears down the headless
+    Firefox+BiDi and hands a fresh connection back to the page, which rebinds to
+    it; a failed relaunch (no display) keeps the headless result. Cookies
+    injected before the challenge are **re-injected into the fresh headed
+    profile** so the retry stays authenticated. The challenge heuristic
+    (`isChallengePage`) is now shared by both engines (`challenge.js`).
+  - **`page.saveState(file)`** — persists cookies (`storage.getCookies`) +
+    localStorage (`script.evaluate`) to a `0600` JSON file, flattened to the
+    same shape the CDP path writes (was a throwing stub).
+  - **`page.waitForNavigation()`** — resolves on the next top-context
+    `browsingContext.load` event, with an SPA settle fallback (was a stub).
+  - **`page.downloads`** — real download tracking via
+    `browsingContext.downloadWillBegin`/`downloadEnd`. Downloads land in a
+    throwaway dir (Firefox `browser.download.*` prefs, parity with CDP's
+    `setDownloadBehavior`) and each record carries `{url, suggestedFilename,
+    savedPath, state}` with BiDi's `complete` normalized to CDP's `completed`
+    (was always empty).
+
+  BiDi mechanics were POC-measured against real Firefox before wiring (cookie/
+  localStorage shapes on real vs opaque origins; the `load` event sequence; that
+  Firefox emits `downloadWillBegin`/`downloadEnd` and honors the download-dir
+  prefs). The shared JS-dialog decision core was also extracted to `dialog.js`
+  (both engines — Phase-3 review finding #5). Guarded by
+  `test/unit/firefox-hybrid.test.js` (5, fake-BiDi orchestration) and Firefox
+  integration tests (saveState, waitForNavigation ×2, downloads).
+  Still Firefox-limited: `reload({ignoreCache})` (upstream BiDi gap, no local
+  fix).
+
 ## [0.18.0] - 2026-07-11
 
 ### Added
