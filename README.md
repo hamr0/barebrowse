@@ -96,15 +96,15 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-19 tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
+MCP tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`. Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
 
-`browse` and `snapshot` accept `pruneMode: 'act'|'read'` (v0.9.1). `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch.
+`browse` and `snapshot` accept `pruneMode: 'act'|'read'`. `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch.
 
 Troubleshooting MCP setup: `npx barebrowse doctor` scans every known config location and flags scope conflicts. `npx barebrowse install --force` overwrites an existing entry pointing at a different endpoint.
 
 ### 3. Library -- for agentic automation
 
-Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (18 tools, auto-snapshot after every action).
+Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (auto-snapshot after every action).
 
 For code examples, API reference, and wiring instructions, see **[barebrowse.context.md](barebrowse.context.md)** -- the full integration guide.
 
@@ -112,9 +112,11 @@ For code examples, API reference, and wiring instructions, see **[barebrowse.con
 
 | Mode | What happens | Best for |
 |------|-------------|----------|
-| **Headless** (default) | Launches a fresh Chromium, no UI | Fast automation, scraping, reading pages |
-| **Headed** | Auto-launches a visible Chromium window | Bot-detected sites, visual debugging, CAPTCHAs |
+| **Headless** (default) | Launches a fresh browser, no UI | Fast automation, scraping, reading pages |
+| **Headed** | Auto-launches a visible browser window | Bot-detected sites, visual debugging, CAPTCHAs |
 | **Hybrid** | Tries headless first, auto-launches headed if blocked | General-purpose agent browsing |
+
+All three work on both engines (Chromium/CDP and Firefox/BiDi).
 
 ### Attach to your already-running browser
 
@@ -135,25 +137,22 @@ await page.close(); // closes only the tab barebrowse opened — your browser ke
 ### Firefox (WebDriver BiDi)
 
 CDP is deprecated in Firefox, so barebrowse drives it over the W3C WebDriver
-BiDi protocol instead — a second transport over the same `ws` dependency, no
-extra download. Same `page.*` API (the ARIA snapshot is reconstructed in-page
-since BiDi has no `getFullAXTree`):
+BiDi protocol — a second transport over the same `ws` dependency, no extra
+download. Same `page.*` API (the ARIA snapshot is reconstructed in-page since
+BiDi has no `getFullAXTree`):
 
 ```js
-const page = await connect({ engine: 'firefox' }); // headless by default
+const page = await connect({ engine: 'firefox' });
 ```
 
-From the CLI: `barebrowse open <url> --engine firefox`. From MCP: set
-`BAREBROWSE_ENGINE=firefox`. Firefox cookies (plaintext) reuse into the same
-engine. Consent auto-dismiss and headless stealth (v0.16.0), the daemon's
-console/network capture and `waitForNetworkIdle` (v0.17.0), ad/tracker blocking
-plus JS dialog handling (`dialogLog`/`onDialog`, v0.18.0), and — as of Phase 4 —
-`hybrid` mode, `saveState`, `waitForNavigation`, and download tracking
-(`page.downloads`) all work on Firefox too. Chromium (CDP) remains the default.
-The only remaining Firefox gap is `reload({ignoreCache})` (an upstream BiDi
-limitation).
+CLI: `barebrowse open <url> --engine firefox`. MCP: `BAREBROWSE_ENGINE=firefox`.
+Firefox cookies (plaintext) reuse into the same engine.
 
-No clone profile, no fresh cookies — the agent sees what you see.
+Firefox is at practical parity with Chromium: stealth, consent auto-dismiss,
+ad/tracker blocking, JS dialogs, console/network capture, hybrid fallback,
+`saveState`, `waitForNavigation`, and download tracking all work the same way.
+Chromium (CDP) stays the default; the only remaining gap is
+`reload({ignoreCache})` (upstream BiDi limitation).
 
 ### Incognito (clean session)
 
@@ -172,9 +171,9 @@ From the CLI: `barebrowse open <url> --incognito`. From MCP: set
 
 ## What it handles automatically
 
-Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (ARIA node count heuristic + stealth patches + automatic headed fallback — snapshot shows `[BOT CHALLENGE DETECTED]` warning when blocked), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
+Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (challenge-phrase + node-count heuristic + stealth patches + automatic headed fallback — snapshot shows `[BOT CHALLENGE DETECTED]` warning when blocked), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
-## Safe by default (v0.11.0)
+## Safe by default
 
 barebrowse hands an autonomous — and therefore prompt-injectable — agent an *authenticated* browser, so the defaults are calibrated for that threat:
 
@@ -225,18 +224,14 @@ Everything the agent can do through barebrowse:
 | **Wait for network idle** | Resolve when no pending requests for 500ms |
 | **Dialog handling** | Auto-dismiss JS alert/confirm/prompt dialogs |
 | **Save state** | Export cookies + localStorage to JSON |
-| **Inject cookies** | Extract from Firefox/Chromium and inject via CDP |
-| **Raw CDP** | Escape hatch for any Chrome DevTools Protocol command |
+| **Inject cookies** | Extract from Firefox/Chromium and inject into the session (CDP or BiDi) |
+| **Raw CDP / BiDi** | Escape hatch: `page.cdp` (Chromium) or `page.bidi` (Firefox) for any low-level command |
 
 ## Tested against
 
 16+ sites across 8 countries, all consent dialogs dismissed, all interactions working:
 
 Google, YouTube, BBC, Wikipedia, GitHub, DuckDuckGo, Hacker News, Amazon DE, The Guardian, Spiegel, Le Monde, El Pais, Corriere, NOS, Bild, Nu.nl, Booking, NYT, Stack Overflow, CNN, Reddit
-
-## Context file
-
-**[barebrowse.context.md](barebrowse.context.md)** is the full integration guide. Feed it to an AI assistant or read it yourself -- it covers the complete API, snapshot format, interaction loop, auth options, bareagent wiring, MCP setup, and gotchas. Everything you need to wire barebrowse into a project.
 
 ## How it works
 
@@ -249,12 +244,15 @@ URL -> find/launch browser (chromium.js)
     -> navigate to URL, wait for load
     -> detect + dismiss cookie consent dialogs (consent.js)
     -> get full ARIA accessibility tree (aria.js)
-    -> 9-step pruning pipeline from mcprune (prune.js)
+    -> pruning pipeline from mcprune (prune.js)
     -> dispatch real input events: click/type/scroll (interact.js)
     -> agent-ready snapshot with [ref=N] markers
 ```
 
-14 modules, ~3,000 lines, two small dependencies (`ws`, `@mozilla/readability`).
+Firefox follows the same flow over WebDriver BiDi (`bidi.js`), with the AX tree
+reconstructed in-page (`ax-snapshot.js`) and pruning/formatting shared verbatim.
+
+A small set of focused modules, two small dependencies (`ws`, `@mozilla/readability`).
 
 ## Requirements
 

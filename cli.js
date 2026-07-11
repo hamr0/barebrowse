@@ -487,7 +487,7 @@ Session:
     --engine=chromium|firefox       Browser engine (default: chromium/CDP;
                                     firefox drives over WebDriver BiDi)
     --mode=headless|headed|hybrid   Browser mode (default: headless;
-                                    hybrid is chromium-only)
+                                    hybrid works on both engines)
     --port=N                        CDP port for headed mode
     --no-cookies                    Skip cookie injection
     --incognito                     Clean, unauthenticated session (skip all auth injection)
