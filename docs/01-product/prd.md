@@ -316,7 +316,7 @@ This section exists so we don't re-debate settled decisions.
 - **Network interception** — `Fetch.enable` + URL patterns for blocking trackers/ads or mocking responses. Still queued.
 
 ### Medium-term
-- **Firefox support** — *(Done: `connect({ engine: 'firefox' })` drives Firefox over WebDriver BiDi via `bidi.js` + `firefox.js`, with the AX tree reconstructed in-page by `ax-snapshot.js`. Covers `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `upload`, `goBack`/`goForward`, `reload`, `screenshot`, `pdf`, `tabs`/`switchTab`, `waitFor`, `readable`, `injectCookies`, `close`. Selectable from MCP via `BAREBROWSE_ENGINE=firefox` and from the CLI via `barebrowse open --engine firefox`. Verified for accname fidelity, iframes, shadow DOM, CSP, SPA timing, navigation, capture, and the CLI/MCP paths in `test/integration/firefox.test.js` + smoke tests. **Known gaps:** consent auto-dismiss and stealth landed on Firefox in v0.16.0 (BiDi parity Phase 1); the daemon's console/network capture and `waitForNetworkIdle` landed in v0.17.0 (Phase 2, over BiDi `log.entryAdded`/`network.*` events); hybrid fallback and ad/tracker blocking remain chromium-only; accname is a high-value subset of the W3C spec; and `reload` can't honour `ignoreCache` (Firefox BiDi doesn't support it yet).)*
+- **Firefox support** — *(Done: `connect({ engine: 'firefox' })` drives Firefox over WebDriver BiDi via `bidi.js` + `firefox.js`, with the AX tree reconstructed in-page by `ax-snapshot.js`. Covers `goto`, `snapshot`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `drag`, `upload`, `goBack`/`goForward`, `reload`, `screenshot`, `pdf`, `tabs`/`switchTab`, `waitFor`, `readable`, `injectCookies`, `close`. Selectable from MCP via `BAREBROWSE_ENGINE=firefox` and from the CLI via `barebrowse open --engine firefox`. Verified for accname fidelity, iframes, shadow DOM, CSP, SPA timing, navigation, capture, and the CLI/MCP paths in `test/integration/firefox.test.js` + smoke tests. **Known gaps:** consent auto-dismiss and stealth landed on Firefox in v0.16.0 (BiDi parity Phase 1); the daemon's console/network capture and `waitForNetworkIdle` landed in v0.17.0 (Phase 2, over BiDi `log.entryAdded`/`network.*` events); ad/tracker blocking and JS dialog handling (`dialogLog`/`onDialog`) landed in Phase 3 (over a catch-all `network.addIntercept` + in-process glob match, and `browsingContext.userPromptOpened`/`handleUserPrompt`); hybrid fallback remains chromium-only; accname is a high-value subset of the W3C spec; and `reload` can't honour `ignoreCache` (Firefox BiDi doesn't support it yet).)*
 
   **Known limitations — Firefox stealth + consent (v0.16.0, validated in a code
   review; slated for Phase 5 revisit with a cross-engine fidelity harness):**
@@ -347,6 +347,41 @@ This section exists so we don't re-debate settled decisions.
     it as an *own* property instead, the delete would miss it and the
     `defineProperty` fallback would restore the `hasOwnProperty` tell. Does not
     occur on current Chromium/Firefox (prototype property), so it is latent.
+
+  **Known limitations — Firefox ad-block + dialogs (Phase 3, validated in a
+  medium code review; two review findings fixed, three recorded here as
+  accepted):**
+  - *Per-request intercept cost (accepted design).* BiDi's `network.addIntercept`
+    can't express our globs (`urlPatterns` reject `*` and have no subdomain
+    wildcard), so the Firefox path registers a **catch-all** intercept and
+    matches each URL in-process, pausing every request for one continue/fail
+    round-trip to Node (CDP matches browser-side with none). Negligible on a
+    local socket for a normal page; it is the only route that preserves glob
+    parity without a second list. `src/blocklist-firefox.js`.
+  - *Suspended request on a missing id (latent).* The block handler acts only on
+    a paused event carrying `e.request.request`; if one ever arrived without an
+    id it early-returns, leaving that request suspended (no id ⇒ neither
+    `continueRequest` nor `failRequest` is callable — there is no safe default).
+    Does not occur in practice (paused events always carry an id), so it is
+    latent. *(review finding #2 — unfixable without an id; recorded not papered.)*
+  - *Dialog-handler coupling (structural).* The BiDi session is created with
+    `unhandledPromptBehavior:'ignore'` in `bidi.js` (so a prompt stays open until
+    we answer it — otherwise Firefox auto-dismisses before `handleUserPrompt`
+    wins). The mandatory responder lives in `firefox-page.setupDialogs()`, wired
+    during page construction before any navigation. The capability *must* be set
+    at `session.new` time (only `bidi.js` can), so it can't be co-located with
+    the handler; the invariant "every FF session that sets `'ignore'` also wires
+    a responder" is held by construction (the only `createBiDi` caller is
+    `connectFirefox`) rather than enforced in one place. A future `createBiDi`
+    caller that skips the handler would hang on any dialog. *(review finding #3.)*
+  - *Dialog decision logic duplicated CDP↔BiDi.* `firefox-page.setupDialogs()`
+    reimplements the log-push + `onDialog` decision core of index.js's
+    `setupDialogHandler` (only the response command and field names differ:
+    `handleUserPrompt`/`defaultValue`/`userText` vs
+    `handleJavaScriptDialog`/`defaultPrompt`/`promptText`). Left duplicated for
+    now to avoid refactoring the stable CDP path; slated to share a
+    `decideDialog()` core when Phase 4 next touches dialogs
+    (`waitForNavigation`). *(review finding #5.)*
 - **Cookie sync** — In hybrid mode, extract fresh cookies from headed session and cache for future headless use. Self-refreshing auth.
 - **Selector discovery** — Port sweetlink's `discoverSelectors` — crawl ARIA tree, score interactive elements, return ranked action targets.
 - **Form understanding** — Detect forms in ARIA tree, map fields to semantic purposes, enable agents to fill forms intelligently.

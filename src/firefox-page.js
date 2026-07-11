@@ -170,6 +170,51 @@ export async function createFirefoxPage(bidi, opts = {}) {
     return Promise.race([p, t]).finally(() => clearTimeout(timer));
   }
 
+  // JS dialog handling (alert/confirm/prompt/beforeunload), parity with the
+  // CDP path in index.js. The BiDi session is created with
+  // unhandledPromptBehavior:'ignore' (see bidi.js) so prompts stay open until
+  // we respond; setupDialogs() must run before the first navigation or an
+  // 'ignore' prompt would hang the page. Default: accept everything except
+  // beforeunload (dismiss = stay), mirroring the CDP default. A caller can
+  // override per-dialog via page.onDialog(handler).
+  const dialogLog = [];
+  let onDialogHandler = null;
+  async function setupDialogs() {
+    await bidi.subscribe(['browsingContext.userPromptOpened']);
+    bidi.on('browsingContext.userPromptOpened', async (e) => {
+      dialogLog.push({
+        type: e.type,
+        message: e.message || '',
+        timestamp: new Date().toISOString(),
+      });
+      let accept = e.type !== 'beforeunload';
+      let userText = e.defaultValue || '';
+      if (onDialogHandler) {
+        try {
+          const decision = await onDialogHandler({
+            type: e.type,
+            message: e.message || '',
+            defaultPrompt: e.defaultValue || '',
+          });
+          if (decision && typeof decision === 'object') {
+            if (typeof decision.accept === 'boolean') accept = decision.accept;
+            if (typeof decision.promptText === 'string') userText = decision.promptText;
+          }
+        } catch {
+          // Handler threw — fall back to defaults so the prompt is still
+          // answered and the page doesn't hang on an 'ignore' dialog.
+        }
+      }
+      try {
+        await bidi.send('browsingContext.handleUserPrompt', {
+          context: e.context, accept, userText,
+        });
+      } catch {
+        // Prompt already gone (closed by page JS / navigation). Nothing to do.
+      }
+    });
+  }
+
   const page = {
     /** The BiDi escape hatch, analogous to connect()'s page.cdp. */
     get bidi() { return bidi; },
@@ -413,12 +458,25 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     // --- CDP-only surfaces, stubbed for daemon parity ---------------------
     // The daemon (src/daemon.js) dispatches these unconditionally. On the
-    // Firefox/BiDi engine download tracking and dialog capture aren't wired
-    // (Phase 3/4), so the two logs are genuinely empty; the two actions are
-    // CDP-only and fail with a clear, intentional message instead of an
-    // incidental TypeError. Documented as a known gap in CHANGELOG.
+    // Firefox/BiDi engine download tracking isn't wired (Phase 4), so downloads
+    // is genuinely empty; saveState/waitForNavigation are CDP-only and fail with
+    // a clear, intentional message instead of an incidental TypeError.
+    // (dialogLog + onDialog ARE wired — Phase 3, see setupDialogs above.)
+    // Documented as a known gap in CHANGELOG.
     get downloads() { return []; },
-    get dialogLog() { return []; },
+
+    dialogLog,
+
+    /**
+     * Install a custom JS dialog handler, mirroring connect()'s page.onDialog.
+     * Called with `{ type, message, defaultPrompt }`; may return (sync or async)
+     * `{ accept: bool, promptText: string }` to override the auto-accept
+     * default. Pass null to restore default behavior.
+     */
+    onDialog(handler) {
+      onDialogHandler = handler;
+    },
+
     async saveState() {
       throw new Error('saveState() is not supported on the Firefox/BiDi engine (CDP-only)');
     },
@@ -440,6 +498,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
     refContexts = new Map();
     await new Promise((r) => setTimeout(r, 500));
   }
+
+  // Wire the dialog handler before returning — must precede any navigation so
+  // an 'ignore' prompt (see bidi.js capability) is never left hanging.
+  await setupDialogs();
 
   return page;
 }

@@ -1,5 +1,34 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Firefox/BiDi noise-reduction + dialogs (parity plan Phase 3).** Two more
+  Chromium/CDP capabilities now work the same on the Firefox engine:
+  - **Ad/tracker blocking** (`blockAds`, on by default; `blockUrls` to extend).
+    BiDi's `network.addIntercept` can't express our glob patterns — its
+    `urlPatterns` reject `*` outright and have no subdomain wildcard — so the
+    Firefox path registers a *catch-all* `beforeRequestSent` intercept and
+    matches each request URL in-process against the shared `blocklist.js`
+    (new `makeBlockMatcher` compiles the CDP globs to a predicate, single-sourced
+    across engines). Matches are failed like CDP's `ERR_BLOCKED_BY_CLIENT`; the
+    rest continue. Default is **on** (Firefox is always a launched throwaway
+    profile, never attach mode). `src/blocklist-firefox.js`.
+  - **JS dialog handling** (`alert`/`confirm`/`prompt`/`beforeunload`). The BiDi
+    session is created with `unhandledPromptBehavior:'ignore'` so Firefox no
+    longer auto-dismisses prompts before we can act; `page.dialogLog` records
+    every dialog and `page.onDialog(handler)` overrides the default (accept all
+    except `beforeunload`), mirroring the CDP surface exactly.
+
+  BiDi mechanics were POC-measured against real Firefox before wiring (the "no
+  such alert" auto-dismiss race, and that `urlPatterns` reject `*`). Guarded by
+  `test/unit/blocklist-firefox.test.js` (10) and Firefox integration tests
+  (ad-block via a hermetic CORS server so the `blockAds:false` control genuinely
+  passes through; dialog auto-accept + `dialogLog` + custom `onDialog`).
+  Remaining Firefox gaps (Phase 4+): hybrid mode, `saveState`,
+  `waitForNavigation`, downloads, `reload({ignoreCache})`.
+
 ## [0.17.0] - 2026-07-10
 
 ### Added

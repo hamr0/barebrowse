@@ -29,10 +29,10 @@ not impossible:
 |---|---|---|---|
 | Stealth / anti-detection | `Page.addScriptToEvaluateOnNewDocument` | `script.addPreloadScript` | **done (v0.16.0)** |
 | Consent auto-dismiss | ARIA scan + jsClick (engine-agnostic) | run over the BiDi snapshot | **done (v0.16.0)** |
-| Ad / tracker block | `Network.setBlockedURLs` | `network.addIntercept` | port |
+| Ad / tracker block | `Network.setBlockedURLs` | `network.addIntercept` (catch-all + in-process match) | **done (Phase 3)** |
 | Console capture | `Runtime.consoleAPICalled` | `log.entryAdded` | **done (Phase 2)** |
 | Network capture / idle-wait | `Network.*` events | `network.beforeRequestSent` / `responseCompleted` / `fetchError` | **done (Phase 2)** |
-| Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened/Closed` | port |
+| Dialog handling | `Page.javascriptDialogOpening` | `browsingContext.userPromptOpened` + `handleUserPrompt` | **done (Phase 3)** |
 | Hybrid (headless→headed) | orchestration (engine-agnostic) | same logic on FF path | reuse |
 | Downloads | `Browser.downloadWillBegin` | BiDi download events (Firefox: partial) | partial |
 | `reload({ignoreCache})` | CDP flag | not yet in Firefox BiDi | upstream |
@@ -50,12 +50,17 @@ snapshot fixes.
 **Added in v0.16.0 (Phase 1):** stealth (headless anti-detection, FF-specific)
 and consent auto-dismiss.
 
-**Added in Phase 2 (Unreleased):** console/network capture +
+**Added in Phase 2 (v0.17.0):** console/network capture +
 `waitForNetworkIdle` over BiDi events (daemon `console-logs`/`network-log`/
 `wait-idle` now work on Firefox).
 
-**Remaining gaps (documented known-limitations):** ad-block, hybrid, dialogs,
-`saveState`, `waitForNavigation`, downloads, `reload({ignoreCache})`.
+**Added in Phase 3 (Unreleased):** ad/tracker block (`network.addIntercept`
+catch-all + in-process glob match against the shared blocklist) and JS dialog
+handling (`browsingContext.userPromptOpened` → `handleUserPrompt`, with
+`dialogLog` + `page.onDialog`).
+
+**Remaining gaps (documented known-limitations):** hybrid, `saveState`,
+`waitForNavigation`, downloads, `reload({ignoreCache})`.
 
 ## Phased roadmap
 
@@ -109,11 +114,42 @@ than the one removed. Measured baseline: only `navigator.webdriver` was a tell
   Firefox before wiring (Phase 1 lesson), then unit-tested against those shapes
   (`daemon.test.js`, `network-idle.test.js`) + live-verified (`firefox.test.js`).
 
-### Phase 3 — Noise reduction + dialogs
-- **Ad/tracker block:** feed the existing `blocklist.js` patterns into
-  `network.addIntercept` (block-phase), matching the CDP `blockAds` default.
-- **Dialogs:** subscribe `browsingContext.userPromptOpened`, auto-handle +
-  record into `dialogLog`; replace that stub.
+### Phase 3 — Noise reduction + dialogs — ✅ shipped (Unreleased)
+- **Ad/tracker block** (`src/blocklist-firefox.js`): BiDi's `network.addIntercept`
+  can't express our globs — `urlPatterns` reject `*` outright ("forbidden
+  character *") and have no subdomain wildcard (POC-measured). So we register a
+  **catch-all** intercept (empty `urlPatterns`, `beforeRequestSent` phase) and
+  decide per request *in-process*, matching each URL against the shared
+  `blocklist.js` via the new `makeBlockMatcher` (CDP glob → predicate, single-
+  sourced across engines). Matches → `network.failRequest` (like CDP's
+  `ERR_BLOCKED_BY_CLIENT`); the rest → `network.continueRequest`. `blockAds`
+  defaults **on** (Firefox is always a launched throwaway profile, never attach);
+  `blockUrls` extends the list identically to CDP. Cost: one continue/fail
+  round-trip per request (CDP matches browser-side with none) — negligible on a
+  local socket, and the only route preserving glob parity without a second list.
+- **Dialogs:** the BiDi session is now created with
+  `unhandledPromptBehavior:'ignore'` (`bidi.js`) so Firefox stops auto-dismissing
+  prompts before we can act — without it `handleUserPrompt` loses the race
+  ("no such alert", POC-measured). `firefox-page.js` subscribes
+  `browsingContext.userPromptOpened`, records `{type,message,timestamp}` into a
+  real `dialogLog`, and responds via `handleUserPrompt` (accept all except
+  `beforeunload`; `prompt` returns `defaultValue`). A custom `page.onDialog`
+  handler mirrors the CDP surface exactly. The handler is wired during page
+  construction, before any navigation, so no `'ignore'` prompt can hang.
+- **Tests:** `test/unit/blocklist-firefox.test.js` (10 — `makeBlockMatcher` glob
+  semantics incl. CDP-faithful subdomain rules + apex non-match; the intercept/
+  decision wiring against a fake BiDi: catch-all registration, fail-vs-continue,
+  isBlocked-false ignore, "no such request" race swallow, `blockAds:false`,
+  `blockUrls` extend/replace) + Firefox integration (ad-block via a hermetic
+  CORS-enabled local server so the `blockAds:false` **control genuinely passes
+  through** — a real cross-origin tracker fails on CORS regardless and can't
+  distinguish our block; dialog auto-accept + `dialogLog` + custom `onDialog`).
+  A medium code review fixed two findings (`makeBlockMatcher` now supports CDP's
+  `?` one-char wildcard, not just `*`; `resolveBlocklistPatterns` single-sources
+  the blockAds/blockUrls merge across engines) and recorded three as accepted
+  known-limitations (per-request intercept cost; latent missing-id suspension;
+  dialog-handler coupling + CDP↔BiDi decision duplication) — see the PRD
+  "Firefox ad-block + dialogs" limitations block.
 
 ### Phase 4 — Resilience + remaining methods
 - **Hybrid-equivalent:** on a detected challenge page, relaunch headed — reuse

@@ -20,7 +20,8 @@ import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPr
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
 import { applyFirefoxStealth } from './stealth-firefox.js';
-import { DEFAULT_BLOCKLIST } from './blocklist.js';
+import { applyFirefoxBlocklist } from './blocklist-firefox.js';
+import { resolveBlocklistPatterns } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
 import { readable as extractReadable } from './readable.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
@@ -747,9 +748,12 @@ async function suppressPermissions(cdp) {
  * ref model, and AX-tree source all differ (see firefox-page.js). close() is
  * wrapped to also reap the Firefox process + temp profile.
  *
- * Chromium-only options NOT applied on this path: `blockAds`/`blockUrls` and
- * `hybrid` mode. `saveState`, `waitForNavigation`, and download/dialog capture
- * are CDP-only too (the page object stubs them — see firefox-page.js).
+ * Chromium-only options NOT applied on this path: `hybrid` mode. `saveState`,
+ * `waitForNavigation`, and download capture are CDP-only too (the page object
+ * stubs them — see firefox-page.js). `blockAds`/`blockUrls` and JS dialog
+ * handling (`dialogLog`/`onDialog`) DO apply as of Phase 3 (ad-block via a
+ * catch-all `network.addIntercept` + in-process glob match; dialogs via
+ * `browsingContext.userPromptOpened` → `handleUserPrompt`).
  * `waitForNetworkIdle` and daemon console/network capture DO apply as of Phase
  * 2 (over BiDi `network.*` and `log.entryAdded` events). `consent`
  * (auto-dismiss) and
@@ -775,6 +779,14 @@ async function connectFirefox(opts) {
   if (opts.mode !== 'headed') {
     await applyFirefoxStealth(bidi);
   }
+  // Ad/tracker blocking (parity with the CDP applyBlocklist). Firefox is always
+  // a launched, throwaway profile (never attach mode), so the default is on —
+  // unlike the CDP path, which defaults off in attach mode. Must run before the
+  // first navigation so the catch-all intercept is live when the page loads.
+  await applyFirefoxBlocklist(bidi, {
+    blockAds: opts.blockAds !== undefined ? opts.blockAds : true,
+    blockUrls: opts.blockUrls,
+  });
   const page = await createFirefoxPage(bidi, {
     pruneMode: opts.pruneMode,
     urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
@@ -911,10 +923,7 @@ let blocklistWarned = false;
  * API surface.
  */
 export async function applyBlocklist(session, pageOpts) {
-  if (pageOpts.blockAds === false && !pageOpts.blockUrls) return;
-  const patterns = pageOpts.blockAds === false
-    ? (pageOpts.blockUrls || [])
-    : [...DEFAULT_BLOCKLIST, ...(pageOpts.blockUrls || [])];
+  const patterns = resolveBlocklistPatterns(pageOpts);
   if (!patterns.length) return;
   try {
     await session.send('Network.setBlockedURLs', { urls: patterns });

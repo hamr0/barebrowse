@@ -10,7 +10,7 @@
  * Run: node --test test/integration/firefox.test.js
  */
 
-import { describe, it, before } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { connect } from '../../src/index.js';
@@ -461,6 +461,101 @@ describe('connect({ engine: firefox }) — waitForNetworkIdle (Phase 2)', { skip
       await page.waitForNetworkIdle({ idle: 300, timeout: 5000 });
       // At minimum the idle window must have elapsed.
       assert.ok(Date.now() - t >= 290, 'waited at least the idle window');
+    } finally {
+      await page.close();
+    }
+  });
+});
+
+/** Read a window global from the active top context via the BiDi escape hatch. */
+async function readGlobal(page, expr) {
+  const ctx = (await page.bidi.send('browsingContext.getTree', {})).contexts[0].context;
+  return page.bidi.evaluate(ctx, expr, false).catch(() => 'eval-error');
+}
+
+describe('connect({ engine: firefox }) — ad/tracker block (Phase 3)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  // A CORS-enabled local server stands in for a tracker host: when NOT blocked
+  // the fetch genuinely succeeds (200 + CORS), so the 'THROUGH'/'BLOCKED'
+  // sentinel is unambiguous — a rejection can ONLY come from our block, never
+  // from CORS (which was the flaw in a real cross-origin tracker). We match it
+  // via blockUrls so the test owns the pattern rather than depending on the
+  // default list hitting the network.
+  let server, origin, marker;
+  before(async () => {
+    server = createServer((_req, res) => {
+      res.writeHead(200, { 'access-control-allow-origin': '*', 'content-type': 'text/plain' });
+      res.end('ok');
+    });
+    await new Promise((r) => server.listen(0, '127.0.0.1', r));
+    origin = `http://127.0.0.1:${server.address().port}`;
+    marker = `${origin}/tracker.gif`;
+  });
+
+  const trackerPage = () => data(`<body>ads<script>
+    fetch(${JSON.stringify(marker)})
+      .then(() => window.__t = 'THROUGH').catch(() => window.__t = 'BLOCKED');
+  </script></body>`);
+
+  it('blocks a matched request (via blockUrls)', async () => {
+    const page = await connect({
+      engine: 'firefox', mode: 'headless',
+      blockUrls: [`*://127.0.0.1:*/tracker*`],
+    });
+    try {
+      await page.goto(trackerPage());
+      await new Promise((r) => setTimeout(r, 1500));
+      assert.equal(await readGlobal(page, 'window.__t'), 'BLOCKED');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('lets the same request through when blockAds:false (control — proves it can fail)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless', blockAds: false });
+    try {
+      await page.goto(trackerPage());
+      await new Promise((r) => setTimeout(r, 1500));
+      // Nothing installed → the CORS-enabled fetch succeeds.
+      assert.equal(await readGlobal(page, 'window.__t'), 'THROUGH');
+    } finally {
+      await page.close();
+    }
+  });
+
+  after(() => server?.close());
+});
+
+describe('connect({ engine: firefox }) — JS dialogs (Phase 3)', { skip: !hasFirefox && 'no Firefox installed' }, () => {
+  it('auto-accepts and records alert/prompt/confirm in dialogLog', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<body>hi</body>'));
+      const ctx = (await page.bidi.send('browsingContext.getTree', {})).contexts[0].context;
+      const alertR = await page.bidi.evaluate(ctx, 'alert("a"); "after"', true);
+      const promptR = await page.bidi.evaluate(ctx, 'prompt("q","deflt")', true);
+      const confirmR = await page.bidi.evaluate(ctx, 'confirm("ok?")', true);
+      // Default handling: alert dismissed (JS resumes), prompt accepts the
+      // default value, confirm accepts (true) — mirroring the CDP path.
+      assert.equal(alertR, 'after');
+      assert.equal(promptR, 'deflt');
+      assert.equal(confirmR, true);
+      assert.deepEqual(page.dialogLog.map((d) => d.type), ['alert', 'prompt', 'confirm']);
+      assert.equal(page.dialogLog[0].message, 'a');
+    } finally {
+      await page.close();
+    }
+  });
+
+  it('honors a custom onDialog handler (override text + reject)', async () => {
+    const page = await connect({ engine: 'firefox', mode: 'headless' });
+    try {
+      await page.goto(data('<body>hi</body>'));
+      page.onDialog((d) => (d.type === 'confirm' ? { accept: false } : { accept: true, promptText: 'custom' }));
+      const ctx = (await page.bidi.send('browsingContext.getTree', {})).contexts[0].context;
+      const promptR = await page.bidi.evaluate(ctx, 'prompt("q","x")', true);
+      const confirmR = await page.bidi.evaluate(ctx, 'confirm("ok?")', true);
+      assert.equal(promptR, 'custom', 'prompt returned the handler text');
+      assert.equal(confirmR, false, 'confirm was rejected');
     } finally {
       await page.close();
     }

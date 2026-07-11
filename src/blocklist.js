@@ -200,3 +200,52 @@ export const DEFAULT_BLOCKLIST = [
   '*://*.bluekai.com/*',              // Oracle Data Cloud
   '*://*.krxd.net/*',                 // Salesforce / Krux
 ];
+
+/**
+ * Resolve the effective blocklist from a page's blockAds/blockUrls options.
+ * Single-sourced across engines (CDP applyBlocklist + BiDi applyFirefoxBlocklist)
+ * so the merge/extend rule can't drift between them:
+ *   - blockAds !== false → DEFAULT_BLOCKLIST plus any blockUrls (extend);
+ *   - blockAds === false → only blockUrls (the default list is dropped);
+ *   - neither → empty (blocking disabled).
+ *
+ * @param {object} [pageOpts]
+ * @param {boolean} [pageOpts.blockAds] - false drops the default list.
+ * @param {string[]} [pageOpts.blockUrls] - extra CDP-format globs.
+ * @returns {string[]} the patterns to block (possibly empty).
+ */
+export function resolveBlocklistPatterns(pageOpts = {}) {
+  return pageOpts.blockAds === false
+    ? (pageOpts.blockUrls || [])
+    : [...DEFAULT_BLOCKLIST, ...(pageOpts.blockUrls || [])];
+}
+
+/**
+ * Compile CDP-format glob patterns into a single URL-matching predicate.
+ *
+ * CDP blocks natively via Network.setBlockedURLs, which does the glob matching
+ * browser-side. WebDriver BiDi has no glob-capable equivalent — network.
+ * addIntercept's urlPatterns reject '*' outright ("forbidden character *") and
+ * can't express subdomain wildcards like *.doubleclick.net. So the Firefox
+ * path intercepts *all* requests and matches each URL here, in-process, against
+ * the same patterns — keeping the blocklist single-sourced across engines.
+ *
+ * Matches CDP's glob semantics: '*' = any run of characters, '?' = exactly
+ * one character, whole-URL (anchored) match; every other character is literal.
+ *
+ * @param {string[]} patterns - CDP-format globs (e.g. DEFAULT_BLOCKLIST).
+ * @returns {(url: string) => boolean} true when `url` matches any pattern.
+ */
+export function makeBlockMatcher(patterns) {
+  const regexes = patterns.map((p) => {
+    // Escape every regex metachar EXCEPT the two glob wildcards, then expand
+    // them: '*' -> '.*', '?' -> '.'. (Escaping runs first so it never touches
+    // the '.' / '*' we insert next.)
+    const escaped = p
+      .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+      .replace(/\*/g, '.*')
+      .replace(/\?/g, '.');
+    return new RegExp('^' + escaped + '$');
+  });
+  return (url) => regexes.some((re) => re.test(url));
+}
