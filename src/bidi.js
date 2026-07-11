@@ -135,8 +135,14 @@ export async function createBiDi(wsUrl) {
     close() { ws.close(); },
   };
 
-  // Open the session. capabilities:{} accepts Firefox's defaults.
-  const session = await client.send('session.new', { capabilities: {} });
+  // Open the session. unhandledPromptBehavior:'ignore' stops Firefox from
+  // auto-dismissing JS dialogs (alert/confirm/prompt) before we can handle them
+  // — without it, browsingContext.handleUserPrompt loses the race and fails
+  // with "no such alert" (measured). firefox-page.js wires a userPromptOpened
+  // handler before any navigation, so no dialog is ever left hanging.
+  const session = await client.send('session.new', {
+    capabilities: { alwaysMatch: { unhandledPromptBehavior: 'ignore' } },
+  });
   client.sessionId = session.sessionId;
   client.capabilities = session.capabilities;
   return client;
