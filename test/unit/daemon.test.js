@@ -11,7 +11,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDaemonArgs, attachBiDiCapture } from '../../src/daemon.js';
+import { buildDaemonArgs, attachBiDiCapture, deserializeBiDi } from '../../src/daemon.js';
 
 const CLI = '/x/cli.js';
 
@@ -93,6 +93,17 @@ describe('attachBiDiCapture — Firefox console/network log capture', () => {
     });
     // Uncaught JS error: no console method, args often absent → fall back to level + text.
     bidi.emit('log.entryAdded', { type: 'javascript', level: 'error', text: 'ReferenceError: x' });
+    // Object/array args carry a nested {type,value} serialization — it must NOT
+    // be splatted into the log; fall back to the type name (CDP logs "Object").
+    bidi.emit('log.entryAdded', {
+      type: 'console', method: 'log', level: 'info',
+      args: [
+        { type: 'string', value: 'obj' },
+        { type: 'object', value: [['user', { type: 'string', value: 'x' }]] },
+        { type: 'array', value: [{ type: 'number', value: 1 }] },
+      ],
+      text: 'obj [object Object] 1',
+    });
 
     assert.equal(consoleLogs[0].type, 'warning', 'BiDi warn maps to CDP warning');
     assert.deepEqual(consoleLogs[0].args, ['hi', 42]);
@@ -100,6 +111,7 @@ describe('attachBiDiCapture — Firefox console/network log capture', () => {
     assert.deepEqual(consoleLogs[1].args, ['plain']);
     assert.equal(consoleLogs[2].type, 'error', 'javascript entry uses level');
     assert.deepEqual(consoleLogs[2].args, ['ReferenceError: x'], 'no args → [text]');
+    assert.deepEqual(consoleLogs[3].args, ['obj', 'object', 'array'], 'non-primitive args → type name, no nested dump');
   });
 
   it('pairs responseCompleted with its pending request', async () => {
@@ -145,5 +157,38 @@ describe('attachBiDiCapture — Firefox console/network log capture', () => {
     bidi.emit('network.responseCompleted', { request: { request: 'ghost' }, response: { status: 200 } });
     bidi.emit('network.fetchError', { request: { request: 'ghost2' }, errorText: 'x' });
     assert.equal(networkLogs.length, 0);
+  });
+});
+
+/**
+ * deserializeBiDi — turns a BiDi remote value ({type,value}) back into the plain
+ * JS value CDP's returnByValue yields, so `eval` returns the same shape on both
+ * engines. Guards the Firefox eval path (daemon 'eval' command) that replaced an
+ * `await (${expr})` wrapper which broke statement-form expressions.
+ */
+describe('deserializeBiDi', () => {
+  it('passes primitives through', () => {
+    assert.equal(deserializeBiDi({ type: 'number', value: 6 }), 6);
+    assert.equal(deserializeBiDi({ type: 'string', value: 'x' }), 'x');
+    assert.equal(deserializeBiDi({ type: 'boolean', value: true }), true);
+    assert.equal(deserializeBiDi({ type: 'null' }), null);
+    assert.equal(deserializeBiDi({ type: 'undefined' }), undefined);
+  });
+
+  it('reconstructs nested objects and arrays from entry lists', () => {
+    const remote = {
+      type: 'object',
+      value: [
+        ['user', { type: 'string', value: 'x' }],
+        ['n', { type: 'number', value: 1 }],
+        ['list', { type: 'array', value: [{ type: 'number', value: 2 }, { type: 'array', value: [{ type: 'number', value: 3 }] }] }],
+      ],
+    };
+    assert.deepEqual(deserializeBiDi(remote), { user: 'x', n: 1, list: [2, [3]] });
+  });
+
+  it('falls back to the type name for values with no plain equivalent', () => {
+    assert.equal(deserializeBiDi({ type: 'function' }), 'function');
+    assert.equal(deserializeBiDi({ type: 'date', value: '2020-01-01T00:00:00.000Z' }), '2020-01-01T00:00:00.000Z');
   });
 });

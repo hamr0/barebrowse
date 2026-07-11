@@ -68,6 +68,31 @@ export function buildDaemonArgs(opts, absDir, initialUrl, cliPath) {
 }
 
 /**
+ * Convert a BiDi remote value ({type,value} — see script.evaluate) into the
+ * plain JS value CDP's `Runtime.evaluate({returnByValue:true})` yields, so an
+ * `eval` returns the same shape on both engines. BiDi serializes objects/arrays
+ * as entry lists ([[k,v],…] / [v,…]) rather than plain values; walk them back.
+ * @param {object} r - BiDi remote value
+ * @returns {*}
+ */
+export function deserializeBiDi(r) {
+  if (!r || typeof r !== 'object') return r;
+  switch (r.type) {
+    case 'undefined': return undefined;
+    case 'null': return null;
+    case 'string': case 'number': case 'boolean': case 'bigint': return r.value;
+    case 'array': case 'set': return (r.value || []).map(deserializeBiDi);
+    case 'object': case 'map':
+      return Object.fromEntries(
+        (r.value || []).map(([k, v]) => [typeof k === 'object' ? deserializeBiDi(k) : k, deserializeBiDi(v)]),
+      );
+    // date/regexp/node/function/etc. — no plain-value equivalent; use the raw
+    // value if BiDi provided one, else the type name (matches CDP's coarseness).
+    default: return r.value !== undefined ? r.value : r.type;
+  }
+}
+
+/**
  * Wire Firefox/BiDi console + network capture onto the daemon's log arrays.
  * The BiDi analogue of the CDP `Runtime.consoleAPICalled` / `Network.*`
  * capture — measured event shapes: `log.entryAdded` carries {method, level,
@@ -99,8 +124,12 @@ export async function attachBiDiCapture(bidi, { consoleLogs, networkLogs, pendin
       // engines — BiDi says 'warn', CDP says 'warning'.
       type: e.method === 'warn' ? 'warning' : (e.method || e.level),
       timestamp: new Date().toISOString(),
+      // Primitive args carry a usable `.value`; objects/arrays/functions carry a
+      // nested {type,value} serialization we must NOT splat into the log (it's
+      // deep junk) — fall back to the type name, mirroring the CDP capture which
+      // logs a RemoteObject's `.description` ("Object") for non-primitives.
       args: Array.isArray(e.args) && e.args.length
-        ? e.args.map((a) => a.value ?? a.type)
+        ? e.args.map((a) => (a.value !== undefined && typeof a.value !== 'object' ? a.value : a.type))
         : [e.text],
     });
   });
@@ -416,13 +445,20 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       // Firefox/BiDi has no page.cdp — evaluate over BiDi in the active context.
       if (!page.cdp) {
         try {
-          // BiDi's raw result.value serializes objects into a {type,value}
-          // entries structure, not a plain object (CDP's returnByValue does).
-          // Stringify + parse in-page so an object/array eval matches the CDP
-          // shape (same trick readable() uses). `undefined` → JSON `null`.
-          const wrapped = `(async () => { const v = await (${expression}); return JSON.stringify(v === undefined ? null : v); })()`;
-          const raw = await page.bidi.evaluate(page.context, wrapped, true);
-          return { ok: true, value: raw == null ? null : JSON.parse(raw) };
+          // Evaluate the RAW expression: script.evaluate has eval-semantics, so
+          // statement lists ("var x = 2; x * 3") work and yield the completion
+          // value — matching the CDP Runtime.evaluate path. (An earlier
+          // `await (${expression})` wrapper flattened objects but broke every
+          // statement-form expression with a SyntaxError.) BiDi returns a
+          // {type,value} remote value; deserializeBiDi walks it back to the plain
+          // JS value CDP's returnByValue produces.
+          const res = await page.bidi.send('script.evaluate', {
+            expression, target: { context: page.context }, awaitPromise: true,
+          });
+          if (res.type === 'exception') {
+            return { ok: false, error: res.exceptionDetails?.text || 'eval error' };
+          }
+          return { ok: true, value: deserializeBiDi(res.result) };
         } catch (err) {
           return { ok: false, error: err.message || 'eval error' };
         }
