@@ -146,10 +146,12 @@ const page = await connect({ engine: 'firefox' }); // headless by default
 From the CLI: `barebrowse open <url> --engine firefox`. From MCP: set
 `BAREBROWSE_ENGINE=firefox`. Firefox cookies (plaintext) reuse into the same
 engine. Consent auto-dismiss and headless stealth (v0.16.0), the daemon's
-console/network capture and `waitForNetworkIdle` (v0.17.0), and ad/tracker
-blocking plus JS dialog handling (`dialogLog`/`onDialog`, v0.18.0) all work on
-Firefox too. Chromium (CDP) remains the default; only `hybrid` mode is still
-Chromium-only.
+console/network capture and `waitForNetworkIdle` (v0.17.0), ad/tracker blocking
+plus JS dialog handling (`dialogLog`/`onDialog`, v0.18.0), and — as of Phase 4 —
+`hybrid` mode, `saveState`, `waitForNavigation`, and download tracking
+(`page.downloads`) all work on Firefox too. Chromium (CDP) remains the default.
+The only remaining Firefox gap is `reload({ignoreCache})` (an upstream BiDi
+limitation).
 
 No clone profile, no fresh cookies — the agent sees what you see.
 
