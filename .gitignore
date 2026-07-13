@@ -22,7 +22,9 @@ node_modules/
 # OS
 .DS_Store
 
-# Agent / IDE scratch — never commit (per hamr0 LIBRARY_CONVENTIONS §7)
-.claude/
-.litectx/
-.idea/
+# Agent / IDE / tooling scratch — ignore EVERY dot-directory by default
+# (.claude, .litectx, .idea, .barebrowse, .vscode, and whatever the next tool
+# invents), then re-admit only the ones we actually ship. Default-deny beats
+# chasing each new scratch dir with its own line.
+.*/
+!.github/
