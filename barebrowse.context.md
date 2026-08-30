@@ -61,6 +61,8 @@ const snapshot = await browse('https://example.com', {
 
 `connect(opts)` returns a page handle for interactive sessions. Same opts as `browse()` for mode. Supports `hybrid` mode — starts headless, auto-launches headed on bot detection (same as `browse()`).
 
+**TypeScript:** the handle is the exported `Page` type — `import type { Page } from 'barebrowse'`. It's a union of the Chromium and Firefox page shapes: every method in the table below is available directly, while an engine-specific escape hatch (`cdp` on Chromium, `bidi` on Firefox) is reached by narrowing, e.g. `if ('cdp' in page) page.cdp.send(...)`.
+
 | Method | Args | Returns | Notes |
 |---|---|---|---|
 | `goto(url, timeout?)` | url: string, timeout: number (default 30000) | void | Navigate + wait for load + dismiss consent |
