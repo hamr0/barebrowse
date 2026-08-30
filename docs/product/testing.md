@@ -158,7 +158,7 @@ Tests real interactions: clicking, typing, scrolling, form submission, and navig
 
 ## Manual validation (v0.4.0 features)
 
-Features added in v0.4.0 are manually validated but not yet in the automated test suite. See `docs/03-logs/validation-log.md` for full results.
+Features added in v0.4.0 are manually validated but not yet in the automated test suite. See `docs/logs/validation-log.md` for full results.
 
 | Feature | Validation method | Result |
 |---------|-------------------|--------|

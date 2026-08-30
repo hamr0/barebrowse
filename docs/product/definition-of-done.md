@@ -18,8 +18,8 @@ A feature or change is "done" when ALL of these are true.
 
 ## Documentation
 
-- [ ] `docs/00-context/system-state.md` updated if architecture changed
-- [ ] `docs/03-logs/decisions-log.md` updated if a design decision was made
+- [ ] `docs/product/system-state.md` updated if architecture changed
+- [ ] `docs/logs/decisions-log.md` updated if a design decision was made
 - [ ] `barebrowse.context.md` updated if public API changed
 - [ ] `CHANGELOG.md` updated with what changed
 

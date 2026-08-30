@@ -51,7 +51,7 @@ node -e "import { browse } from './src/index.js'; console.log(await browse('http
 - **Use `data:` URL fixtures** for deterministic tests (no network dependency).
 - **Real-site tests** go in `interact.test.js`, grouped by site.
 
-See `docs/04-process/testing.md` for the full test guide.
+See `docs/product/testing.md` for the full test guide.
 
 ## Git workflow
 
