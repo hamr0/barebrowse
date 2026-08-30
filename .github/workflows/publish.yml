@@ -72,7 +72,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck --if-present
       - name: Test
-        run: npm test --if-present
+        # Unit tests only — matches ci.yml. The full `npm test` also runs the
+        # integration suite, which launches real Chromium + Firefox and hits
+        # live sites; those are local-only (no browsers/network guarantee on the
+        # runner) and hang here indefinitely (a publish stalled ~15min on Test
+        # vs a ~40s baseline). Browser coverage stays local + pre-merge in
+        # ci.yml; the adopter type gate below still runs on every publish.
+        run: npm run test:unit --if-present
       - name: Skip if this version is already on npm
         # BEFORE the pack-and-install gate below, not after: re-dispatching a publish
         # for a version already on the registry is the idempotency case this step
