@@ -163,6 +163,35 @@ export async function browse(url, opts = {}) {
 }
 
 /**
+ * The interactive page handle returned by {@link connect}. Inferred structurally
+ * from the returned object literals — no hand-maintained interface to drift.
+ *
+ * It is a union of the two engine page shapes (Chromium/CDP and Firefox/BiDi),
+ * which share every interaction method (`goto`, `snapshot`, `click`, `type`,
+ * `close`, …) but differ in their escape hatches — `cdp`/`createTab`/`dialogLog`
+ * on Chromium, `bidi`/`context` on Firefox. The shared methods dereference
+ * without narrowing; an engine-specific hatch requires knowing the engine
+ * (the default is Chromium), e.g. `if ('cdp' in page) page.cdp.send(...)`.
+ * @typedef {Awaited<ReturnType<typeof connect>>} Page
+ */
+
+/**
+ * Options for `page.snapshot()`. Pass `false` instead of an object to skip
+ * pruning and return the raw ARIA tree.
+ * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read' }} SnapshotOptions
+ */
+
+/**
+ * Options for `page.type()`.
+ * @typedef {{ clear?: boolean, keyEvents?: boolean }} TypeOptions
+ */
+
+/**
+ * Options for `page.injectCookies()`.
+ * @typedef {{ browser?: string }} CookieOptions
+ */
+
+/**
  * Connect to a browser for a long-lived interactive session.
  *
  * @param {object} [opts]
@@ -206,7 +235,10 @@ export async function browse(url, opts = {}) {
  * @param {'chromium'|'firefox'} [opts.engine='chromium'] - Browser engine.
  *   'firefox' drives over WebDriver BiDi (a separate transport / page object);
  *   'chromium' (default) uses CDP.
- * @returns {Promise<object>} Page handle with goto, snapshot, close
+ * @returns The interactive page handle — see the exported `Page` typedef. The
+ *   return type is left uninferred here (no `{...}` tag) so tsc derives it
+ *   structurally from the returned object literals; annotating it as `Page`
+ *   would be a self-reference, since `Page` is `ReturnType<typeof connect>`.
  */
 export async function connect(opts = {}) {
   // Firefox is driven over WebDriver BiDi (CDP is deprecated there) — a
@@ -452,14 +484,16 @@ export async function connect(opts = {}) {
       refMap = new Map(); // refs from the pre-reload page are invalid
     },
 
-    async injectCookies(url, cookieOpts) {
+    /** @param {string} url @param {CookieOptions} [cookieOpts] */
+    async injectCookies(url, cookieOpts = {}) {
       // No-op under incognito: callers (MCP goto, daemon) inject unconditionally,
       // so the gate has to live here, not just at the call site.
       if (incognito) return 0;
       return authenticate(page.session, url, { browser: cookieOpts?.browser });
     },
 
-    async snapshot(pruneOpts) {
+    /** @param {SnapshotOptions|false} [pruneOpts] */
+    async snapshot(pruneOpts = {}) {
       const result = await ariaTree(page);
       refMap = result.refMap;
       const raw = formatTree(result.tree);
@@ -490,7 +524,8 @@ export async function connect(opts = {}) {
       await cdpClick(entry.session, entry.backendNodeId);
     },
 
-    async type(ref, text, typeOpts) {
+    /** @param {string} ref @param {string} text @param {TypeOptions} [typeOpts] */
+    async type(ref, text, typeOpts = {}) {
       const entry = refMap.get(ref);
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
       await cdpType(entry.session, entry.backendNodeId, text, typeOpts);
@@ -671,7 +706,8 @@ export async function connect(opts = {}) {
           tabBotBlocked = isChallengePage(tree, nodeCount);
         },
         get botBlocked() { return tabBotBlocked; },
-        async injectCookies(url, cookieOpts) {
+        /** @param {string} url @param {CookieOptions} [cookieOpts] */
+        async injectCookies(url, cookieOpts = {}) {
           if (incognito) return 0;
           return authenticate(tab.session, url, { browser: cookieOpts?.browser });
         },
@@ -743,7 +779,6 @@ async function suppressPermissions(cdp) {
  * The navigation guard (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir`
  * sandbox, `incognito`, `proxy`, `viewport`, and `pruneMode` all apply.
  * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito, downloadPath, blockAds, blockUrls })
- * @returns {Promise<object>} Firefox page object
  */
 async function connectFirefox(opts) {
   const hybrid = opts.mode === 'hybrid';
