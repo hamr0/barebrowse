@@ -58,7 +58,7 @@ Outputs go to `.barebrowse/` as files -- agents read them with their file tools,
 
 **Other agents:** Copy `commands/barebrowse.md` to your agent's command/skill directory.
 
-For writing your own skill files for other CLI tools: [docs/skill-template.md](docs/skill-template.md).
+For writing your own skill files for other CLI tools: [docs/product/skill-template.md](docs/product/skill-template.md).
 
 ### 2. MCP server -- for Claude Desktop, Cursor, and other MCP clients
 
