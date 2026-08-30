@@ -8,6 +8,29 @@
 
 ### Fixed
 
+- **`connect()` now returns a typed page handle instead of bare `object`.** Its
+  JSDoc `@returns` was `Promise<object>`, so a TypeScript adopter could not
+  dereference `page.goto` / `page.snapshot` / `page.click` / `page.close` off the
+  returned handle without casting — the whole interactive surface was unusable
+  from types. The return is now inferred structurally from the returned object
+  literals and re-exported as a named `Page` type (`import type { Page } from
+  'barebrowse'`), so there is no hand-maintained interface to drift. `Page` is a
+  union of the two engine shapes (Chromium/CDP and Firefox/BiDi): every shared
+  interaction method dereferences without narrowing, while an engine-specific
+  escape hatch (`cdp` on Chromium, `bidi` on Firefox) is exposed by narrowing
+  (`if ('cdp' in page) …`) — the union is sound where an intersection would falsely
+  claim a page carries both engines' hatches. The commonly-omitted option
+  parameters on `snapshot()`, `type()`, and `injectCookies()` are now typed
+  optional (they always were at runtime), so `page.snapshot()` and
+  `page.type(ref, text)` compile — and carry named, member-checked shapes
+  (`SnapshotOptions`, `TypeOptions`, `CookieOptions`, all exported), so a typo
+  like `snapshot({ mdoe: 'read' })` is now a compile error instead of a silent
+  no-op. `browse()` → `Promise<string>` is unchanged.
+  Validated by packing the tarball and compiling a strict (`nodenext`,
+  `skipLibCheck:false`) consumer quickstart that dereferences the real page
+  methods — green after, red before. The publish adopter gate missed this because
+  its quickstart only exercises `browse()`'s snapshot string, never the
+  `connect()` handle.
 - **Publish workflow pinned to `npm@11` — npm 12.0.0's `npm publish --provenance` is broken.** The job ran `npm install -g npm@latest`, which started resolving to npm 12.0.0 (released 2026-07-09) on the Node 22 runner. npm 12's `libnpmpublish` provenance code does `require('sigstore')`, but the tarball bundles only the `@sigstore/*` scoped packages — so `--provenance` dies with `MODULE_NOT_FOUND` and the publish fails outright. npm@11 bundles `sigstore` and publishes fine. Pinned to the major rather than floating on `@latest`. Revisit once npm ships a provenance fix. CI only — no runtime or published-artifact change.
 
 ### Changed

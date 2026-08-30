@@ -46,7 +46,6 @@ const BIDI_KEYS = {
  * @param {boolean} [opts.hybrid=false] - Relaunch headed on a bot-challenge page and retry.
  * @param {boolean} [opts.headed=false] - Whether the browser was launched headed (skips hybrid fallback).
  * @param {?function(): Promise<{bidi: object, topContext: string}>} [opts.relaunchHeaded] - Hybrid relaunch hook (from connectFirefox).
- * @returns {Promise<object>} page object
  */
 export async function createFirefoxPage(bidi, opts = {}) {
   const defaultPruneMode = opts.pruneMode || 'act';
@@ -326,7 +325,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
       }
     },
 
-    async snapshot(pruneOpts) {
+    /** @param {import('./index.js').SnapshotOptions|false} [pruneOpts] */
+    async snapshot(pruneOpts = {}) {
       const root = await buildTree();
       if (!root) return '';
 
@@ -349,6 +349,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     async click(ref) { await pointerClick(ref); },
 
+    /** @param {string} ref @param {string} text @param {import('./index.js').TypeOptions} [typeOpts] */
     async type(ref, text, typeOpts = {}) {
       const { context, sharedId } = await resolveRef(ref);
       // Focus the field (and optionally clear it) in-page, then send real key
@@ -391,7 +392,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
      * via BiDi storage.setCookie. Scoped to the URL host via the SHARED
      * scopedCookiesForUrl (same as the CDP path) — never the whole jar.
      */
-    async injectCookies(url, cookieOpts) {
+    /** @param {string} url @param {import('./index.js').CookieOptions} [cookieOpts] */
+    async injectCookies(url, cookieOpts = {}) {
       if (incognito) return 0;
       lastInject = { url, cookieOpts }; // remember for a hybrid re-inject
       const cookies = scopedCookiesForUrl(url, { browser: cookieOpts?.browser });
