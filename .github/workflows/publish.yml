@@ -196,7 +196,7 @@ jobs:
           # `node-version` above at a version with prebuilts. Peer deps are NOT pulled
           # in when marked optional via peerDependenciesMeta (measured: identical
           # package count with and without --omit=peer), so no flag is needed for them.
-          npm install --no-audit --no-fund /tmp/pkg/*.tgz typescript "@types/node@$TYPES_NODE"
+          npm install --no-audit --no-fund --ignore-scripts /tmp/pkg/*.tgz typescript@5 "@types/node@$TYPES_NODE"
           ./node_modules/.bin/tsc
       - name: Publish
         if: steps.check.outputs.skip == 'false'

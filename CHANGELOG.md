@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Adopter type-check gate no longer runs dependency install scripts next to the publish credential.** The gate installs the packed tarball into a throwaway consumer project, and that install ran inside the job holding `id-token: write` — the OIDC credential that can publish this package — with install scripts enabled, so any install script in the tarball's transitive dependency tree executed beside a live publish capability. Now `--ignore-scripts`. The gate only ever runs `tsc`, which reads `.d.ts` and nothing else, so nothing needs building: verified on a native-addon package that the addon is *not* compiled and the type check still passes green, while a broken dereference still fails it. `typescript` is also pinned to `@5` for the same reason `@types/node` is pinned — an unpinned compiler silently becomes a new major and fails the gate on its own schedule rather than on the commit's merits. CI only — no runtime or published-artifact change.
+
 ## [0.20.0] - 2026-08-30
 
 ### Added
