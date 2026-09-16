@@ -25,7 +25,7 @@ if (args.includes('--daemon-internal')) {
 } else if (cmd === 'install') {
   install();
 } else if (cmd === 'doctor') {
-  doctor();
+  await doctor();
 } else if (cmd === 'browse' && args[1]) {
   await oneShot();
 } else if (cmd === 'open') {
@@ -411,7 +411,75 @@ function readJsonOrEmpty(path) {
  * absolute endpoints across scopes — OAuth tokens are stored per-endpoint
  * so a split silently breaks auth.
  */
-function doctor() {
+async function doctor() {
+  await doctorEnvironment();
+  doctorMcpConfig();
+}
+
+/**
+ * Report the runtime environment: which engine/mode a session would use, which
+ * browsers and cookie sources are actually installed, and whether a session is
+ * live in this directory. This is the "which engine am I on and what can it do?"
+ * answer — the gap that led a peer session to conclude Firefox wasn't supported
+ * when it is (selected via BAREBROWSE_ENGINE / --engine, not a per-tool flag).
+ */
+async function doctorEnvironment() {
+  const { findBrowser } = await import('./src/chromium.js');
+  const { findFirefox } = await import('./src/firefox.js');
+  const { findChromiumCookieDb, findFirefoxCookieDb } = await import('./src/auth.js');
+
+  console.log('barebrowse doctor — runtime environment:\n');
+  console.log(`  Node ${process.version} on ${platform()}`);
+
+  // Configured engine/mode/incognito. MCP selects the engine at server launch
+  // via these env vars (mcp-server.js), which a running session can't see —
+  // surfacing them here is the whole point.
+  const engine = process.env.BAREBROWSE_ENGINE === 'firefox' ? 'firefox' : 'chromium';
+  const modeEnv = process.env.BAREBROWSE_MODE;
+  const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
+  console.log(`  Default engine: ${engine}  (override: BAREBROWSE_ENGINE=firefox | --engine firefox | connect({engine}))`);
+  // Mode default differs by surface: CLI `open` → headless, MCP → hybrid.
+  // BAREBROWSE_MODE overrides both, so report it directly when set.
+  console.log(`  Default mode:   ${modeEnv ? `${modeEnv}  (BAREBROWSE_MODE)` : 'headless (CLI open) / hybrid (MCP)'}`);
+  console.log(`  Incognito:      ${incognito ? 'on (BAREBROWSE_INCOGNITO=1) — no cookie injection' : 'off'}`);
+
+  // Installed browsers — both engines. A missing one explains why an --engine
+  // choice would fail before it launches.
+  console.log('\n  Installed browsers:');
+  let chromiumPath = null, firefoxPath = null;
+  try { chromiumPath = findBrowser(); } catch { /* none */ }
+  try { firefoxPath = findFirefox(); } catch { /* none */ }
+  console.log(`    Chromium/CDP:  ${chromiumPath || 'NOT FOUND — install chrome/chromium/brave/edge'}`);
+  console.log(`    Firefox/BiDi:  ${firefoxPath || 'NOT FOUND — install firefox (>= 121 for stable BiDi)'}`);
+
+  // Cookie sources — where authenticated sessions come from (skipped in incognito).
+  console.log('\n  Cookie sources:');
+  const chromiumCookies = findChromiumCookieDb();
+  const firefoxCookies = findFirefoxCookieDb();
+  console.log(`    Chromium:  ${chromiumCookies ? `${chromiumCookies.browser} (${chromiumCookies.path})` : 'none found'}`);
+  console.log(`    Firefox:   ${firefoxCookies || 'none found'}`);
+
+  // Live session in this directory, if any — reports its actual engine +
+  // capabilities (persisted into session.json by the daemon).
+  const { readSession, isAlive } = await import('./src/session-client.js');
+  const outputDir = resolve('.barebrowse');
+  const session = readSession(outputDir);
+  console.log('\n  Active session (this directory):');
+  if (!session) {
+    console.log('    none — run `barebrowse open [url]` to start one');
+  } else if (!(await isAlive(outputDir))) {
+    console.log(`    stale (pid ${session.pid} not responding) — run \`barebrowse close\` to clean up`);
+  } else {
+    console.log(`    running (pid ${session.pid}, port ${session.port}, engine ${session.engine || 'chromium'})`);
+    if (session.capabilities) {
+      const c = session.capabilities;
+      console.log(`      mode=${c.mode} attach=${c.attach} downloads=${c.downloads} stealth=${c.stealth} cookies=${c.cookieInjection} reloadIgnoreCache=${c.reloadIgnoreCache}`);
+    }
+  }
+  console.log('');
+}
+
+function doctorMcpConfig() {
   const home = homedir();
   const cwd = process.cwd();
   const os = platform();
@@ -553,7 +621,8 @@ MCP:
   barebrowse mcp                    Start MCP server (JSON-RPC over stdio)
   barebrowse install [--force]      Add barebrowse to detected MCP clients (--force replaces stale entries)
   barebrowse install --skill        Install Claude Code skill file
-  barebrowse doctor                 Scan MCP config locations for barebrowse entries + flag scope conflicts
+  barebrowse doctor                 Report engine/mode/browsers/cookie sources + active session,
+                                    then scan MCP config locations + flag scope conflicts
   barebrowse install                Auto-configure MCP for Claude Desktop / Cursor
   barebrowse install --skill        Install SKILL.md for Claude Code
 

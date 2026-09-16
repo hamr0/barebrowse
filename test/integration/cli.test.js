@@ -289,6 +289,37 @@ describe('MCP config diagnostics (no daemon)', () => {
     }
   });
 
+  it('doctor reports the runtime environment incl. both engines (MCP-DIAG 4)', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'bb-doctor-env-'));
+    try {
+      const out = execFileSync(NODE, [CLI, 'doctor'], {
+        cwd: fakeHome, encoding: 'utf8', env: { ...process.env, HOME: fakeHome },
+      });
+      assert.ok(out.includes('runtime environment'), `missing environment section:\n${out}`);
+      assert.ok(/Default engine: chromium/.test(out), `default engine should be chromium:\n${out}`);
+      // The Firefox line must appear — its absence was what made a session
+      // conclude Firefox wasn't a barebrowse capability at all.
+      assert.ok(out.includes('Firefox/BiDi:'), `Firefox engine must be reported:\n${out}`);
+      assert.ok(out.includes('Cookie sources:'), `cookie sources must be reported:\n${out}`);
+    } finally {
+      try { rmSync(fakeHome, { recursive: true, force: true }); } catch {}
+    }
+  });
+
+  it('doctor reflects BAREBROWSE_ENGINE=firefox as the default engine (MCP-DIAG 4)', () => {
+    const fakeHome = mkdtempSync(join(tmpdir(), 'bb-doctor-ff-'));
+    try {
+      const out = execFileSync(NODE, [CLI, 'doctor'], {
+        cwd: fakeHome, encoding: 'utf8',
+        env: { ...process.env, HOME: fakeHome, BAREBROWSE_ENGINE: 'firefox' },
+      });
+      assert.ok(/Default engine: firefox/.test(out),
+        `BAREBROWSE_ENGINE=firefox must be surfaced as the active engine:\n${out}`);
+    } finally {
+      try { rmSync(fakeHome, { recursive: true, force: true }); } catch {}
+    }
+  });
+
   it('install refuses to clobber a different existing endpoint without --force (MCP-DIAG 2)', () => {
     const fakeHome = mkdtempSync(join(tmpdir(), 'bb-install-conflict-'));
     try {
