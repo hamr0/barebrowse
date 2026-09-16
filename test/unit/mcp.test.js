@@ -315,3 +315,85 @@ describe('MCP tool surface (H6)', () => {
     }
   });
 });
+
+// Engine discoverability over MCP: the Firefox engine is selectable only at
+// server launch (BAREBROWSE_ENGINE), which a running agent can't see. These
+// assert the three surfaces that now advertise it so an agent stops concluding
+// (wrongly) that only Chromium exists.
+describe('MCP engine visibility', () => {
+  const toolNames = TOOLS.map((t) => t.name);
+
+  // Spawn the server, send requests, resolve once every id has a response.
+  async function rpc(requests, env = {}) {
+    const { spawn } = await import('node:child_process');
+    const cliPath = joinPath(__dirname, '../../cli.js');
+    const proc = spawn(process.execPath, [cliPath, 'mcp'], {
+      stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, ...env },
+    });
+    const want = new Set(requests.map((r) => r.id));
+    const got = {};
+    try {
+      return await new Promise((resolve, reject) => {
+        const deadline = setTimeout(() => reject(new Error('no complete response within 8s')), 8000);
+        let buf = '';
+        proc.stdout.on('data', (d) => {
+          buf += d;
+          let i;
+          while ((i = buf.indexOf('\n')) !== -1) {
+            const line = buf.slice(0, i); buf = buf.slice(i + 1);
+            if (!line.trim()) continue;
+            let m; try { m = JSON.parse(line); } catch { continue; }
+            if (want.has(m.id)) { got[m.id] = m; want.delete(m.id); }
+            if (want.size === 0) { clearTimeout(deadline); resolve(got); }
+          }
+        });
+        proc.on('error', (e) => { clearTimeout(deadline); reject(e); });
+        for (const r of requests) proc.stdin.write(JSON.stringify(r) + '\n');
+      });
+    } finally {
+      proc.kill();
+    }
+  }
+
+  const callText = (m) => m.result.content[0].text;
+
+  it('registers the capabilities tool (introspection, no side effects)', () => {
+    assert.ok(toolNames.includes('capabilities'),
+      'MCP must expose "capabilities" so an agent can discover the engine');
+  });
+
+  it('initialize.instructions + browse description name the active engine and both engines', async () => {
+    const got = await rpc([
+      { jsonrpc: '2.0', id: 1, method: 'initialize', params: {} },
+      { jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} },
+    ]);
+    const instr = got[1].result.instructions || '';
+    assert.match(instr, /firefox/i, 'initialize.instructions must mention firefox');
+    assert.match(instr, /chromium/i, 'initialize.instructions must mention chromium');
+    const browse = got[2].result.tools.find((t) => t.name === 'browse');
+    assert.match(browse.description, /Active engine: chromium/,
+      'browse description must surface the active engine at list time');
+    assert.match(browse.description, /firefox/i,
+      'browse description must note firefox is also supported');
+  });
+
+  it('capabilities reports chromium by default without launching a browser', async () => {
+    const got = await rpc([
+      { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capabilities', arguments: {} } },
+    ]);
+    const info = JSON.parse(callText(got[1]));
+    assert.equal(info.activeEngine, 'chromium');
+    assert.deepEqual(info.availableEngines, ['chromium', 'firefox']);
+    assert.equal(info.connected, false, 'introspection must not have launched a browser');
+  });
+
+  it('capabilities flips to firefox under BAREBROWSE_ENGINE=firefox', async () => {
+    const got = await rpc(
+      [{ jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'capabilities', arguments: {} } }],
+      { BAREBROWSE_ENGINE: 'firefox' },
+    );
+    const info = JSON.parse(callText(got[1]));
+    assert.equal(info.activeEngine, 'firefox',
+      'BAREBROWSE_ENGINE=firefox must be reported as the active engine');
+  });
+});
