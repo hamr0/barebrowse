@@ -30,7 +30,7 @@ const CHROMIUM_PATHS = {
  * Find first available Chromium cookie database.
  * @returns {{ path: string, browser: string } | null}
  */
-function findChromiumCookieDb() {
+export function findChromiumCookieDb() {
   for (const [browser, path] of Object.entries(CHROMIUM_PATHS)) {
     if (existsSync(path)) return { path, browser };
   }
@@ -41,7 +41,7 @@ function findChromiumCookieDb() {
  * Find Firefox default profile cookies.
  * @returns {string | null} Path to cookies.sqlite
  */
-function findFirefoxCookieDb() {
+export function findFirefoxCookieDb() {
   const base = `${HOME}/.mozilla/firefox`;
   try {
     for (const entry of readdirSync(base)) {
