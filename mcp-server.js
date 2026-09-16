@@ -118,6 +118,31 @@ export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
 let _page = null;
 let _pageConnecting = null;
 
+/**
+ * The engine + mode this server is configured to use, derived from env WITHOUT
+ * launching a browser. Both engines ship in the library; which one this server
+ * drives is fixed at launch by BAREBROWSE_ENGINE and cannot change mid-session
+ * (one browser is connected and reused across tool calls). Surfaced to the
+ * agent via `initialize.instructions`, the `capabilities` tool, and the `browse`
+ * tool description so the Firefox engine is discoverable — it was invisible
+ * before, and a session concluded (wrongly) that only Chromium was supported.
+ */
+function engineInfo() {
+  const engine = process.env.BAREBROWSE_ENGINE === 'firefox' ? 'firefox' : 'chromium';
+  const mode = process.env.BAREBROWSE_MODE || 'hybrid';
+  const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
+  return {
+    activeEngine: engine,
+    mode,
+    incognito,
+    availableEngines: ['chromium', 'firefox'],
+    // Engine is chosen once at server launch — the agent cannot switch it.
+    switchEngine:
+      "To use the other engine, restart the MCP server with BAREBROWSE_ENGINE=firefox "
+      + "(or unset it for the chromium default). It cannot be changed during a session.",
+  };
+}
+
 async function getPage() {
   if (_page) return _page;
   if (_pageConnecting) return _pageConnecting;
@@ -363,6 +388,11 @@ export const TOOLS = [
       required: ['ref'],
     },
   },
+  {
+    name: 'capabilities',
+    description: 'Report which browser engine this session drives (chromium or firefox) and what it can do — no navigation, no side effects. Use it to answer "can this drive Firefox?" or "is this an authenticated session?". Returns the active engine + mode, that both engines are supported, how to switch (a server-restart env var; the engine is fixed for a running session), and, if a page is already open, its live capability flags.',
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 // Powerful escape hatch — guarded behind an explicit env-var opt-in.
@@ -402,6 +432,19 @@ if (assessFn) {
 
 async function handleToolCall(name, args) {
   switch (name) {
+    case 'capabilities': {
+      // Introspection only — must NOT launch a browser. Report the configured
+      // engine from env; if a page is already connected, attach its live flags.
+      const info = engineInfo();
+      if (_page) {
+        info.connected = true;
+        info.capabilities = _page.capabilities;
+      } else {
+        info.connected = false;
+        info.capabilities = null; // populated on first navigation
+      }
+      return info;
+    }
     case 'browse': {
       let timer;
       const text = await Promise.race([
@@ -620,10 +663,17 @@ async function handleMessage(msg) {
   const { id, method, params } = msg;
 
   if (method === 'initialize') {
+    const e = engineInfo();
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
       serverInfo: { name: 'barebrowse', version: PKG_VERSION },
+      // Tell the agent which engine is live + that the other exists. `instructions`
+      // is a standard MCP field clients may show to the model.
+      instructions:
+        `barebrowse drives a real browser. Active engine: ${e.activeEngine} (mode: ${e.mode}). `
+        + `Both chromium and firefox are supported; ${e.switchEngine} `
+        + `Call the "capabilities" tool for the live engine + feature set.`,
     });
   }
 
@@ -632,7 +682,13 @@ async function handleMessage(msg) {
   }
 
   if (method === 'tools/list') {
-    return jsonrpcResponse(id, { tools: TOOLS });
+    // Append the live engine note to the `browse` entry-point description so the
+    // active engine (and that both are supported) is visible without a call.
+    const e = engineInfo();
+    const note = ` [Active engine: ${e.activeEngine}; chromium + firefox both supported — ${e.switchEngine}]`;
+    const tools = TOOLS.map((t) =>
+      t.name === 'browse' ? { ...t, description: t.description + note } : t);
+    return jsonrpcResponse(id, { tools });
   }
 
   if (method === 'tools/call') {
