@@ -97,11 +97,13 @@ Almost every "Chromium-only" gap turned out to be *wiring*, not R&D — each CDP
 | `waitForNavigation` | `Page.loadEventFired` | `browsingContext.load` | done (v0.19.0) |
 | Downloads | `Browser.downloadWillBegin` | `browsingContext.downloadWillBegin`/`downloadEnd` | done (v0.19.0) |
 | `reload({ignoreCache})` | CDP flag | not yet in Firefox BiDi | upstream gap |
-| Full AX-tree fidelity | `Accessibility.getFullAXTree` | none — reconstruct in-page | ongoing (Phase 5) |
+| Full AX-tree fidelity | `Accessibility.getFullAXTree` | none — reconstruct in-page | harness done (Phase 5); ongoing |
 
 Two shared cores keep the engines from drifting: `challenge.js` (`isChallengePage`, the hybrid gate) and `dialog.js` (`decideDialog`, the JS-dialog decision).
 
-**Still ahead (Phase 5 + cross-cutting):** an AX-tree **fidelity harness** — snapshot a fixture corpus on both engines, diff the reconstructed FF tree against the native CDP tree, and drive `ax-snapshot.js` toward the full W3C accname algorithm by measured divergence. Plus capability introspection (`page.engine` + a `page.capabilities` map so an agent can *check* rather than assume), a loud fallback when no Chromium is installed, and `doctor` reporting detected engines + the effective default.
+**Phase 5, done:** an AX-tree **fidelity harness** (`test/integration/ax-fidelity.test.js`) drives a fixture corpus through both engines and asserts the Firefox reconstruction never drops a role+name node the CDP baseline found — repeatable in place of the earlier by-hand comparison, mutation-verified against `src/ax-snapshot.js`. Capability introspection also shipped: `page.engine` + a `page.capabilities` map so a caller can *check* rather than assume, surfaced over MCP (`capabilities` tool + `initialize.instructions` + the `browse` tool description) and via `barebrowse doctor`, which now reports detected engines/cookie sources/effective default and any live session's engine + capabilities.
+
+**Still ahead:** driving `ax-snapshot.js` toward the full W3C accname algorithm by measured divergence, and a loud fallback when no Chromium is installed.
 
 ### ARIA-First (Why Not DOM)
 
