@@ -58,4 +58,13 @@ describe('session introspection — page.engine + page.capabilities', () => {
       await page.close();
     }
   });
+
+  it('headed session reports stealth disabled', async () => {
+    const page = await connect({ mode: 'headed' });
+    try {
+      assert.equal(page.capabilities.stealth, false);
+    } finally {
+      await page.close();
+    }
+  });
 });

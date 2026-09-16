@@ -179,12 +179,15 @@ export async function browse(url, opts = {}) {
  */
 
 /**
- * Static description of what the current session can do — engine, mode, and the
+ * Description of what the current session can do — engine, mode, and the
  * mode/engine-derived feature flags that actually differ between sessions. Read
- * it via `page.capabilities` instead of inferring from the engine name. `attach`
- * is Chromium `connect({port})` (no stealth/downloads); `reloadIgnoreCache` is
- * false on Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection`
- * reflect mode + incognito + attach state.
+ * it via `page.capabilities` instead of inferring from the engine name. All
+ * fields are launch-fixed engine/mode facts except `stealth`, which reflects
+ * the CURRENT headed/headless state and can flip mid-session after a hybrid
+ * bot-challenge fallback relaunches a headed browser. `attach` is Chromium
+ * `connect({port})` (no stealth/downloads); `reloadIgnoreCache` is false on
+ * Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection` reflect
+ * mode + incognito + attach state.
  * @typedef {object} Capabilities
  * @property {'chromium'|'firefox'} engine - Engine driving this session
  * @property {'headless'|'headed'|'hybrid'} mode - Launch mode
@@ -192,7 +195,7 @@ export async function browse(url, opts = {}) {
  * @property {'cdp'|'bidi'} escapeHatch - Name of the raw-protocol escape-hatch property
  * @property {boolean} reloadIgnoreCache - `reload({ignoreCache})` is honored
  * @property {boolean} downloads - `page.downloads` is populated
- * @property {boolean} stealth - Headless anti-detection is active
+ * @property {boolean} stealth - Headless anti-detection is currently active (live — reflects present headed/headless state, not just launch mode)
  * @property {boolean} cookieInjection - Cookie extraction/injection is active (off in incognito)
  */
 
@@ -684,7 +687,7 @@ export async function connect(opts = {}) {
       escapeHatch: 'cdp',
       reloadIgnoreCache: true,
       downloads: !attachMode,
-      stealth: !attachMode && mode !== 'headed',
+      get stealth() { return !attachMode && !currentlyHeaded; },
       cookieInjection: !incognito,
     },
 

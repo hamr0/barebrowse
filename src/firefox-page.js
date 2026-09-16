@@ -301,7 +301,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       escapeHatch: 'bidi',
       reloadIgnoreCache: false,
       downloads: true,
-      stealth: !opts.headed,
+      get stealth() { return !currentlyHeaded; },
       cookieInjection: !incognito,
     },
 
