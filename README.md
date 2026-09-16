@@ -100,7 +100,7 @@ MCP tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `
 
 `browse` and `snapshot` accept `pruneMode: 'act'|'read'`. `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch.
 
-Troubleshooting MCP setup: `npx barebrowse doctor` scans every known config location and flags scope conflicts. `npx barebrowse install --force` overwrites an existing entry pointing at a different endpoint.
+`npx barebrowse doctor` reports the runtime environment first — default engine/mode, installed Chromium/Firefox binaries, cookie sources, and any live session's engine + capabilities — then scans every known MCP config location and flags scope conflicts. `npx barebrowse install --force` overwrites an existing entry pointing at a different endpoint.
 
 ### 3. Library -- for agentic automation
 
