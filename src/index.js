@@ -172,7 +172,28 @@ export async function browse(url, opts = {}) {
  * on Chromium, `bidi`/`context` on Firefox. The shared methods dereference
  * without narrowing; an engine-specific hatch requires knowing the engine
  * (the default is Chromium), e.g. `if ('cdp' in page) page.cdp.send(...)`.
+ * Both shapes carry `page.engine` (`'chromium'`|`'firefox'`) and a
+ * `page.capabilities` object so a caller can introspect which engine drives
+ * the session and what it supports without probing for an escape hatch.
  * @typedef {Awaited<ReturnType<typeof connect>>} Page
+ */
+
+/**
+ * Static description of what the current session can do — engine, mode, and the
+ * mode/engine-derived feature flags that actually differ between sessions. Read
+ * it via `page.capabilities` instead of inferring from the engine name. `attach`
+ * is Chromium `connect({port})` (no stealth/downloads); `reloadIgnoreCache` is
+ * false on Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection`
+ * reflect mode + incognito + attach state.
+ * @typedef {object} Capabilities
+ * @property {'chromium'|'firefox'} engine - Engine driving this session
+ * @property {'headless'|'headed'|'hybrid'} mode - Launch mode
+ * @property {boolean} attach - Attached to a user-launched browser (Chromium only)
+ * @property {'cdp'|'bidi'} escapeHatch - Name of the raw-protocol escape-hatch property
+ * @property {boolean} reloadIgnoreCache - `reload({ignoreCache})` is honored
+ * @property {boolean} downloads - `page.downloads` is populated
+ * @property {boolean} stealth - Headless anti-detection is active
+ * @property {boolean} cookieInjection - Cookie extraction/injection is active (off in incognito)
  */
 
 /**
@@ -646,6 +667,26 @@ export async function connect(opts = {}) {
     },
 
     get botBlocked() { return botBlocked; },
+
+    /** @type {'chromium'} Engine driving this session (see also `capabilities`) */
+    engine: 'chromium',
+
+    /**
+     * Static introspection of this session's engine, mode, and feature support
+     * — see the `Capabilities` typedef. Lets a caller ask "which engine am I on
+     * and what can it do?" without probing for `cdp`/`bidi`.
+     * @type {Capabilities}
+     */
+    capabilities: {
+      engine: 'chromium',
+      mode,
+      attach: attachMode,
+      escapeHatch: 'cdp',
+      reloadIgnoreCache: true,
+      downloads: !attachMode,
+      stealth: !attachMode && mode !== 'headed',
+      cookieInjection: !incognito,
+    },
 
     dialogLog,
 

@@ -610,6 +610,10 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     pid: process.pid,
     token: authToken,
     startedAt: new Date().toISOString(),
+    // Persisted so `status`/`doctor` can report the live engine + feature set
+    // without an HTTP round-trip (page.engine/capabilities, added in v0.21.0).
+    engine: page.engine,
+    capabilities: page.capabilities,
   }));
 
   // Handle SIGTERM gracefully
