@@ -285,6 +285,26 @@ export async function createFirefoxPage(bidi, opts = {}) {
     /** Whether the last goto() landed on a bot-challenge page (parity w/ CDP). */
     get botBlocked() { return botBlocked; },
 
+    /** @type {'firefox'} Engine driving this session (see also `capabilities`). */
+    engine: 'firefox',
+
+    /**
+     * Static introspection of this session's engine, mode, and feature support
+     * — mirrors connect()'s Chromium `page.capabilities`. `reloadIgnoreCache` is
+     * false here (upstream BiDi gap); Firefox is never attach mode.
+     * @type {import('./index.js').Capabilities}
+     */
+    capabilities: {
+      engine: 'firefox',
+      mode: hybrid ? 'hybrid' : (opts.headed ? 'headed' : 'headless'),
+      attach: false,
+      escapeHatch: 'bidi',
+      reloadIgnoreCache: false,
+      downloads: true,
+      stealth: !opts.headed,
+      cookieInjection: !incognito,
+    },
+
     async goto(url, timeout = 30000) {
       // Same navigation guard the CDP path enforces — block file:/chrome:/
       // view-source: and (optionally) private-network hosts before navigating.
