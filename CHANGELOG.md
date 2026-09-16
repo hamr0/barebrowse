@@ -2,8 +2,48 @@
 
 ## [Unreleased]
 
+### Added
+
+- **The MCP surface now advertises the active engine.** Firefox is selectable
+  only at server launch (`BAREBROWSE_ENGINE`), which a running agent can't see —
+  so agents concluded only Chromium existed. Three surfaces now expose it: the
+  `initialize` response carries `instructions` naming the active engine + that
+  both engines are supported; the `browse` tool description gets the active
+  engine appended at `tools/list` time; and a new **`capabilities`** MCP tool
+  reports the active engine, mode, both available engines, how to switch (a
+  server restart — the engine is fixed for a running session), and the live
+  capability flags if a page is open. `capabilities` is pure introspection: it
+  never launches a browser.
+- **Session introspection: `page.engine` + `page.capabilities`.** Both engine
+  shapes now carry `page.engine` (`'chromium'` | `'firefox'`) and a
+  `page.capabilities` object (`engine`, `mode`, `attach`, `escapeHatch`,
+  `reloadIgnoreCache`, `downloads`, `stealth`, `cookieInjection`), so a caller
+  can ask "which engine am I on and what can it do?" without probing for a
+  `cdp`/`bidi` escape hatch. `engine` is a typed literal in each arm, so it also
+  works as a discriminant (`if (page.engine === 'firefox') …`) — cleaner than
+  the previous `'cdp' in page`. The CLI daemon persists both into
+  `session.json`, so `status`/`doctor` report the live session's feature set.
+- **`barebrowse doctor` now reports the runtime environment**, not just MCP
+  config scope conflicts: the default engine/mode (incl. the `BAREBROWSE_ENGINE`
+  / `BAREBROWSE_MODE` / `BAREBROWSE_INCOGNITO` overrides that pick the engine at
+  launch), which Chromium and Firefox binaries are installed, which cookie
+  sources exist, and any live session's engine + capabilities. This closes the
+  discoverability gap where the Firefox engine — selectable only via a
+  server-launch env var — was invisible to a running session.
+- **AX-fidelity harness (`test/integration/ax-fidelity.test.js`).** Drives the
+  same fixture pages through both engines and asserts the Firefox/BiDi
+  reconstruction never drops a semantic (role + name) node the CDP baseline
+  found — making repeatable the by-hand comparison that originally caught four
+  reconstruction bugs. Compares role+name only; property brackets and
+  `StaticText` echoes legitimately differ between engines.
+
 ### Fixed
 
+- **Corrected a stale doc line claiming Firefox "is not yet implemented."**
+  `barebrowse.context.md` note #10 still said the library was Chromium-only;
+  Firefox/BiDi has shipped since v0.15.0 (parity reached across v0.16–0.19).
+  The line now documents both engines and how to select Firefox — the same
+  false claim had led a session to conclude Firefox wasn't supported.
 - **Adopter type-check gate no longer runs dependency install scripts next to the publish credential.** The gate installs the packed tarball into a throwaway consumer project, and that install ran inside the job holding `id-token: write` — the OIDC credential that can publish this package — with install scripts enabled, so any install script in the tarball's transitive dependency tree executed beside a live publish capability. Now `--ignore-scripts`. The gate only ever runs `tsc`, which reads `.d.ts` and nothing else, so nothing needs building: verified on a native-addon package that the addon is *not* compiled and the type check still passes green, while a broken dereference still fails it. `typescript` is also pinned to `@5` for the same reason `@types/node` is pinned — an unpinned compiler silently becomes a new major and fails the gate on its own schedule rather than on the commit's merits. CI only — no runtime or published-artifact change.
 
 ## [0.20.0] - 2026-08-30
