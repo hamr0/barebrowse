@@ -4,6 +4,13 @@
 
 ### Added
 
+- **`connect()` falls back to Firefox when no Chromium is installed.** With no
+  `engine` passed, it prefers Chromium but uses Firefox (over WebDriver BiDi)
+  if only Firefox is present, warning once to stderr; if neither is installed it
+  throws naming both. An explicit `engine` is still honored exactly — it errors
+  on a missing binary rather than silently switching — and attach mode (`port`)
+  stays Chromium-only. The decision is a pure, unit-tested `resolveEngine()`.
+  (`browse()` remains Chromium-only — separate.)
 - **The MCP surface now advertises the active engine.** Firefox is selectable
   only at server launch (`BAREBROWSE_ENGINE`), which a running agent can't see —
   so agents concluded only Chromium existed. Three surfaces now expose it: the
