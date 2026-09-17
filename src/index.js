@@ -186,8 +186,9 @@ export async function browse(url, opts = {}) {
  * the CURRENT headed/headless state and can flip mid-session after a hybrid
  * bot-challenge fallback relaunches a headed browser. `attach` is Chromium
  * `connect({port})` (no stealth/downloads); `reloadIgnoreCache` is false on
- * Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection` reflect
- * mode + incognito + attach state.
+ * Firefox (upstream BiDi gap). Each remaining flag has its own driver:
+ * `downloads` is off when attached, `stealth` off when attached or headed,
+ * `cookieInjection` off in incognito.
  * @typedef {object} Capabilities
  * @property {'chromium'|'firefox'} engine - Engine driving this session
  * @property {'headless'|'headed'|'hybrid'} mode - Launch mode
@@ -715,8 +716,10 @@ export async function connect(opts = {}) {
     engine: 'chromium',
 
     /**
-     * Static introspection of this session's engine, mode, and feature support
-     * — see the `Capabilities` typedef. Lets a caller ask "which engine am I on
+     * Introspection of this session's engine, mode, and feature support — see
+     * the `Capabilities` typedef. Fields are launch-fixed except `stealth`,
+     * which is a live getter tracking the current headed/headless state (flips
+     * after a hybrid headed relaunch). Lets a caller ask "which engine am I on
      * and what can it do?" without probing for `cdp`/`bidi`.
      * @type {Capabilities}
      */
