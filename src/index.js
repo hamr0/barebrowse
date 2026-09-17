@@ -8,8 +8,8 @@
  *   const snapshot = await browse('https://example.com');
  */
 
-import { launch, attach, cleanupBrowser } from './chromium.js';
-import { launchFirefox, cleanupFirefox } from './firefox.js';
+import { launch, attach, cleanupBrowser, findBrowser } from './chromium.js';
+import { launchFirefox, cleanupFirefox, findFirefox } from './firefox.js';
 import { createCDP } from './cdp.js';
 import { createBiDi } from './bidi.js';
 import { createFirefoxPage } from './firefox-page.js';
@@ -264,12 +264,52 @@ export async function browse(url, opts = {}) {
  *   structurally from the returned object literals; annotating it as `Page`
  *   would be a self-reference, since `Page` is `ReturnType<typeof connect>`.
  */
+/** True if a browser finder resolves a binary; false if it throws (none found). */
+function canFind(finder) {
+  try { finder(); return true; } catch { return false; }
+}
+
+/**
+ * Decide which engine connect() should use. Pure — the caller passes lazy
+ * probe thunks so this is unit-testable without launching a browser.
+ * An explicit `opts.engine` is always honored (existence is checked downstream
+ * by launch()/connectFirefox(), which throw a clear install message if missing).
+ * Attach mode (`opts.port`) is CDP/Chromium-only. Otherwise (no engine picked)
+ * prefer Chromium, fall back to Firefox, and if neither is installed throw.
+ * @param {{engine?: string, port?: number}} opts
+ * @param {{hasChromium: () => boolean, hasFirefox: () => boolean}} probe
+ * @returns {{engine: 'chromium'|'firefox', fellBack: boolean}}
+ */
+export function resolveEngine(opts, probe) {
+  if (opts.engine === 'firefox') return { engine: 'firefox', fellBack: false };
+  if (opts.engine === 'chromium') return { engine: 'chromium', fellBack: false };
+  if (opts.port) return { engine: 'chromium', fellBack: false };
+  if (probe.hasChromium()) return { engine: 'chromium', fellBack: false };
+  if (probe.hasFirefox()) return { engine: 'firefox', fellBack: true };
+  throw new Error(
+    'No supported browser found. Install a Chromium browser (chrome, chromium, '
+    + 'brave, or edge) or Firefox (>= 121 for stable WebDriver BiDi).',
+  );
+}
+
 export async function connect(opts = {}) {
   // Firefox is driven over WebDriver BiDi (CDP is deprecated there) — a
   // separate transport with its own page object. It reuses prune.js/aria.js/
   // readable.js but none of the CDP page machinery below, so branch early.
-  if (opts.engine === 'firefox') {
-    return connectFirefox(opts);
+  const { engine: resolvedEngine, fellBack } = resolveEngine(opts, {
+    hasChromium: () => canFind(findBrowser),
+    hasFirefox: () => canFind(findFirefox),
+  });
+  if (resolvedEngine === 'firefox') {
+    if (fellBack) {
+      // Loud, to stderr (stdout is data on CLI/MCP). Only fires on the default
+      // path — an explicit engine never falls back, so never warns.
+      console.warn(
+        'barebrowse: no Chromium browser found — falling back to Firefox over '
+        + 'WebDriver BiDi. Pass engine explicitly to silence this.',
+      );
+    }
+    return connectFirefox({ ...opts, engine: 'firefox' });
   }
 
   const mode = opts.mode || 'headless';
