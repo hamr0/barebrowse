@@ -289,9 +289,11 @@ export async function createFirefoxPage(bidi, opts = {}) {
     engine: 'firefox',
 
     /**
-     * Static introspection of this session's engine, mode, and feature support
-     * — mirrors connect()'s Chromium `page.capabilities`. `reloadIgnoreCache` is
-     * false here (upstream BiDi gap); Firefox is never attach mode.
+     * Introspection of this session's engine, mode, and feature support —
+     * mirrors connect()'s Chromium `page.capabilities`. Fields are launch-fixed
+     * except `stealth`, a live getter tracking the current headed/headless
+     * state. `reloadIgnoreCache` is false here (upstream BiDi gap); Firefox is
+     * never attach mode.
      * @type {import('./index.js').Capabilities}
      */
     capabilities: {
