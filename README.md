@@ -152,7 +152,11 @@ Firefox is at practical parity with Chromium: stealth, consent auto-dismiss,
 ad/tracker blocking, JS dialogs, console/network capture, hybrid fallback,
 `saveState`, `waitForNavigation`, and download tracking all work the same way.
 Chromium (CDP) stays the default; the only remaining gap is
-`reload({ignoreCache})` (upstream BiDi limitation).
+`reload({ignoreCache})` (upstream BiDi limitation). With no explicit `engine`,
+`connect()` falls back to Firefox (warning once to stderr) if no Chromium
+browser is installed, and throws naming both if neither is; an explicit
+`engine` is always honored and errors on a missing binary instead of silently
+switching.
 
 ### Incognito (clean session)
 
