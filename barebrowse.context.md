@@ -95,7 +95,7 @@ const snapshot = await browse('https://example.com', {
 | `cdp` | -- | object | Raw CDP session (getter — survives hybrid fallback and switchTab) for escape hatch: `page.cdp.send(method, params)` |
 | `createTab()` | -- | tab handle | New tab in same browser. Returns `{ goto, botBlocked, injectCookies, waitForNetworkIdle, cdp, close }`. Tab close doesn't affect session. |
 | `engine` | -- | `'chromium'`\|`'firefox'` | Which engine drives this session. Always readable (both shapes carry it); a typed literal, so it also narrows the union: `if (page.engine === 'firefox') page.bidi.…`. |
-| `capabilities` | -- | object | Static feature introspection: `{ engine, mode, attach, escapeHatch, reloadIgnoreCache, downloads, stealth, cookieInjection }`. Ask "what can this session do?" without probing for `cdp`/`bidi`. `reloadIgnoreCache` is false on Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection` reflect mode + attach + incognito. |
+| `capabilities` | -- | object | Feature introspection: `{ engine, mode, attach, escapeHatch, reloadIgnoreCache, downloads, stealth, cookieInjection }`. Ask "what can this session do?" without probing for `cdp`/`bidi`. All fields are launch-fixed except `stealth`, which is a live getter reflecting the session's current headed/headless state (it can flip mid-session after a hybrid bot-challenge relaunch). `reloadIgnoreCache` is false on Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection` reflect mode + attach + incognito. |
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless) |
 
 **connect() options** (in addition to mode/port/consent):
