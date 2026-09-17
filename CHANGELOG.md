@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.21.0] - 2026-09-17
 
 ### Added
 
@@ -46,6 +46,15 @@
 
 ### Fixed
 
+- **`page.capabilities.stealth` now correctly reflects live headed/headless
+  state.** It was computed once at `connect()`; after a hybrid bot-challenge
+  fallback relaunched a headed browser, `capabilities.stealth` (and the MCP
+  `capabilities` tool, and the CLI daemon's persisted `session.json`) kept
+  reporting the launch-time value. Now a getter on both engines that reads the
+  live state. JSDoc on both engine arms corrected to mark `stealth` live vs
+  the other launch-fixed fields, and a regression test asserts it is a real
+  getter (property descriptor has `get`), not a value captured at `connect()`
+  — a frozen field would have passed the previous test.
 - **Corrected a stale doc line claiming Firefox "is not yet implemented."**
   `barebrowse.context.md` note #10 still said the library was Chromium-only;
   Firefox/BiDi has shipped since v0.15.0 (parity reached across v0.16–0.19).
