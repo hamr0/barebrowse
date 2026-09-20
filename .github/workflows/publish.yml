@@ -69,6 +69,14 @@ jobs:
           else
             npm install --no-audit --no-fund
           fi
+      - name: Lockfile version matches package.json
+        # `npm ci` above already fails when the lockfile's DEPENDENCY entries
+        # disagree with package.json; it does not check the lockfile's copy of
+        # this project's own version. A release that bumps package.json without
+        # running an install leaves that field behind, and nothing caught it —
+        # measured in bareguard, stale across three consecutive releases.
+        # No-ops via --if-present in a repo that has not added the script.
+        run: npm run check:lockfile --if-present
       - name: Typecheck
         run: npm run typecheck --if-present
       - name: Test
