@@ -132,8 +132,15 @@ function resetPage() {
 // Idle TTL: a server can outlive its conversation by days, holding a browser
 // (GBs) the whole time. After BAREBROWSE_IDLE_MINUTES (default 15, 0 = off)
 // with no tools/call in flight, release it; the next call opens a fresh one.
-const _idleEnv = Number(process.env.BAREBROWSE_IDLE_MINUTES ?? 15);
-const IDLE_MS = (Number.isFinite(_idleEnv) && _idleEnv >= 0 ? _idleEnv : 15) * 60_000;
+// Capped at setTimeout's max (2^31-1 ms, ~24.8 days): beyond it Node fires after 1ms.
+export function idleMs(raw) {
+  const DEFAULT = 15 * 60_000;
+  if (raw === undefined || String(raw).trim() === '') return DEFAULT;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n < 0) return DEFAULT;
+  return Math.min(n * 60_000, 2 ** 31 - 1);
+}
+const IDLE_MS = idleMs(process.env.BAREBROWSE_IDLE_MINUTES);
 let _inflight = 0;
 let _idleTimer = null;
 
