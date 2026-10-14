@@ -409,7 +409,7 @@ describe('idleMs (BAREBROWSE_IDLE_MINUTES parse)', () => {
 });
 
 describe('waitForDeadline (wait_for outer deadline follows requested wait)', () => {
-  const cases = [[undefined, 60000], [0, 60000], [30000, 60000], [55000, 60000], [60000, 65000], [90000, 95000]];
+  const cases = [[undefined, 60000], [0, 60000], [30000, 60000], [55000, 60000], [60000, 65000], [90000, 95000], [3e9, 2 ** 31 - 1]];
   for (const [t, want] of cases) {
     it(`${t} -> ${want}`, () => assert.equal(waitForDeadline(t), want));
   }

@@ -284,3 +284,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Symptom:** 7 integration tests failed (`browse.test.js` browse()/connect(), `cli.test.js` "goto navigates"): the pruned snapshot had no heading and no "Example Domain" text.
 **Cause:** example.com changed its page (no `<h1>`, six multilingual paragraphs, injected "Learn more" link) and says not to rely on it for testing. Not a barebrowse bug.
 **Fix:** `test/fixtures/example-page.js` serves a local copy of the old page on 127.0.0.1; browse.test.js and the cli.test.js goto test use it. In cli.test.js the goto and reload calls moved to an async `cliAsync` helper, because the sync `cli()` blocks the event loop the in-process server needs. The Hacker News step stays as real-internet coverage.
+
+## [2026-10-14] wait_for with an absurd timeout overflowed setTimeout and reset the MCP page (M7)
+
+**Symptom:** `wait_for {text:'x', timeout:3000000000}` failed at once with `timed out after 3000s`, and `resetPage()` wiped the page.
+**Root cause:** `waitForDeadline` returned `timeout + 5000` uncapped; above 2^31-1 ms `setTimeout` overflows and fires after ~1ms, and that "timed out" message is transient.
+**Fix:** cap the result at `MAX_TIMER_MS` (2^31-1), the same cap `idleMs` uses (now a shared const). Unchanged below ~24.8 days.
+**Regression test:** `test/unit/mcp.test.js` — "waitForDeadline" 3e9 -> 2147483647 (red against the uncapped code).
