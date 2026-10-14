@@ -809,16 +809,27 @@ export async function connect(opts = {}) {
     },
 
     async close() {
-      await cdp.send('Target.closeTarget', { targetId: page.targetId });
-      cdp.close();
-      await cleanupBrowser(browser);
-      // If we created the download dir ourselves, clean it up too. Caller-
-      // supplied opts.downloadPath stays — the caller owns the lifecycle.
-      if (ownedDownloadDir) {
-        try {
-          const { rmSync } = await import('node:fs');
-          rmSync(ownedDownloadDir, { recursive: true, force: true });
-        } catch {}
+      // Polite tab close is best-effort and bounded: a dead or hung browser
+      // must not skip the hard cleanup below (the profile dir / process leak).
+      let timer;
+      try {
+        await Promise.race([
+          cdp.send('Target.closeTarget', { targetId: page.targetId }),
+          new Promise((r) => { timer = setTimeout(r, 2500); }),
+        ]);
+      } catch {} finally { clearTimeout(timer); }
+      try { cdp.close(); } catch {}
+      try {
+        await cleanupBrowser(browser); // no-op in attach mode (process: null)
+      } finally {
+        // If we created the download dir ourselves, clean it up too. Caller-
+        // supplied opts.downloadPath stays — the caller owns the lifecycle.
+        if (ownedDownloadDir) {
+          try {
+            const { rmSync } = await import('node:fs');
+            rmSync(ownedDownloadDir, { recursive: true, force: true });
+          } catch {}
+        }
       }
     },
   };
@@ -929,13 +940,19 @@ async function connectFirefox(opts) {
   });
   const closePage = page.close.bind(page);
   page.close = async () => {
-    await closePage();
-    await cleanupFirefox(browser); // `browser` tracks the relaunched one if hybrid fired
-    if (ownedDownloadDir) {
+    try {
+      await closePage();
+    } finally {
       try {
-        const { rmSync } = await import('node:fs');
-        rmSync(ownedDownloadDir, { recursive: true, force: true });
-      } catch { /* best-effort reap */ }
+        await cleanupFirefox(browser); // `browser` tracks the relaunched one if hybrid fired
+      } finally {
+        if (ownedDownloadDir) {
+          try {
+            const { rmSync } = await import('node:fs');
+            rmSync(ownedDownloadDir, { recursive: true, force: true });
+          } catch { /* best-effort reap */ }
+        }
+      }
     }
   };
   return page;

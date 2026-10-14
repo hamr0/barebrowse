@@ -642,8 +642,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     },
 
     async close() {
-      try { await bidi.send('browsingContext.close', { context: topContext }); } catch {}
-      bidi.close();
+      // Best-effort and bounded: a hung browser must not block the hard cleanup.
+      try { await withTimeout(bidi.send('browsingContext.close', { context: topContext }), 2500, 'close'); } catch {}
+      try { bidi.close(); } catch {}
     },
   };
 
