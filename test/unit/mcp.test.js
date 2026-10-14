@@ -7,7 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, unlinkSync } from 'node:fs';
-import { TIMEOUTS, TOOLS, saveSnapshot, idleMs } from '../../mcp-server.js';
+import { TIMEOUTS, TOOLS, saveSnapshot, idleMs, waitForDeadline } from '../../mcp-server.js';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join as joinPath } from 'node:path';
@@ -405,5 +405,12 @@ describe('idleMs (BAREBROWSE_IDLE_MINUTES parse)', () => {
   ];
   for (const [raw, want] of cases) {
     it(`${JSON.stringify(raw)} -> ${want}`, () => assert.equal(idleMs(raw), want));
+  }
+});
+
+describe('waitForDeadline (wait_for outer deadline follows requested wait)', () => {
+  const cases = [[undefined, 60000], [0, 60000], [30000, 60000], [55000, 60000], [60000, 65000], [90000, 95000]];
+  for (const [t, want] of cases) {
+    it(`${t} -> ${want}`, () => assert.equal(waitForDeadline(t), want));
   }
 });

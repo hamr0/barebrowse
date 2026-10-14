@@ -135,6 +135,16 @@ function resetPage() {
 // (GBs) the whole time. After BAREBROWSE_IDLE_MINUTES (default 15, 0 = off)
 // with no tools/call in flight, release it; the next call opens a fresh one.
 // Capped at setTimeout's max (2^31-1 ms, ~24.8 days): beyond it Node fires after 1ms.
+/**
+ * Outer deadline for wait_for: follows the requested wait (page.waitFor
+ * defaults to 30000) plus 5s slack, never below TIMEOUTS.wait_for. Otherwise a
+ * wait >= the fixed deadline trips withRetry's transient "timed out" and resets
+ * the page.
+ */
+export function waitForDeadline(timeout) {
+  return Math.max(TIMEOUTS.wait_for, (timeout || 30000) + 5000);
+}
+
 export function idleMs(raw) {
   const DEFAULT = 15 * 60_000;
   if (raw === undefined || String(raw).trim() === '') return DEFAULT;
@@ -593,7 +603,7 @@ async function handleToolCall(name, args) {
       const page = await getPage();
       await page.waitFor({ text: args.text, selector: args.selector, timeout: args.timeout });
       return 'ok';
-    }, TIMEOUTS.wait_for, { retry: false });
+    }, waitForDeadline(args.timeout), { retry: false });
     case 'tabs': return withRetry(async () => {
       const page = await getPage();
       if (typeof args.switchTo === 'number') {

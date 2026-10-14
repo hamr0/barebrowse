@@ -268,3 +268,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `isTransient` in `mcp-server.js` matches `'timed out'`, which also matches `page.waitFor`'s own `waitFor timed out after Nms`. A wait that didn't find its text is a normal result, not a broken browser.
 **Fix:** `isTransient` returns false for messages starting `waitFor timed out`. `withRetry`'s own per-attempt `timed out after Ns` and every other transient case are unchanged.
 **Regression test:** `test/integration/mcp-lifecycle.test.js` — "an ordinary wait_for timeout keeps the page and browser" (same browser pid, snapshot still has the page; red before the fix: `about:blank`). The M1 test "a transient error closes the old browser…" used this timeout as its trigger and would have passed vacuously; it now kills the browser (`kill -9`) so the next call hits a dead socket, and asserts the old process and profile dir are gone (also red without M4).
+
+## [2026-10-14] wait_for with timeout >= 60s still reset the MCP page (M6)
+
+**Symptom:** `wait_for {text:'NOPE', timeout:65000}` returned `timed out after 60s` and the page and browser were wiped (profile dir gone seconds later). Found by self-review of M5.
+**Root cause:** the outer `withRetry` deadline was the fixed `TIMEOUTS.wait_for` (60000) while `page.waitFor` honours the requested timeout. For requests >= 60s the outer `timed out after 60s` fires first, and that message is still transient, so `resetPage()` ran.
+**Fix:** new exported pure helper `waitForDeadline(timeout)` = `max(TIMEOUTS.wait_for, (timeout || 30000) + 5000)`; the `wait_for` handler uses it. A genuinely hung browser is still caught by the outer deadline, just later for long waits. `isTransient` untouched.
+**Regression test:** `test/unit/mcp.test.js` — "waitForDeadline" (60000 -> 65000, 90000 -> 95000 red against the old fixed 60000).
+**Known, deliberately deferred limitation:** `isTransient` classifies by error-message text, and a timeout is ambiguous (slow-but-healthy page vs hung browser). The root fix, on a timeout ping the browser with a short deadline and reset only if it doesn't answer, was considered and deferred to avoid growing this branch.
