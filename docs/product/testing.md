@@ -86,7 +86,7 @@ Tests the full `browse()` and `connect()` pipeline end-to-end against real pages
 
 | # | Suite | Test | What it validates |
 |---|-------|------|-------------------|
-| 1 | browse() | returns ARIA snapshot for a public page | browse('example.com') returns non-empty snapshot with title |
+| 1 | browse() | returns ARIA snapshot for a public page | browse() of the local example page (`test/fixtures/example-page.js`) returns non-empty snapshot with title |
 | 2 | browse() | includes heading and ref markers | Snapshot contains roles and [ref=N] markers |
 | 3 | browse() | prunes by default (act mode) | Pruned output smaller than raw ARIA tree |
 | 4 | browse() | browse mode preserves paragraphs | pruneMode: 'browse' keeps text content |
@@ -111,7 +111,7 @@ Tests the full CLI session lifecycle: daemon spawn, command dispatch over HTTP, 
 | 1 | open starts a daemon and creates session.json | `barebrowse open about:blank` spawns daemon, writes session.json with port+pid |
 | 2 | status shows running session | `barebrowse status` reports pid, port, start time |
 | 3 | snapshot creates a .yml file | `barebrowse snapshot` writes .barebrowse/page-*.yml |
-| 4 | goto navigates and snapshot shows new page content | `barebrowse goto example.com` + snapshot contains "Example Domain" + refs |
+| 4 | goto navigates and snapshot shows new page content | `barebrowse goto <local example page>` + snapshot contains "Example Domain" + refs |
 | 5 | click sends click command | `barebrowse click <ref>` returns "ok" |
 | 6 | eval executes JS and returns result | `barebrowse eval 1+1` returns "2" |
 | 7 | console-logs creates a .json file | After eval with console.log, `console-logs` writes JSON |
@@ -239,7 +239,7 @@ it('clicks the button', async () => {
 ## CI considerations
 
 - Unit tests: fast, no network, always safe to run
-- Integration tests: need Chromium installed, no network (uses example.com/HN but tolerates failures)
+- Integration tests: need Chromium installed, no network for the browse/connect and CLI goto tests (they serve a local copy of the example page; a few other tests still use HN and other live sites and tolerate failures)
 - E2E tests: need internet, may be flaky (sites change, rate limits, geo-blocks)
 - Recommended CI split: run unit + integration always, E2E on manual trigger or nightly
 - Each test launches/kills its own browser instance -- no shared state between tests
