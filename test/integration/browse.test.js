@@ -33,7 +33,7 @@ describe('browse()', () => {
   it('prunes by default (act mode)', async () => {
     const pruned = await browse(example.url);
     const raw = await browse(example.url, { prune: false });
-    // Pruned should be smaller or equal (example.com is tiny, may not differ much)
+    // Pruned should be smaller or equal (the local example page is tiny, may not differ much)
     assert.ok(pruned.length <= raw.length, 'pruned should not be larger than raw');
   });
 
@@ -45,7 +45,7 @@ describe('browse()', () => {
 
   it('act mode drops paragraphs', async () => {
     const snapshot = await browse(example.url, { pruneMode: 'act' });
-    // Act mode on example.com: only heading survives (no interactive elements)
+    // Act mode on the local example page (test/fixtures/example-page.js): only heading survives (no interactive elements)
     assert.ok(snapshot.includes('heading'), 'should keep heading');
     // paragraph content should be gone
     assert.equal(snapshot.includes('documentation examples'), false, 'should drop paragraph text');
