@@ -12,6 +12,7 @@
 
 import { browse, connect } from './src/index.js';
 import { formatReadable } from './src/readable.js';
+import { cleanOld } from './src/output-clean.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -771,6 +772,7 @@ async function handleMessage(msg) {
 // runStdio() explicitly. Tests import TIMEOUTS/TOOLS without calling it.
 
 export function runStdio() {
+  cleanOld(OUTPUT_DIR);
   // One-line startup banner to stderr (stderr because stdout is the JSON-RPC
   // channel — must not contain non-JSON-RPC bytes). Captured by Claude Code's
   // MCP log, makes "I added barebrowse twice and got the wrong one" issues
