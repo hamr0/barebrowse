@@ -95,7 +95,7 @@ async function withRetry(fn, timeoutMs, { retry = true } = {}) {
   } catch (err) {
     if (!isTransient(err)) throw err;
     // Transient failure — reset session so the next request gets a fresh page.
-    _page = null;
+    resetPage();
     if (!retry) throw err;
     return await attempt();
   }
@@ -117,6 +117,17 @@ export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
 
 let _page = null;
 let _pageConnecting = null;
+
+/**
+ * Forget the current session AND close its browser. A bare `_page = null`
+ * orphaned the browser (still running, holding GBs) — the next getPage() just
+ * launched a second one. Fire-and-forget: callers are on error paths.
+ */
+function resetPage() {
+  const p = _page;
+  _page = null;
+  if (p) p.close().catch(() => {});
+}
 
 /**
  * The engine + mode this server is configured to use, derived from env WITHOUT
@@ -639,7 +650,7 @@ async function handleToolCall(name, args) {
         } catch (err) {
           clearTimeout(timer);
           await tab.close().catch(() => {});
-          if (isTransient(err)) _page = null;
+          if (isTransient(err)) resetPage();
           throw err;
         }
       } finally {
@@ -699,7 +710,7 @@ async function handleMessage(msg) {
         content: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }],
       });
     } catch (err) {
-      if (isTransient(err)) _page = null;
+      if (isTransient(err)) resetPage();
       return jsonrpcResponse(id, {
         content: [{ type: 'text', text: `Error: ${err.message}` }],
         isError: true,
@@ -759,8 +770,8 @@ export function runStdio() {
 
   // Prevent unhandled rejections and uncaught exceptions from crashing the server.
   // Browser OOM/crash rejects all pending CDP promises — some may not be awaited.
-  process.on('unhandledRejection', () => { _page = null; });
-  process.on('uncaughtException', () => { _page = null; });
+  process.on('unhandledRejection', () => { resetPage(); });
+  process.on('uncaughtException', () => { resetPage(); });
 
   // Clean up on exit
   process.on('SIGINT', async () => {
