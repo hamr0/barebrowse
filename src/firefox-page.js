@@ -25,6 +25,7 @@ import { dismissConsentFirefox } from './consent-firefox.js';
 import { waitForNetworkIdleBiDi } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage, countNodes } from './challenge.js';
+import { withTimeout } from './with-timeout.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -172,17 +173,6 @@ export async function createFirefoxPage(bidi, opts = {}) {
     await bidi.send('input.performActions', {
       context, actions: [{ type: 'key', id: 'kbd', actions }],
     });
-  }
-
-  /**
-   * Reject if `p` doesn't settle within `ms`. BiDi commands have no built-in
-   * timeout, so a navigate/reload/traverse whose `wait:'complete'` never fires
-   * (a page that never loads) would otherwise hang the call forever.
-   */
-  function withTimeout(p, ms, label) {
-    let timer;
-    const t = new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`${label} timed out after ${ms}ms`)), ms); });
-    return Promise.race([p, t]).finally(() => clearTimeout(timer));
   }
 
   // Download tracking, parity with the CDP `page.downloads` array. Firefox
