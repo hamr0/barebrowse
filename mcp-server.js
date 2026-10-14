@@ -129,6 +129,21 @@ function resetPage() {
   if (p) p.close().catch(() => {});
 }
 
+// Idle TTL: a server can outlive its conversation by days, holding a browser
+// (GBs) the whole time. After BAREBROWSE_IDLE_MINUTES (default 15, 0 = off)
+// with no tools/call in flight, release it; the next call opens a fresh one.
+const _idleEnv = Number(process.env.BAREBROWSE_IDLE_MINUTES ?? 15);
+const IDLE_MS = (Number.isFinite(_idleEnv) && _idleEnv >= 0 ? _idleEnv : 15) * 60_000;
+let _inflight = 0;
+let _idleTimer = null;
+
+function armIdle() {
+  clearTimeout(_idleTimer);
+  if (!IDLE_MS || _inflight) return;
+  _idleTimer = setTimeout(() => { if (!_inflight && _page) resetPage(); }, IDLE_MS);
+  _idleTimer.unref();
+}
+
 /**
  * The engine + mode this server is configured to use, derived from env WITHOUT
  * launching a browser. Both engines ship in the library; which one this server
@@ -704,6 +719,8 @@ async function handleMessage(msg) {
 
   if (method === 'tools/call') {
     const { name, arguments: args } = params;
+    _inflight++;
+    clearTimeout(_idleTimer);
     try {
       const result = await handleToolCall(name, args || {});
       return jsonrpcResponse(id, {
@@ -715,6 +732,9 @@ async function handleMessage(msg) {
         content: [{ type: 'text', text: `Error: ${err.message}` }],
         isError: true,
       });
+    } finally {
+      _inflight--;
+      armIdle();
     }
   }
 
