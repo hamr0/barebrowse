@@ -148,7 +148,7 @@ Tests real interactions: clicking, typing, scrolling, form submission, and navig
 | 1 | Google | search and navigate results | type() + press('Enter') + waitForNavigation() on Google |
 | 2 | Wikipedia | navigate article links | click() + waitForNavigation() on Wikipedia article links |
 | 3 | GitHub | navigate SPA repo links | click() works for SPA navigation (no loadEventFired) |
-| 4 | DuckDuckGo | search query and verify results | type() + press('Enter') + navigation on DDG |
+| 4 | Craigslist | search query and verify results | type() + press('Enter') + navigation on Craigslist; asserts the results URL (first snapshot line) carries `query=bicycle` |
 | 5 | Hacker News | load homepage and navigate to a story | click() + waitForNavigation() on HN story links |
 | 6 | Reddit (old) | load and navigate to a post | Page navigation with fallback to www.reddit.com |
 | 7 | Firefox cookies | extract and inject into CDP session | extractCookies() + injectCookies() workflow |
