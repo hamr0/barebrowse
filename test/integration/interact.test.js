@@ -301,34 +301,22 @@ describe('interact — GitHub', () => {
   });
 });
 
-// ===== Round 5: DuckDuckGo (headless-friendly search engine) =====
+// ===== Round 5: Craigslist (stable search form) =====
 
-describe('interact — DuckDuckGo Search', () => {
+describe('interact — Craigslist Search', () => {
   it('search query and verify results page', async () => {
     const page = await connect();
     try {
-      await page.goto('https://duckduckgo.com');
-      // Use browse mode to get full tree including input elements
-      let snap = await page.snapshot({ mode: 'browse' });
-      assert.ok(snap.length > 50, 'DuckDuckGo homepage should load');
+      // Geo-redirects to a regional site, so don't assert on the city
+      await page.goto('https://www.craigslist.org');
+      let snap = await page.snapshot();
+      assert.ok(snap.length > 50, 'Craigslist homepage should load');
 
-      // Find the search box — could be combobox, textbox, or searchbox
-      let searchRef = null;
-      const searchPattern = /(?:combobox|textbox|searchbox)[^[]*?\[ref=([^\]]+)\]/g;
-      let m;
-      while ((m = searchPattern.exec(snap)) !== null) {
-        searchRef = m[1];
-        break;
-      }
-      // Fallback: look for any input-like element inside a LabelText or search region
-      if (!searchRef) {
-        const labelPattern = /LabelText[^[]*?\[ref=([^\]]+)\]/;
-        const lm = snap.match(labelPattern);
-        if (lm) searchRef = lm[1];
-      }
+      const m = snap.match(/textbox "search craigslist" \[ref=([^\]]+)\]/i);
+      const searchRef = m && m[1];
       assert.ok(searchRef, `should find search box ref. Snapshot start: ${snap.substring(0, 500)}`);
 
-      await page.type(searchRef, 'node.js web framework');
+      await page.type(searchRef, 'bicycle');
       const navPromise = page.waitForNavigation(15000);
       await page.press('Enter');
       await navPromise;
@@ -336,13 +324,8 @@ describe('interact — DuckDuckGo Search', () => {
       await new Promise(r => setTimeout(r, 2000));
 
       snap = await page.snapshot();
-      assert.ok(snap.length > 200, 'results page should have substantial content');
-      // DuckDuckGo results should contain web-related terms
-      const lower = snap.toLowerCase();
-      assert.ok(
-        lower.includes('node') || lower.includes('web') || lower.includes('result'),
-        'results page should contain relevant content',
-      );
+      const url = snap.split('\n')[0];
+      assert.ok(url.includes('query=bicycle'), `results URL should carry the query. Got: ${url}`);
     } finally {
       await page.close();
     }
