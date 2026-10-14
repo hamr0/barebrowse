@@ -63,6 +63,8 @@ try {
 
 function isTransient(err) {
   const m = err.message || '';
+  // A wait_for that simply didn't find its text is a normal result, not a broken browser.
+  if (m.startsWith('waitFor timed out')) return false;
   return m.includes('WebSocket') || m.includes('Target closed') || m.includes('Session closed')
     || m.includes('CDP') || m.includes('Timeout waiting for CDP event') || m.includes('timed out');
 }

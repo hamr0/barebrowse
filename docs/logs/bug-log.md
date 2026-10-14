@@ -259,3 +259,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `close()` awaited the polite step (`Target.closeTarget` on Chromium, `browsingContext.close` on Firefox) with no timeout *before* the hard cleanup (`cleanupBrowser`/`cleanupFirefox`, owned download dir removal). A dead socket rejects (Chromium: uncaught, so cleanup was skipped) and a hung one never settles, so the cleanup never ran.
 **Fix:** The polite step is best-effort and bounded (2.5s race; error swallowed; Firefox reuses its `withTimeout`), and the hard cleanup always runs (try/finally). Attach mode is unchanged: `cleanupBrowser` is a no-op there (`process: null`, `ownedProfileDir: null`), so a user's browser is never killed.
 **Regression test:** `test/integration/close-cleanup.test.js` — "Chromium/Firefox: still reaps profile dir and processes" (kill -9 the browser main pid, `close()` must resolve within 8s and leave no processes or profile/download dirs; red before the fix: "close() hung on a dead browser", both engines)
+
+---
+
+## [2026-10-14] An ordinary wait_for timeout reset the MCP page (M5)
+
+**Symptom:** `wait_for` for text that never appeared returned its error and also threw the agent's page away (next `snapshot` showed `about:blank`; the browser was closed and relaunched).
+**Root cause:** `isTransient` in `mcp-server.js` matches `'timed out'`, which also matches `page.waitFor`'s own `waitFor timed out after Nms`. A wait that didn't find its text is a normal result, not a broken browser.
+**Fix:** `isTransient` returns false for messages starting `waitFor timed out`. `withRetry`'s own per-attempt `timed out after Ns` and every other transient case are unchanged.
+**Regression test:** `test/integration/mcp-lifecycle.test.js` — "an ordinary wait_for timeout keeps the page and browser" (same browser pid, snapshot still has the page; red before the fix: `about:blank`). The M1 test "a transient error closes the old browser…" used this timeout as its trigger and would have passed vacuously; it now kills the browser (`kill -9`) so the next call hits a dead socket, and asserts the old process and profile dir are gone (also red without M4).

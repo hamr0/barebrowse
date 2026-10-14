@@ -116,18 +116,41 @@ describe('MCP server browser lifecycle', () => {
   it('a transient error closes the old browser instead of orphaning it', async () => {
     const s = await boot();
     assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
-    assert.equal(ownedBrowsers(s.pid).length, 1);
+    const [old] = ownedBrowsers(s.pid);
+    assert.ok(old, 'one browser running');
+    assert.equal(profileDirs(s.pid).length, 1);
 
-    // "waitFor timed out" counts as transient -> session reset.
+    // A real transient: the browser dies, the next call hits a dead CDP socket -> session reset.
+    process.kill(old.pid, 'SIGKILL');
+    await s.call('snapshot', {});
+
+    // Next call runs on a fresh browser; the old one and its profile dir must be gone.
+    await s.call('goto', { url: siteUrl });
+    const snap = await s.call('snapshot', {});
+    assert.equal(snap.isError, false, snap.text);
+    // close() is fire-and-forget and bounded (~2.5s) on a dead socket: poll.
+    for (let i = 0; i < 40 && profileDirs(s.pid).length > 1; i++) await sleep(250);
+    const now = ownedBrowsers(s.pid);
+    assert.equal(now.length, 1);
+    assert.notEqual(now[0].pid, old.pid);
+    assert.equal(profileDirs(s.pid).length, 1, 'old profile dir removed');
+    assert.ok(!ps().some((r) => r.pid === old.pid), 'old browser process gone');
+  });
+
+  it('an ordinary wait_for timeout keeps the page and browser', async () => {
+    const s = await boot();
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    const [before] = ownedBrowsers(s.pid);
+
     const w = await s.call('wait_for', { text: 'never-appears', timeout: 500 });
     assert.equal(w.isError, true);
 
-    // Next call opens a fresh browser; the old one must be gone.
-    await s.call('goto', { url: siteUrl });
     const snap = await s.call('snapshot', {});
-    assert.match(snap.text, /lifecycle fixture|\.yml|ok/i);
-    await sleep(1500); // close() is fire-and-forget
-    assert.equal(ownedBrowsers(s.pid).length, 1);
+    assert.equal(snap.isError, false, snap.text);
+    assert.match(snap.text, /hello|lifecycle fixture/i); // not about:blank
+    const after = ownedBrowsers(s.pid);
+    assert.equal(after.length, 1);
+    assert.equal(after[0].pid, before.pid, 'same browser');
   });
 });
 
