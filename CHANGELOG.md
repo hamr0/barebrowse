@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.23.0] - 2026-10-14
+
+### Added
+
+- **barebrowse cleans up its own old output files.** Snapshots, screenshots,
+  articles and logs piled up in `.barebrowse/` forever. Files older than 7 days
+  are now removed once at MCP server start and once at `barebrowse open`
+  (honours `--output-dir`). Only barebrowse's exact timestamped names match, so
+  `session.json`, `state-*.json` (saved logins) and your own files are never
+  touched.
+
+### Fixed
+
+- **An absurd `wait_for` timeout no longer resets the page.** A timeout above
+  `setTimeout`'s maximum made the outer deadline overflow and fire after about
+  1ms; the resulting transient "timed out" error then wiped the page. The
+  deadline is now capped at the maximum.
+
 ## [0.22.0] - 2026-10-14
 
 ### Added
