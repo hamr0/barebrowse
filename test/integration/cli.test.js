@@ -5,9 +5,10 @@
  * Run: node --test test/integration/cli.test.js
  */
 
-import { describe, it, after } from 'node:test';
+import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execFile } from 'node:child_process';
+import { startExamplePage } from '../fixtures/example-page.js';
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -25,12 +26,24 @@ function cli(args, opts = {}) {
   }).trim();
 }
 
+// Async variant: the local page server lives in this process, so the event loop must stay free.
+function cliAsync(args, opts = {}) {
+  return new Promise((res, rej) => {
+    execFile(NODE, [CLI, ...args], { timeout: 30000, encoding: 'utf8', ...opts },
+      (err, stdout) => (err ? rej(err) : res(stdout.trim())));
+  });
+}
+
 describe('CLI session', () => {
   // Use a temp directory so tests don't pollute the project
   const tmpDir = mkdtempSync(join(tmpdir(), 'barebrowse-cli-test-'));
   const sessionDir = join(tmpDir, '.barebrowse');
 
-  after(() => {
+  let example;
+  before(async () => { example = await startExamplePage(); });
+
+  after(async () => {
+    await example.close();
     // Ensure daemon is dead
     try { cli(['close'], { cwd: tmpDir }); } catch { /* already closed */ }
     // Clean up
@@ -104,14 +117,14 @@ describe('CLI session', () => {
     assert.ok(!content.includes('footer junk'), 'should strip footer chrome');
   });
 
-  it('goto navigates and snapshot shows new page content', () => {
-    const out = cli(['goto', 'https://example.com'], { cwd: tmpDir, timeout: 60000 });
+  it('goto navigates and snapshot shows new page content', async () => {
+    const out = await cliAsync(['goto', example.url], { cwd: tmpDir, timeout: 60000 });
     assert.ok(out === 'ok', `expected ok, got: ${out}`);
 
-    // Snapshot should now show example.com
+    // Snapshot should now show the example page
     const snapOut = cli(['snapshot'], { cwd: tmpDir });
     const content = readFileSync(snapOut, 'utf8');
-    assert.ok(content.includes('Example Domain'), 'should show example.com content');
+    assert.ok(content.includes('Example Domain'), 'should show the new page content');
     assert.ok(content.includes('[ref='), 'should have ref markers');
   });
 
@@ -149,12 +162,12 @@ describe('CLI session', () => {
     assert.ok(out.includes('.json'), `expected .json path, got: ${out}`);
   });
 
-  it('reload subcommand round-trips through daemon (H3 via CLI)', () => {
-    // Daemon was opened on about:blank — reload should be a no-op success.
+  it('reload subcommand round-trips through daemon (H3 via CLI)', async () => {
+    // Page is the local example page by now, so reload needs the event loop free (cliAsync).
     // Tests the new `reload` daemon handler + cli subcommand end-to-end.
-    const out = cli(['reload'], { cwd: tmpDir });
+    const out = await cliAsync(['reload'], { cwd: tmpDir });
     assert.equal(out, 'ok', `reload should print ok, got: ${out}`);
-    const outNoCache = cli(['reload', '--no-cache'], { cwd: tmpDir });
+    const outNoCache = await cliAsync(['reload', '--no-cache'], { cwd: tmpDir });
     assert.equal(outNoCache, 'ok', `reload --no-cache should print ok, got: ${outNoCache}`);
   });
 
@@ -178,7 +191,7 @@ describe('CLI session', () => {
     // we need the event loop free to serve Chromium's requests. execFileSync
     // (what cli() uses) blocks the loop, the page request stalls, navigation
     // never completes, and the daemon never writes session.json. Other CLI
-    // tests don't hit this because they use about:blank / example.com.
+    // tests don't hit this because they use about:blank / the async-spawned goto.
     const { createServer } = await import('node:http');
     const { spawn } = await import('node:child_process');
     const startSrv = async (handler) => {

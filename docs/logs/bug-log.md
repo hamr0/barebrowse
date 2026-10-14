@@ -276,3 +276,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** new exported pure helper `waitForDeadline(timeout)` = `max(TIMEOUTS.wait_for, (timeout || 30000) + 5000)`; the `wait_for` handler uses it. A genuinely hung browser is still caught by the outer deadline, just later for long waits. `isTransient` untouched.
 **Regression test:** `test/unit/mcp.test.js` — "waitForDeadline" (60000 -> 65000, 90000 -> 95000 red against the old fixed 60000).
 **Known, deliberately deferred limitation:** `isTransient` classifies by error-message text, and a timeout is ambiguous (slow-but-healthy page vs hung browser). The root fix, on a timeout ping the browser with a short deadline and reset only if it doesn't answer, was considered and deferred to avoid growing this branch.
+
+---
+
+## [2026-10-14] example.com integration tests broke on external page change (T1)
+
+**Symptom:** 7 integration tests failed (`browse.test.js` browse()/connect(), `cli.test.js` "goto navigates"): the pruned snapshot had no heading and no "Example Domain" text.
+**Cause:** example.com changed its page (no `<h1>`, six multilingual paragraphs, injected "Learn more" link) and says not to rely on it for testing. Not a barebrowse bug.
+**Fix:** `test/fixtures/example-page.js` serves a local copy of the old page on 127.0.0.1; browse.test.js and the cli.test.js goto test use it. In cli.test.js the goto and reload calls moved to an async `cliAsync` helper, because the sync `cli()` blocks the event loop the in-process server needs. The Hacker News step stays as real-internet coverage.
