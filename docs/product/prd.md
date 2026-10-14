@@ -298,7 +298,7 @@ multis (personal assistant) uses barebrowse in headed mode for interactive tasks
 
 **MCP server wrapper (shipped):**
 
-barebrowse ships `mcp-server.js` — a thin wrapper (raw JSON-RPC 2.0 over stdio, no SDK dependency) exposing the same library as MCP tools (`browse`, `goto`, `snapshot`, `readable`, click/type/etc., plus the opt-in `eval`). It replaces Playwright MCP + the mcprune proxy with a single, lighter MCP server.
+barebrowse ships `mcp-server.js` — a thin wrapper (raw JSON-RPC 2.0 over stdio, no SDK dependency) exposing the same library as MCP tools (`browse`, `goto`, `snapshot`, `readable`, click/type/etc., plus the opt-in `eval`). The server releases its browser after `BAREBROWSE_IDLE_MINUTES` (default 15, `0` = off) of no tool calls and closes (not orphans) the browser on transient errors; `page.close()` always runs the hard cleanup even if the browser is dead. It replaces Playwright MCP + the mcprune proxy with a single, lighter MCP server.
 
 ---
 
