@@ -250,3 +250,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** The parse was `Number(env ?? 15)` with a finite/non-negative check. (1) `50000 * 60_000` exceeds 2^31-1, so `setTimeout` overflows (TimeoutOverflowWarning) and fires after 1ms. (2) `Number('')` is `0`, which means "off".
 **Fix:** Exported pure helper `idleMs(raw)` in `mcp-server.js`: undefined/blank/non-finite/negative → 15 min; `0` → 0 (off); otherwise `min(n * 60_000, 2**31-1)`.
 **Regression test:** `test/unit/mcp.test.js` — "idleMs (BAREBROWSE_IDLE_MINUTES parse)" (red against the old formula for `''`, `'   '` and `'50000'`)
+
+---
+
+## [2026-10-14] page.close() leaked the profile dir and browser when the browser was dead or hung (M4)
+
+**Symptom:** After a browser was `kill -9`'d (MCP repro: headless, `goto`, kill Chromium's main pid, `snapshot`), `/tmp/barebrowse-<serverpid>-*` stayed behind. With a hung-but-connected browser the whole process leaked too. Both engines.
+**Root cause:** `close()` awaited the polite step (`Target.closeTarget` on Chromium, `browsingContext.close` on Firefox) with no timeout *before* the hard cleanup (`cleanupBrowser`/`cleanupFirefox`, owned download dir removal). A dead socket rejects (Chromium: uncaught, so cleanup was skipped) and a hung one never settles, so the cleanup never ran.
+**Fix:** The polite step is best-effort and bounded (2.5s race; error swallowed; Firefox reuses its `withTimeout`), and the hard cleanup always runs (try/finally). Attach mode is unchanged: `cleanupBrowser` is a no-op there (`process: null`, `ownedProfileDir: null`), so a user's browser is never killed.
+**Regression test:** `test/integration/close-cleanup.test.js` — "Chromium/Firefox: still reaps profile dir and processes" (kill -9 the browser main pid, `close()` must resolve within 8s and leave no processes or profile/download dirs; red before the fix: "close() hung on a dead browser", both engines)
