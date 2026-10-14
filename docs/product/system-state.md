@@ -331,7 +331,7 @@ barebrowse console-logs                # → .barebrowse/console-*.json
 barebrowse close                       # Kill daemon + browser
 ```
 
-Architecture: `open` spawns a detached child process running an HTTP server on a random localhost port. Session state stored in `.barebrowse/session.json`. Subsequent commands POST to the daemon. `close` sends shutdown, daemon calls `page.close()` + `process.exit(0)`.
+Architecture: `open` spawns a detached child process running an HTTP server on a random localhost port. Session state stored in `.barebrowse/session.json`. At daemon start, barebrowse's own timestamped output files older than 7 days are removed from the output dir (`session.json` and `state-*.json` are kept). Subsequent commands POST to the daemon. `close` sends shutdown, daemon calls `page.close()` + `process.exit(0)`.
 
 **Auth (v0.11.0):** loopback alone is not an authorization boundary (shared across local users), so the daemon mints a 32-byte token at startup, writes it into `session.json` (mode `0600`) and requires it on `POST /command` via `x-barebrowse-token` (constant-time compare). `session-client` sends it transparently. Session dir is `0700`; snapshots/`saveState`/logs are `0600`. `GET /status` stays open (liveness only).
 
