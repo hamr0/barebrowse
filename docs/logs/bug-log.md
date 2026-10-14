@@ -231,3 +231,13 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** The five session-reset sites in `mcp-server.js` (`withRetry`, `assess` catch, `handleMessage` catch, `unhandledRejection`, `uncaughtException`) did `_page = null`, forgetting the page without closing it. The browser kept running and the next `getPage()` launched another.
 **Fix:** New `resetPage()` takes `_page`, nulls it, and fire-and-forget `close()`s it; all five sites use it. `isTransient` and `wait_for` semantics are unchanged.
 **Regression test:** `test/integration/mcp-lifecycle.test.js` — "a transient error closes the old browser instead of orphaning it" (spawns the real server, counts its browser processes via `--user-data-dir=/tmp/barebrowse-<pid>-`; red with 2 before the fix, 1 after)
+
+---
+
+## [2026-10-14] MCP server held an idle browser indefinitely (M2)
+
+**Symptom:** A Claude window left open for days kept its `barebrowse mcp` server's headless browser alive (1–30h idle, ~1 GB each) long after the conversation moved on.
+**Root cause:** The browser lived as long as the server; nothing released it when no tool was being called.
+**Fix:** Idle TTL in `mcp-server.js`: `BAREBROWSE_IDLE_MINUTES` (default 15, `0` = off, invalid/negative → default, fractional allowed). Tracks in-flight `tools/call`s; the timer is stopped during a call and re-armed when it finishes; on fire, with nothing in flight and a page open, `resetPage()` closes it. Timer is `unref()`ed. The next call opens a fresh browser via `getPage()` (a new job, no resume). Uses only `page.close()`, so both engines work.
+**Known, deliberately NOT fixed:** the server does not exit on stdin EOF (Claude already terminates its MCP servers); `kill -9` of a barebrowse process orphans its detached browser; download temp dirs survive a SIGTERM stop of library users.
+**Regression test:** `test/integration/mcp-lifecycle.test.js` — "releases the browser after the idle TTL and reopens on the next call", "does not cut off a call that outlasts the TTL", "releases a Firefox browser too" (red without the fix: browser count stays 1 after idle)

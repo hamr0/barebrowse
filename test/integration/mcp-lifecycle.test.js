@@ -130,3 +130,42 @@ describe('MCP server browser lifecycle', () => {
     assert.equal(ownedBrowsers(s.pid).length, 1);
   });
 });
+
+// BAREBROWSE_IDLE_MINUTES=0.05 -> 3s TTL.
+const IDLE = { BAREBROWSE_IDLE_MINUTES: '0.05' };
+let hasFirefox = true;
+try { execFileSync('which', ['firefox']); } catch { hasFirefox = false; }
+
+async function idleReleases(env, engine) {
+  const s = await boot({ ...IDLE, ...env });
+  assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+  assert.equal(ownedBrowsers(s.pid, engine).length, 1);
+
+  await sleep(6000);
+  assert.equal(ownedBrowsers(s.pid, engine).length, 0);
+  if (engine !== 'firefox') assert.deepEqual(profileDirs(s.pid), []);
+
+  // Next call is a new job: a fresh browser opens transparently.
+  assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+  const snap = await s.call('snapshot', {});
+  assert.equal(snap.isError, false);
+  assert.equal(ownedBrowsers(s.pid, engine).length, 1);
+}
+
+describe('MCP server idle TTL', () => {
+  it('releases the browser after the idle TTL and reopens on the next call', async () => {
+    await idleReleases({});
+  });
+
+  it('does not cut off a call that outlasts the TTL', async () => {
+    const s = await boot(IDLE);
+    await s.call('goto', { url: `${siteUrl}/late` });
+    const w = await s.call('wait_for', { text: 'arrived-late', timeout: 10000 });
+    assert.equal(w.isError, false, w.text);
+    assert.equal(ownedBrowsers(s.pid).length, 1);
+  });
+
+  it('releases a Firefox browser too', { skip: hasFirefox ? false : 'firefox not installed' }, async () => {
+    await idleReleases({ BAREBROWSE_ENGINE: 'firefox' }, 'firefox');
+  });
+});
