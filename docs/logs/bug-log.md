@@ -241,3 +241,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** Idle TTL in `mcp-server.js`: `BAREBROWSE_IDLE_MINUTES` (default 15, `0` = off, invalid/negative → default, fractional allowed). Tracks in-flight `tools/call`s; the timer is stopped during a call and re-armed when it finishes; on fire, with nothing in flight and a page open, `resetPage()` closes it. Timer is `unref()`ed. The next call opens a fresh browser via `getPage()` (a new job, no resume). Uses only `page.close()`, so both engines work.
 **Known, deliberately NOT fixed:** the server does not exit on stdin EOF (Claude already terminates its MCP servers); `kill -9` of a barebrowse process orphans its detached browser; download temp dirs survive a SIGTERM stop of library users.
 **Regression test:** `test/integration/mcp-lifecycle.test.js` — "releases the browser after the idle TTL and reopens on the next call", "does not cut off a call that outlasts the TTL", "releases a Firefox browser too" (red without the fix: browser count stays 1 after idle)
+
+---
+
+## [2026-10-14] BAREBROWSE_IDLE_MINUTES parse: huge value closed the browser after every call, empty value disabled the TTL (M3)
+
+**Symptom:** `BAREBROWSE_IDLE_MINUTES=50000` made the browser close right after every call (0 browsers 1.5s after a `goto`, confirmed on the live server). `BAREBROWSE_IDLE_MINUTES=` (empty/whitespace) silently turned the TTL off instead of using the 15-minute default.
+**Root cause:** The parse was `Number(env ?? 15)` with a finite/non-negative check. (1) `50000 * 60_000` exceeds 2^31-1, so `setTimeout` overflows (TimeoutOverflowWarning) and fires after 1ms. (2) `Number('')` is `0`, which means "off".
+**Fix:** Exported pure helper `idleMs(raw)` in `mcp-server.js`: undefined/blank/non-finite/negative → 15 min; `0` → 0 (off); otherwise `min(n * 60_000, 2**31-1)`.
+**Regression test:** `test/unit/mcp.test.js` — "idleMs (BAREBROWSE_IDLE_MINUTES parse)" (red against the old formula for `''`, `'   '` and `'50000'`)

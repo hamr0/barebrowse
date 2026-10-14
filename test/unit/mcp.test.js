@@ -7,7 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, unlinkSync } from 'node:fs';
-import { TIMEOUTS, TOOLS, saveSnapshot } from '../../mcp-server.js';
+import { TIMEOUTS, TOOLS, saveSnapshot, idleMs } from '../../mcp-server.js';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join as joinPath } from 'node:path';
@@ -396,4 +396,14 @@ describe('MCP engine visibility', () => {
     assert.equal(info.activeEngine, 'firefox',
       'BAREBROWSE_ENGINE=firefox must be reported as the active engine');
   });
+});
+
+describe('idleMs (BAREBROWSE_IDLE_MINUTES parse)', () => {
+  const cases = [
+    [undefined, 900000], ['', 900000], ['   ', 900000], ['0', 0], ['abc', 900000],
+    ['-5', 900000], ['0.05', 3000], ['15', 900000], ['50000', 2147483647],
+  ];
+  for (const [raw, want] of cases) {
+    it(`${JSON.stringify(raw)} -> ${want}`, () => assert.equal(idleMs(raw), want));
+  }
 });
