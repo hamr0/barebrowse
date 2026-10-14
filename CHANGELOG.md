@@ -1,9 +1,35 @@
 # Changelog
 
-## [Unreleased]
+## [0.22.0] - 2026-10-14
+
+### Added
+
+- **The MCP server releases its browser after an idle TTL.** A session left
+  open kept a Chromium/Firefox process and profile dir alive indefinitely.
+  `BAREBROWSE_IDLE_MINUTES` (default 15, `0` = off; blank or invalid falls back
+  to the default, values are capped at `setTimeout`'s maximum) closes the
+  browser once no tool call has arrived for that long. The timer pauses while a
+  call is in flight, so a long-running call is never cut off, and the next call
+  simply opens a fresh browser.
 
 ### Fixed
 
+- **MCP transient-error resets no longer orphan the running browser.** Five reset
+  sites set the page to `null` without closing it, so the next call launched a
+  second browser while the first kept running. They now go through
+  `resetPage()`, which closes the browser before forgetting it.
+- **`close()` always runs hard cleanup, even when the browser is dead or hung.**
+  The polite tab close had no timeout and ran before cleanup, so a killed or
+  unresponsive browser leaked its process and temp profile dir. The polite close
+  is now bounded and cleanup runs in a `finally`, on both engines.
+- **An ordinary `wait_for` timeout no longer resets the page.** The MCP retry
+  layer treated any "timed out" error as transient, which also matched
+  `waitFor`'s own not-found message, so a missed wait tore down the browser.
+  That message is now excluded.
+- **`wait_for` with `timeout` of 60s or more is no longer cut off at 60s.** The
+  retry layer's fixed 60s outer deadline fired first and was treated as
+  transient, resetting the page and browser. The outer deadline is now
+  `max(60s, requested timeout + 5s)`.
 - **The publish workflow now fails when `package-lock.json`'s version drifts from `package.json`.** npm writes that field on install, so a release that bumps `package.json` without running one leaves it behind — and nothing caught it: `npm ci` fails when the lockfile's *dependency* entries disagree, but never checks the lockfile's copy of the project's own version. `scripts/check-lockfile.mjs` (`npm run check:lockfile`) compares both places npm writes it and runs in the publish workflow. No lockfile is not a failure.
 
 ## [0.21.0] - 2026-09-17
