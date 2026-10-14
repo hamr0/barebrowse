@@ -50,7 +50,7 @@ barebrowse click 8                     # Click element
 barebrowse close                       # End session
 ```
 
-Outputs go to `.barebrowse/` as files -- agents read them with their file tools, no token waste in tool responses.
+Outputs go to `.barebrowse/` as files -- agents read them with their file tools, no token waste in tool responses. Output files older than 7 days are auto-removed at session start; saved state files (`state-*.json`) are kept.
 
 **Teach your agent the commands** by installing the skill file (a markdown reference the agent reads as context). The CLI tool itself still needs `npm install barebrowse` -- the skill just teaches the agent how to use it.
 

@@ -246,7 +246,7 @@ Action tools (click, type, press, scroll, hover, goto, back, forward, reload, dr
 
 ## CLI session mode
 
-For coding agents (Claude Code, Copilot, Cursor) and quick interactive testing. Commands output files to `.barebrowse/` -- agents read them with file tools, avoiding token waste in tool responses.
+For coding agents (Claude Code, Copilot, Cursor) and quick interactive testing. Commands output files to `.barebrowse/` -- agents read them with file tools, avoiding token waste in tool responses. Output files older than 7 days are auto-removed at session start (CLI `open` and MCP startup); saved state files (`state-*.json`) are kept.
 
 ```bash
 barebrowse open https://example.com    # Start daemon + navigate

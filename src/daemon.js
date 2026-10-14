@@ -12,6 +12,7 @@ import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { connect } from './index.js';
 import { formatReadable } from './readable.js';
+import { cleanOld } from './output-clean.js';
 
 /** Owner-only file write helper — daemon artifacts can hold authenticated content. */
 function writeFilePrivate(path, data) {
@@ -210,6 +211,7 @@ export async function startDaemon(opts, outputDir, initialUrl) {
 export async function runDaemon(opts, outputDir, initialUrl) {
   const absDir = resolve(outputDir);
   mkdirSync(absDir, { recursive: true, mode: 0o700 });
+  cleanOld(absDir);
 
   // Per-session auth token. The daemon binds to loopback, but loopback is
   // shared across local users — without a token any local user/process could
