@@ -132,6 +132,9 @@ function resetPage() {
   if (p) p.close().catch(() => {});
 }
 
+// setTimeout's max delay; larger values overflow and fire after ~1ms.
+const MAX_TIMER_MS = 2 ** 31 - 1;
+
 // Idle TTL: a server can outlive its conversation by days, holding a browser
 // (GBs) the whole time. After BAREBROWSE_IDLE_MINUTES (default 15, 0 = off)
 // with no tools/call in flight, release it; the next call opens a fresh one.
@@ -143,7 +146,7 @@ function resetPage() {
  * the page.
  */
 export function waitForDeadline(timeout) {
-  return Math.max(TIMEOUTS.wait_for, (timeout || 30000) + 5000);
+  return Math.min(Math.max(TIMEOUTS.wait_for, (timeout || 30000) + 5000), MAX_TIMER_MS);
 }
 
 export function idleMs(raw) {
@@ -151,7 +154,7 @@ export function idleMs(raw) {
   if (raw === undefined || String(raw).trim() === '') return DEFAULT;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0) return DEFAULT;
-  return Math.min(n * 60_000, 2 ** 31 - 1);
+  return Math.min(n * 60_000, MAX_TIMER_MS);
 }
 const IDLE_MS = idleMs(process.env.BAREBROWSE_IDLE_MINUTES);
 let _inflight = 0;
