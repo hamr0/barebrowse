@@ -8,7 +8,12 @@
 import { readdirSync, statSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 
-const OURS = /^(?:page-[\dTZ-]+\.(?:yml|pdf)|screenshot-[\dTZ-]+\.(?:png|jpeg|webp)|article-[\dTZ-]+\.txt|(?:console|network|dialogs)-[\dTZ-]+\.json)$/;
+// toISOString() with [:.] -> '-': YYYY-MM-DDTHH-MM-SS-mmmZ. Exact, so a user's own
+// `screenshot-2026-01-01.png` in a shared --output-dir is never matched.
+const STAMP = '\\d{4}-\\d{2}-\\d{2}T\\d{2}-\\d{2}-\\d{2}-\\d{3}Z';
+const OURS = new RegExp(
+  `^(?:page-${STAMP}\\.(?:yml|pdf)|screenshot-${STAMP}\\.(?:png|jpeg|webp)|article-${STAMP}\\.txt|(?:console|network|dialogs)-${STAMP}\\.json)$`,
+);
 
 /**
  * Delete barebrowse output files older than `days` in `dir` (non-recursive).

@@ -8,7 +8,7 @@ import { cleanOld } from '../../src/output-clean.js';
 const TS = '2026-01-01T10-00-00-000Z';
 const OURS = [`page-${TS}.yml`, `page-${TS}.pdf`, `screenshot-${TS}.png`, `screenshot-${TS}.jpeg`,
   `screenshot-${TS}.webp`, `article-${TS}.txt`, `console-${TS}.json`, `network-${TS}.json`, `dialogs-${TS}.json`];
-const KEEP = ['session.json', `state-${TS}.json`, 'state-x.json', 'notes.txt', 'page-mine.md'];
+const KEEP = ['screenshot-2026-01-01.png', 'page-2025-03-04.pdf', 'page-20250304.yml', 'session.json', `state-${TS}.json`, 'state-x.json', 'notes.txt', 'page-mine.md'];
 
 test('cleanOld removes only old barebrowse outputs', () => {
   const dir = mkdtempSync(join(tmpdir(), 'bb-clean-'));

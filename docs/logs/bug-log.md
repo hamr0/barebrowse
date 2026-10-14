@@ -291,3 +291,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `waitForDeadline` returned `timeout + 5000` uncapped; above 2^31-1 ms `setTimeout` overflows and fires after ~1ms, and that "timed out" message is transient.
 **Fix:** cap the result at `MAX_TIMER_MS` (2^31-1), the same cap `idleMs` uses (now a shared const). Unchanged below ~24.8 days.
 **Regression test:** `test/unit/mcp.test.js` — "waitForDeadline" 3e9 -> 2147483647 (red against the uncapped code).
+
+## [2026-10-14] Autoclean could delete a user's own date-named files in --output-dir (C1)
+
+**Symptom:** with `barebrowse open --output-dir ~/Pictures`, the 7-day autoclean could delete a user's own `screenshot-2026-01-01.png` or `page-2025-03-04.pdf`.
+**Root cause:** `OURS` in `src/output-clean.js` accepted any `[\dTZ-]+` after the prefix, far looser than the stamp barebrowse writes.
+**Fix:** require the exact `toISOString()` stamp (`YYYY-MM-DDTHH-MM-SS-mmmZ`) via one shared sub-pattern, same prefix/extension pairing. All writer sites (mcp-server.js, src/daemon.js) emit exactly that stamp with no suffix.
+**Regression test:** `test/unit/output-clean.test.js` — old `screenshot-2026-01-01.png`, `page-2025-03-04.pdf`, `page-20250304.yml` must survive (red against the old regex).
