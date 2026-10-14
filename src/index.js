@@ -25,6 +25,7 @@ import { resolveBlocklistPatterns } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage } from './challenge.js';
+import { withTimeout } from './with-timeout.js';
 import { readable as extractReadable } from './readable.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
@@ -811,13 +812,7 @@ export async function connect(opts = {}) {
     async close() {
       // Polite tab close is best-effort and bounded: a dead or hung browser
       // must not skip the hard cleanup below (the profile dir / process leak).
-      let timer;
-      try {
-        await Promise.race([
-          cdp.send('Target.closeTarget', { targetId: page.targetId }),
-          new Promise((r) => { timer = setTimeout(r, 2500); }),
-        ]);
-      } catch {} finally { clearTimeout(timer); }
+      try { await withTimeout(cdp.send('Target.closeTarget', { targetId: page.targetId }), 2500, 'close'); } catch {}
       try { cdp.close(); } catch {}
       try {
         await cleanupBrowser(browser); // no-op in attach mode (process: null)
