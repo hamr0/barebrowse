@@ -10,7 +10,7 @@ import { describe, it, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execFileSync } from 'node:child_process';
 import { createServer } from 'node:http';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -44,8 +44,9 @@ function profileDirs(serverPid) {
 }
 
 /** Spawn the MCP server in a fresh cwd; returns a JSON-RPC `call` helper + cleanup. */
-async function startServer(env = {}) {
+async function startServer(env = {}, seed) {
   const cwd = mkdtempSync(join(tmpdir(), 'bb-mcp-test-'));
+  seed?.(cwd);
   // TMPDIR inside cwd: download/Firefox-profile temp dirs land there and go with it.
   mkdirSync(join(cwd, 'tmp'));
   const child = spawn('node', [SERVER], {
@@ -81,7 +82,7 @@ async function startServer(env = {}) {
     for (const d of profileDirs(child.pid)) rmSync(join('/tmp', d), { recursive: true, force: true });
     rmSync(cwd, { recursive: true, force: true });
   };
-  return { pid: child.pid, call, stop };
+  return { pid: child.pid, cwd, call, stop };
 }
 
 let site;
@@ -111,6 +112,30 @@ async function boot(env) {
   cleanups.push(s.stop);
   return s;
 }
+
+describe('MCP server autoclean wiring', () => {
+  it('runStdio() removes old output files at start, keeps fresh ones and state-*.json', async () => {
+    const old = new Date(Date.now() - 10 * 86400000);
+    const stamp = (d) => d.toISOString().replace(/[:.]/g, '-');
+    const names = {
+      old: 'page-2025-01-01T00-00-00-000Z.yml',
+      fresh: `page-${stamp(new Date())}.yml`,
+      state: 'state-2025-01-01T00-00-00-000Z.json',
+    };
+    const s = await startServer({}, (cwd) => {
+      const dir = join(cwd, '.barebrowse');
+      mkdirSync(dir);
+      for (const n of Object.values(names)) writeFileSync(join(dir, n), 'x');
+      for (const n of [names.old, names.state]) utimesSync(join(dir, n), old, old);
+    });
+    cleanups.push(s.stop);
+    // startServer returns after the initialize response, which follows runStdio()'s cleanOld.
+    const dir = join(s.cwd, '.barebrowse');
+    assert.equal(existsSync(join(dir, names.old)), false, 'old page file removed');
+    assert.equal(existsSync(join(dir, names.fresh)), true, 'fresh page file kept');
+    assert.equal(existsSync(join(dir, names.state)), true, 'state file kept');
+  });
+});
 
 describe('MCP server browser lifecycle', () => {
   it('a transient error closes the old browser instead of orphaning it', async () => {

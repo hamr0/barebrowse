@@ -12,7 +12,7 @@ import { startExamplePage } from '../fixtures/example-page.js';
 import { existsSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { mkdtempSync, writeFileSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, writeFileSync, mkdirSync, utimesSync } from 'node:fs';
 
 const CLI = resolve(import.meta.dirname, '..', '..', 'cli.js');
 const NODE = process.execPath;
@@ -393,6 +393,31 @@ describe('MCP config diagnostics (no daemon)', () => {
         `banner must include pid, got: ${banner}`);
     } finally {
       proc.kill();
+    }
+  });
+});
+
+describe('CLI daemon autoclean wiring', () => {
+  it('open removes old output files at daemon start, keeps fresh ones and state-*.json', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bb-clean-'));
+    const out = join(dir, '.barebrowse');
+    const old = new Date(Date.now() - 10 * 86400000);
+    const names = {
+      old: 'page-2025-01-01T00-00-00-000Z.yml',
+      fresh: `page-${new Date().toISOString().replace(/[:.]/g, '-')}.yml`,
+      state: 'state-2025-01-01T00-00-00-000Z.json',
+    };
+    mkdirSync(out);
+    for (const n of Object.values(names)) writeFileSync(join(out, n), 'x');
+    for (const n of [names.old, names.state]) utimesSync(join(out, n), old, old);
+    try {
+      cli(['open', 'about:blank'], { cwd: dir });
+      assert.equal(existsSync(join(out, names.old)), false, 'old page file removed');
+      assert.equal(existsSync(join(out, names.fresh)), true, 'fresh page file kept');
+      assert.equal(existsSync(join(out, names.state)), true, 'state file kept');
+    } finally {
+      try { cli(['close'], { cwd: dir }); } catch { /* not started */ }
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });
