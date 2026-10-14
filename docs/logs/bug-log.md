@@ -222,3 +222,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 
 
 
+
+---
+
+## [2026-10-14] MCP server orphaned its browser on every transient error (M1)
+
+**Symptom:** Long-lived Claude windows each run one `barebrowse mcp` server; 8 idle headless browsers (~9 GB) were found held for 1–30h, one server owning 3. Repro: `goto` a page → `wait_for {text:'never-appears', timeout:500}` (error "waitFor timed out" is transient) → `snapshot` → the server owns 2 browsers.
+**Root cause:** The five session-reset sites in `mcp-server.js` (`withRetry`, `assess` catch, `handleMessage` catch, `unhandledRejection`, `uncaughtException`) did `_page = null`, forgetting the page without closing it. The browser kept running and the next `getPage()` launched another.
+**Fix:** New `resetPage()` takes `_page`, nulls it, and fire-and-forget `close()`s it; all five sites use it. `isTransient` and `wait_for` semantics are unchanged.
+**Regression test:** `test/integration/mcp-lifecycle.test.js` — "a transient error closes the old browser instead of orphaning it" (spawns the real server, counts its browser processes via `--user-data-dir=/tmp/barebrowse-<pid>-`; red with 2 before the fix, 1 after)
