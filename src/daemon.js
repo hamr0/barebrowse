@@ -641,6 +641,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   // Write session.json so parent/clients can find us. Owner-only: it carries
   // the auth token that gates /command.
   const sessionPath = join(absDir, SESSION_FILE);
+  const startedAt = new Date().toISOString();
   // Rewritten by switch-engine so status/doctor see the live engine.
   const writeSession = () => writeFilePrivate(sessionPath, JSON.stringify({
     port,
@@ -652,7 +653,6 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     engine: page.engine,
     capabilities: page.capabilities,
   }));
-  const startedAt = new Date().toISOString();
   writeSession();
 
   // Handle SIGTERM gracefully

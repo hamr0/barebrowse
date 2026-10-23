@@ -577,10 +577,11 @@ describe('connect({ engine: firefox }) — saveState (Phase 4)', { skip: !hasFir
   after(() => server?.close());
 
   it('writes cookies + localStorage to a 0600 JSON file (CDP-symmetric shape)', async () => {
-    const { mkdtempSync, readFileSync, statSync } = await import('node:fs');
+    const { mkdtempSync, readFileSync, statSync, rmSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
     const { join } = await import('node:path');
-    const file = join(mkdtempSync(join(tmpdir(), 'bb-state-')), 'state.json');
+    const dir = mkdtempSync(join(tmpdir(), 'bb-state-'));
+    const file = join(dir, 'state.json');
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {
       await page.goto(origin);
@@ -599,6 +600,7 @@ describe('connect({ engine: firefox }) — saveState (Phase 4)', { skip: !hasFir
       assert.equal(statSync(file).mode & 0o777, 0o600, 'state file is 0600');
     } finally {
       await page.close();
+      rmSync(dir, { recursive: true, force: true });
     }
   });
 });

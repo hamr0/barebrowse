@@ -17,7 +17,7 @@ barebrowse snapshot                    # See result
 barebrowse close                       # End session
 ```
 
-All output files go to `.barebrowse/` in the current directory. Read them with the Read tool when needed.
+All output files go to `.barebrowse/` in the current directory. Read them with the Read tool when needed. Output files older than 7 days are removed automatically at `open`; saved state files (`state-*.json`) are kept.
 
 ## Commands
 
