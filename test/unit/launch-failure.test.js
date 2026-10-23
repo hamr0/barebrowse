@@ -59,3 +59,34 @@ for (const [name, fn, re] of [
     });
   });
 }
+
+describe('launch() when the browser exits early', () => {
+  it('kills a helper the exited parent left behind and removes the profile dir', { timeout: 20000 }, async () => {
+    // Parent forks a helper into its own process group (detached:true), then
+    // exits 1 — the group outlives the parent, like Chromium's renderer/GPU.
+    const early = join(work, 'early-exit.sh');
+    writeFileSync(early, `#!/bin/sh
+for a in "$@"; do
+  case "$a" in --user-data-dir=*) d="\${a#*=}"; echo "$d" > "${work}/early-dir"; mkdir -p "$d";; esac
+done
+sleep 300 &
+echo $! > "${work}/early-child"
+exit 1
+`);
+    chmodSync(early, 0o755);
+    let childPid;
+    try {
+      await assert.rejects(launch({ binary: early, headed: false }), /exited with code 1/);
+      childPid = Number(readFileSync(join(work, 'early-child'), 'utf8'));
+      const dir = readFileSync(join(work, 'early-dir'), 'utf8').trim();
+      for (let i = 0; i < 40 && alive(childPid); i++) await new Promise((r) => setTimeout(r, 50));
+      const stillAlive = alive(childPid);
+      const dirExists = existsSync(dir);
+      if (dirExists) rmSync(dir, { recursive: true, force: true });
+      assert.equal(stillAlive, false, 'helper of the exited browser still running');
+      assert.equal(dirExists, false, 'profile dir left behind');
+    } finally {
+      try { childPid ??= Number(readFileSync(join(work, 'early-child'), 'utf8')); process.kill(childPid, 'SIGKILL'); } catch {}
+    }
+  });
+});
