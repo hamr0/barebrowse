@@ -10,9 +10,9 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { writeFileSync, mkdtempSync } from 'node:fs';
+import { writeFileSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
 import { connect } from '../../src/index.js';
 import { extractCookies } from '../../src/auth.js';
 import { findFirefox } from '../../src/firefox.js';
@@ -51,6 +51,7 @@ describe('incognito mode', () => {
         'control: storageState cookie must be present without incognito');
     } finally {
       await page.close();
+      rmSync(dirname(storageState), { recursive: true, force: true });
     }
   });
 
@@ -62,6 +63,7 @@ describe('incognito mode', () => {
         'incognito must NOT load the storageState cookie');
     } finally {
       await page.close();
+      rmSync(dirname(storageState), { recursive: true, force: true });
     }
   });
 

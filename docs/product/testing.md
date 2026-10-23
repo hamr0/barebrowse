@@ -6,7 +6,7 @@
 node --test test/unit/*.test.js test/integration/*.test.js
 ```
 
-71 tests, 6 files, ~60s on a typical machine. No test framework -- uses Node's built-in `node:test` runner.
+176 unit tests in 14 files (`npm run test:unit`, ~40s) plus the 138-test integration suite in 13 files (`npm run test:integration`; launches real Chromium and Firefox and hits live sites, so it is local-only and takes ~5 min). No test framework -- uses Node's built-in `node:test` runner.
 
 ## Test pyramid
 
