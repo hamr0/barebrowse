@@ -421,3 +421,109 @@ describe('CLI daemon autoclean wiring', () => {
     }
   });
 });
+
+function psRows() {
+  return execFileSync('ps', ['-eo', 'pid=,ppid=,args=']).toString().split('\n').filter(Boolean)
+    .map((l) => { const m = l.trim().match(/^(\d+)\s+(\d+)\s+(.*)$/); return m && { pid: +m[1], ppid: +m[2], args: m[3] }; })
+    .filter(Boolean);
+}
+
+/** Main browser processes (not helpers) of one daemon, by engine. */
+function daemonBrowsers(daemonPid, engine) {
+  const rows = psRows();
+  if (engine === 'firefox') {
+    const kids = new Set([daemonPid]);
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const r of rows) if (kids.has(r.ppid) && !kids.has(r.pid)) { kids.add(r.pid); grew = true; }
+    }
+    return rows.filter((r) => kids.has(r.pid) && r.args.includes('/barebrowse-ff-') && !r.args.includes('-contentproc'));
+  }
+  return rows.filter((r) => r.args.includes(`--user-data-dir=/tmp/barebrowse-${daemonPid}-`) && !r.args.includes('--type='));
+}
+
+let hasFirefoxBin = true;
+try { execFileSync('which', ['firefox']); } catch { hasFirefoxBin = false; }
+
+describe('CLI switch-engine', { skip: hasFirefoxBin ? false : 'firefox not installed' }, () => {
+  // Short TMPDIR: Chromium aborts on long socket paths.
+  const tmp = mkdtempSync('/tmp/bb-sw-');
+  const dir = join(tmp, 'w');
+  mkdirSync(dir);
+  const fakeBin = join(tmp, 'bin');
+  const env = { ...process.env, TMPDIR: tmp };
+  const run = (args, o = {}) => cliAsync(args, { cwd: dir, env, timeout: 60000, ...o });
+  const session = () => JSON.parse(readFileSync(join(dir, '.barebrowse', 'session.json'), 'utf8'));
+  const fresh = (what) => readdirSync(join(dir, '.barebrowse')).filter((f) => f.startsWith(what)).sort().pop();
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let site;
+  let url;
+
+  before(async () => {
+    const { createServer } = await import('node:http');
+    site = createServer((_q, res) => {
+      res.setHeader('content-type', 'text/html');
+      res.end('<h1>switch fixture</h1><script>console.log("hello-from-new-page")</script>');
+    });
+    await new Promise((r) => site.listen(0, '127.0.0.1', r));
+    url = `http://127.0.0.1:${site.address().port}`;
+  });
+  after(async () => {
+    site.close();
+    try { await run(['close']); } catch { /* already closed */ }
+    rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('swaps the browser in place: same daemon, new engine, capture follows, close leaves nothing', async () => {
+    await run(['open', 'about:blank']);
+    const before = session();
+    assert.equal(before.engine, 'chromium');
+    const [chromium] = daemonBrowsers(before.pid, 'chromium');
+    assert.ok(chromium, 'chromium running');
+    await run(['goto', url]);
+    await run(['eval', 'console.log("old-engine-log")']);
+
+    assert.match(await run(['switch-engine', 'firefox']), /switched to firefox/);
+    const after = session();
+    assert.equal(after.engine, 'firefox');
+    for (const k of ['port', 'pid', 'token', 'startedAt']) assert.equal(after[k], before[k], `${k} kept`);
+    assert.match(await run(['status']), /Session running/);
+    for (let i = 0; i < 40 && psRows().some((r) => r.pid === chromium.pid); i++) await sleep(250);
+    assert.ok(!psRows().some((r) => r.pid === chromium.pid), 'old chromium gone');
+    assert.equal(daemonBrowsers(before.pid, 'firefox').length, 1, 'firefox running');
+
+    await run(['goto', url]);
+    const snap = await run(['snapshot']);
+    assert.match(readFileSync(snap, 'utf8'), /switch fixture/);
+    await run(['console-logs']);
+    const logs = JSON.parse(readFileSync(join(dir, '.barebrowse', fresh('console-')), 'utf8'));
+    assert.ok(logs.some((l) => l.args.includes('hello-from-new-page')), 'captures from the new page');
+    assert.ok(!logs.some((l) => l.args.includes('old-engine-log')), 'old page logs dropped');
+    await run(['network-log']);
+    const net = JSON.parse(readFileSync(join(dir, '.barebrowse', fresh('network-')), 'utf8'));
+    assert.ok(net.some((n) => n.url.startsWith(url)), 'network captured from the new page');
+
+    assert.match(await run(['switch-engine', 'firefox']), /already on firefox/);
+    assert.match(await run(['switch-engine', 'chromium']), /switched to chromium/);
+    assert.equal(session().engine, 'chromium');
+
+    await run(['close']);
+    await sleep(1500);
+    assert.ok(!existsSync(join(dir, '.barebrowse', 'session.json')));
+    assert.ok(!psRows().some((r) => r.pid === before.pid), 'daemon gone');
+    assert.equal(daemonBrowsers(before.pid, 'chromium').length, 0, 'no chromium left');
+    assert.equal(psRows().filter((r) => r.args.includes(tmp) && !r.args.includes('ps -eo')).length, 0, 'no firefox left');
+  });
+
+  it('a failed launch of the new engine keeps the old page serving', async () => {
+    mkdirSync(fakeBin);
+    writeFileSync(join(fakeBin, 'firefox'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
+    const e = { ...env, PATH: `${fakeBin}:${process.env.PATH}` };
+    await run(['open', 'about:blank'], { env: e });
+    await assert.rejects(() => run(['switch-engine', 'firefox'], { env: e }), /Firefox exited/);
+    assert.equal(session().engine, 'chromium', 'session.json unchanged');
+    await run(['goto', url], { env: e });
+    assert.match(readFileSync(await run(['snapshot'], { env: e }), 'utf8'), /switch fixture/);
+    await run(['close'], { env: e });
+  });
+});

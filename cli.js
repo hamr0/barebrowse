@@ -88,6 +88,8 @@ if (args.includes('--daemon-internal')) {
   await cmdProxy('save-state');
 } else if (cmd === 'dialog-log') {
   await cmdProxy('dialog-log');
+} else if (cmd === 'switch-engine' && args[1]) {
+  await cmdProxy('switch-engine', { engine: args[1] });
 } else {
   printUsage();
 }
@@ -613,6 +615,7 @@ Debugging:
   barebrowse dialog-log             JS dialog log -> .barebrowse/dialogs-*.json
   barebrowse downloads              List Content-Disposition downloads + savedPath (JSON)
   barebrowse save-state             Cookies + localStorage -> .barebrowse/state-*.json
+  barebrowse switch-engine <chromium|firefox>  Swap the browser in place (page, tabs, refs are lost)
 
 One-shot:
   barebrowse browse <url> [mode]    Browse + print snapshot to stdout
