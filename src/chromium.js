@@ -181,38 +181,47 @@ export async function launch(opts = {}) {
     detached: true,
   });
 
-  // Parse the WebSocket URL from stderr
-  // Chrome prints: "DevTools listening on ws://127.0.0.1:PORT/devtools/browser/UUID"
-  const wsUrl = await new Promise((resolve, reject) => {
-    let stderr = '';
-    const timeout = setTimeout(() => {
-      reject(new Error(`Browser failed to start within 10s. stderr: ${stderr}`));
-    }, 10000);
+  // Not in activeBrowsers yet, so nothing else would reap it: any failure
+  // before registration (start timeout, spawn error, early exit, bad URL)
+  // must kill the process group and remove the profile dir itself.
+  let wsUrl, actualPort;
+  try {
+    // Parse the WebSocket URL from stderr
+    // Chrome prints: "DevTools listening on ws://127.0.0.1:PORT/devtools/browser/UUID"
+    wsUrl = await new Promise((resolve, reject) => {
+      let stderr = '';
+      const timeout = setTimeout(() => {
+        reject(new Error(`Browser failed to start within 10s. stderr: ${stderr}`));
+      }, 10000);
 
-    child.stderr.on('data', (chunk) => {
-      stderr += chunk.toString();
-      const match = stderr.match(/ws:\/\/[^\s]+/);
-      if (match) {
+      child.stderr.on('data', (chunk) => {
+        stderr += chunk.toString();
+        const match = stderr.match(/ws:\/\/[^\s]+/);
+        if (match) {
+          clearTimeout(timeout);
+          resolve(match[0]);
+        }
+      });
+
+      child.on('error', (err) => {
         clearTimeout(timeout);
-        resolve(match[0]);
-      }
+        reject(new Error(`Failed to launch browser: ${err.message}`));
+      });
+
+      child.on('exit', (code) => {
+        clearTimeout(timeout);
+        if (!stderr.includes('ws://')) {
+          reject(new Error(`Browser exited with code ${code}. stderr: ${stderr}`));
+        }
+      });
     });
 
-    child.on('error', (err) => {
-      clearTimeout(timeout);
-      reject(new Error(`Failed to launch browser: ${err.message}`));
-    });
-
-    child.on('exit', (code) => {
-      clearTimeout(timeout);
-      if (!stderr.includes('ws://')) {
-        reject(new Error(`Browser exited with code ${code}. stderr: ${stderr}`));
-      }
-    });
-  });
-
-  // Extract port from wsUrl
-  const actualPort = parseInt(new URL(wsUrl).port, 10);
+    // Extract port from wsUrl
+    actualPort = parseInt(new URL(wsUrl).port, 10);
+  } catch (err) {
+    await cleanupBrowser({ process: child, ownedProfileDir });
+    throw err;
+  }
 
   const browser = { wsUrl, process: child, port: actualPort, ownedProfileDir };
 

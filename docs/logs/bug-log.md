@@ -319,3 +319,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `extractFirefoxCookies()` ignored `originAttributes`. Partitioned cookies carry `partitionKey` there (e.g. `^partitionKey=%28https%2Ccloudflare.com%29`), and `mergeCookies` (keyed name + domain + path) keeps whichever comes last.
 **Fix:** the `moz_cookies` query now excludes rows whose `originAttributes` contain `partitionKey=`; only top-level cookies are injected (a deliberate drop, since CDP/BiDi injection here has no partition key to attach). `extractFirefoxCookies` is now exported for the test.
 **Regression test:** `test/unit/auth.test.js` — temp sqlite DB with two same-name cookies, one partitioned; only the top-level value comes out (red against the old query).
+
+## [2026-10-23] A browser that failed to start was never killed (L1)
+
+**Symptom:** on an overloaded machine `launch()` rejected with `Browser failed to start within 10s`, but the Chromium it spawned kept running with its `/tmp/barebrowse-<pid>-*` profile, and a full `npm test` hung 30 min (the piped stderr kept the event loop alive). 9 orphan Chromiums were left after one run. `launchFirefox()` had the same gap (20s timeout).
+**Root cause:** the browser is added to `activeBrowsers` (the exit/signal reaper) only after the ws endpoint is parsed. Every failure between `spawn` and that point (start timeout, spawn error, early exit, `new URL()` throw) rejected without killing the detached process group or removing the profile dir.
+**Fix:** `launch()` and `launchFirefox()` wrap that window in try/catch and call `cleanupBrowser` / `cleanupFirefox` on a stand-in `{process, ownedProfileDir}` before rethrowing. Successful launches are unchanged.
+**Regression test:** `test/unit/launch-failure.test.js` — fake browser script that ignores SIGTERM and never prints an endpoint; after the rejection the process must be dead and its profile dir gone (red against the old code on both engines).

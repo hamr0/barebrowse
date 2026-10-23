@@ -169,25 +169,33 @@ export async function launchFirefox(opts = {}) {
   // detached:true → own process group, so cleanup can signal the whole tree.
   const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
 
-  // Firefox prints the BiDi endpoint to stderr. Wait for it (or die trying).
-  const wsUrl = await new Promise((resolve, reject) => {
-    let buf = '';
-    const timeout = setTimeout(() => reject(new Error(`Firefox BiDi did not start within 20s. stderr: ${buf}`)), 20000);
-    const scan = (chunk) => {
-      buf += chunk.toString();
-      const m = buf.match(/WebDriver BiDi listening on (ws:\/\/\S+)/);
-      if (m) { clearTimeout(timeout); resolve(m[1].replace(/\/?$/, '') + '/session'); }
-    };
-    child.stderr.on('data', scan);
-    child.stdout.on('data', scan);
-    child.on('error', (err) => { clearTimeout(timeout); reject(new Error(`Failed to launch Firefox: ${err.message}`)); });
-    child.on('exit', (code) => {
-      clearTimeout(timeout);
-      if (!buf.includes('WebDriver BiDi')) reject(new Error(`Firefox exited with code ${code}. stderr: ${buf}`));
+  // Not in activeBrowsers yet, so nothing else would reap it: any failure
+  // before registration must kill the process group and remove the profile.
+  let wsUrl, actualPort;
+  try {
+    // Firefox prints the BiDi endpoint to stderr. Wait for it (or die trying).
+    wsUrl = await new Promise((resolve, reject) => {
+      let buf = '';
+      const timeout = setTimeout(() => reject(new Error(`Firefox BiDi did not start within 20s. stderr: ${buf}`)), 20000);
+      const scan = (chunk) => {
+        buf += chunk.toString();
+        const m = buf.match(/WebDriver BiDi listening on (ws:\/\/\S+)/);
+        if (m) { clearTimeout(timeout); resolve(m[1].replace(/\/?$/, '') + '/session'); }
+      };
+      child.stderr.on('data', scan);
+      child.stdout.on('data', scan);
+      child.on('error', (err) => { clearTimeout(timeout); reject(new Error(`Failed to launch Firefox: ${err.message}`)); });
+      child.on('exit', (code) => {
+        clearTimeout(timeout);
+        if (!buf.includes('WebDriver BiDi')) reject(new Error(`Firefox exited with code ${code}. stderr: ${buf}`));
+      });
     });
-  });
 
-  const actualPort = parseInt(new URL(wsUrl.replace('/session', '')).port, 10);
+    actualPort = parseInt(new URL(wsUrl.replace('/session', '')).port, 10);
+  } catch (err) {
+    await cleanupFirefox({ process: child, ownedProfileDir: profileDir });
+    throw err;
+  }
   const browser = { wsUrl, process: child, port: actualPort, ownedProfileDir: profileDir };
 
   registerExitHandlers();
