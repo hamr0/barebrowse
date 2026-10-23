@@ -181,14 +181,16 @@ function extractChromiumCookies(dbPath, domain) {
  * @param {string} [domain] - Filter by domain
  * @returns {Array<object>} Cookies in CDP Network.setCookie format
  */
-function extractFirefoxCookies(dbPath, domain) {
+export function extractFirefoxCookies(dbPath, domain) {
   const db = new DatabaseSync(`file://${dbPath}?immutable=1`, { readOnly: true });
 
+  // Partitioned (CHIPS) cookies carry partitionKey in originAttributes and can
+  // share name+domain+path with the top-level cookie; inject only top-level ones.
   let sql = `SELECT host, name, value, path, expiry, isSecure, isHttpOnly, sameSite
-    FROM moz_cookies`;
+    FROM moz_cookies WHERE originAttributes NOT LIKE '%partitionKey=%'`;
   const params = [];
   if (domain) {
-    sql += ` WHERE host LIKE ?`;
+    sql += ` AND host LIKE ?`;
     params.push(`%${domain}%`);
   }
 
