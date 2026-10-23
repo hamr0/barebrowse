@@ -252,10 +252,10 @@ Chrome permission prompts (location, notifications, camera, mic, etc.) are suppr
 - No user prompt ever appears -- agents browse without interruption
 
 ### Cross-browser cookie injection -- done
-Auto mode merges cookies from all detected browsers (Chromium + Firefox, last-write-wins by name+domain). No need to use Chromium as daily browser.
+Auto mode merges cookies from all detected browsers (Chromium + Firefox, last-write-wins by name+domain+path; partitioned/CHIPS Firefox cookies are skipped). No need to use Chromium as daily browser.
 - `browse()`: auto-injects merged cookies before navigation (opt-out with `{ cookies: false }`)
 - `connect()`: manual injection via `page.injectCookies(url, { browser: 'firefox' })`
-- MCP `goto`: auto-injects cookies before every navigation
+- MCP `goto`: auto-injects cookies before every navigation; the `capabilities` tool's `cookies` field reports what was injected (names/domains/paths only, never values)
 - Proven: YouTube login session transferred from Firefox -> headed Chromium -> video playback
 
 ### Stealth patches -- done
@@ -313,7 +313,7 @@ Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` the
 }
 ```
 
-12 tools: browse (one-shot), goto, snapshot, click, type, press, scroll, back, forward, drag, upload, pdf.
+21 tools: browse (one-shot), goto, snapshot, readable, click, type, press, scroll, hover, select, back, forward, reload, drag, upload, pdf, screenshot, wait_for, tabs, capabilities, switch_engine (plus opt-in `eval` and `assess`). `switch_engine` swaps chromium/firefox in place (page, tabs and refs reset); CLI equivalent is `barebrowse switch-engine`.
 Action tools return `'ok'` -- agent calls `snapshot` explicitly (MCP tool calls are cheap to chain).
 `browse` and `snapshot` accept `maxChars` (default 30000) — large snapshots are saved to `.barebrowse/` and a file path is returned.
 Session runs in hybrid mode (headless + automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation.
