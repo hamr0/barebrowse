@@ -164,7 +164,13 @@ const MAX_TIMER_MS = 2 ** 31 - 1;
  * the page.
  */
 export function waitForDeadline(timeout) {
-  return Math.min(Math.max(TIMEOUTS.wait_for, (timeout || 30000) + 5000), MAX_TIMER_MS);
+  return Math.min(Math.max(TIMEOUTS.wait_for, waitTimeout(timeout) + 5000), MAX_TIMER_MS);
+}
+
+/** wait_for's requested wait in ms. MCP doesn't enforce schema types, so "abc" must not become NaN. */
+export function waitTimeout(timeout) {
+  const n = Number(timeout);
+  return Number.isFinite(n) && n > 0 ? n : 30000;
 }
 
 export function idleMs(raw) {
@@ -654,7 +660,7 @@ async function handleToolCall(name, args) {
     }, TIMEOUTS.screenshot);
     case 'wait_for': return withRetry(async () => {
       const page = await getPage();
-      await page.waitFor({ text: args.text, selector: args.selector, timeout: args.timeout });
+      await page.waitFor({ text: args.text, selector: args.selector, timeout: waitTimeout(args.timeout) });
       return 'ok';
     }, waitForDeadline(args.timeout), { retry: false });
     case 'tabs': return withRetry(async () => {

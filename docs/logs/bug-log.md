@@ -305,3 +305,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the `auto` merge in `extractCookies()` keyed its Map by `name@domain`, but cookie identity is name + domain + path (RFC 6265). Two `curr-account` cookies on different paths collapsed into one.
 **Fix:** the merge moved into an exported `mergeCookies(lists)` keyed by name + domain + path; last-write-wins across browsers is kept for identical cookies.
 **Regression test:** `test/unit/auth.test.js` — "mergeCookies()" keeps both paths (red against the old key).
+
+## [2026-10-23] wait_for with a non-numeric timeout reset the MCP page (M8)
+
+**Symptom:** `wait_for {text:'x', timeout:'abc'}` failed at once with a "timed out" error, and `resetPage()` wiped the page.
+**Root cause:** MCP doesn't enforce schema types. `waitForDeadline` computed `('abc' || 30000) + 5000` = `'abc5000'`, which `Math.max`/`Math.min` turned into NaN; `setTimeout(NaN)` fires after ~1ms, and that "timed out" message is transient.
+**Fix:** new `waitTimeout()` coerces with `Number()` and falls back to 30000 when not finite or <= 0. `waitForDeadline` uses it, and the `wait_for` handler passes the same coerced value to `page.waitFor`.
+**Regression test:** `test/unit/mcp.test.js` — "waitForDeadline" `'abc'` -> 60000 (red against the old code: NaN), plus NaN/-5/''/Infinity/null and `waitTimeout`.
