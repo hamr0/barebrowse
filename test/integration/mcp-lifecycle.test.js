@@ -217,3 +217,26 @@ describe('MCP server idle TTL', () => {
     await idleReleases({ BAREBROWSE_ENGINE: 'firefox' }, 'firefox');
   });
 });
+
+describe('MCP capabilities cookies field', () => {
+  const caps = async (s) => JSON.parse((await s.call('capabilities', {})).text);
+
+  it('is null before a goto, reports the last injection after, null again after idle release', async () => {
+    const s = await boot(IDLE);
+    assert.equal((await caps(s)).cookies, null);
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    const c = (await caps(s)).cookies;
+    assert.equal(c.url, siteUrl);
+    assert.equal(typeof c.injected, 'number');
+    assert.ok(Array.isArray(c.cookies) && c.cookies.length === c.injected);
+    for (const e of c.cookies) assert.match(e, /^.+ @ .+\//); // 'name @ domain/path', no value
+    await sleep(6000);
+    assert.equal((await caps(s)).cookies, null, 'released browser leaves no stale report');
+  });
+
+  it('says so under incognito', async () => {
+    const s = await boot({ BAREBROWSE_INCOGNITO: '1' });
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    assert.deepEqual((await caps(s)).cookies, { url: siteUrl, injected: 0, incognito: true });
+  });
+});
