@@ -79,7 +79,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | **Bot detection** (Google, Reddit) | ARIA node count (<50 = blocked) + text heuristics. `botBlocked` flag + `[BOT CHALLENGE DETECTED]` snapshot warning. Stealth patches (headless) + automatic headed fallback | Both |
 | **`navigator.webdriver`** | Stealth patches: webdriver, plugins, languages, chrome object | Headless |
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via `Page.handleJavaScriptDialog`, logged to `dialogLog` | Both |
-| **Profile locking** | Unique temp dir per headless instance (`/tmp/barebrowse-<pid>-<ts>`) | Headless |
+| **Profile locking** | Unique temp dir per headless instance (`/tmp/barebrowse-<pid>-<ts>`). A launch that fails (start timeout, early exit, bad endpoint — both engines) SIGKILLs the browser's whole process group and removes the temp dir before rejecting | Headless |
 | **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
 | **ARIA noise** | 9-step pruning: wrapper collapse, noise removal, landmark promotion | Both |
 | **Hostile navigation (prompt-injected agent)** | v0.11.0: `goto()`/`browse()` block `file:`/`view-source:`/`chrome:`/etc. by default (`src/url-guard.js`); opt-in `blockPrivateNetwork` (loopback/RFC-1918/link-local/cloud-metadata SSRF guard) and `uploadDir` (realpath-checked upload sandbox). Cookie injection scoped by precise RFC-6265 domain match | Both |

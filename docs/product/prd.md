@@ -219,7 +219,7 @@ The agent doesn't have to think about any of this:
 | **JS dialogs** (alert/confirm/prompt) | Auto-dismiss via CDP, logged in `dialogLog`; H8 added `page.onDialog(handler)` for custom replies | Both |
 | **iframe / OOPIF content** (Stripe, reCAPTCHA, embedded forms) | H2: `Target.setAutoAttach({flatten:true})` + per-frame AX trees merged under iframe placeholders. `--site-per-process` forces every iframe (including same-origin) into OOPIF so click coords work. Refs route to the iframe's session via `{ session, backendNodeId }` lookup | Both |
 | **Download capture** (`Content-Disposition: attachment`) | H7: `Browser.setDownloadBehavior({behavior:'allowAndName', downloadPath, eventsEnabled:true})` + live `page.downloads` array with `{ guid, url, suggestedFilename, savedPath, state, totalBytes, receivedBytes }` per file | Both (skipped in attach mode) |
-| **Profile locking** | Unique temp dir per headless instance | Headless |
+| **Profile locking** | Unique temp dir per headless instance. A launch that fails (start timeout, early exit, bad endpoint — both engines) SIGKILLs the browser's whole process group and removes the temp dir before rejecting | Headless |
 | **Shared memory crash** (Linux) | `--disable-dev-shm-usage` prevents `/dev/shm` exhaustion under heavy tab load | Headless |
 | **ARIA noise** | 8-step pruning pipeline (ported from mcprune): region extraction, node prune, wrapper collapse, post-clean, then e-commerce noise removal (dedup links, drop sponsored/spec buttons, truncate after footer, drop filter groups) | Both |
 
