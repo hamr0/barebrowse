@@ -95,7 +95,7 @@ const snapshot = await browse('https://example.com', {
 | `cdp` | -- | object | Raw CDP session (getter — survives hybrid fallback and switchTab) for escape hatch: `page.cdp.send(method, params)` |
 | `createTab()` | -- | tab handle | New tab in same browser. Returns `{ goto, botBlocked, injectCookies, waitForNetworkIdle, cdp, close }`. Tab close doesn't affect session. |
 | `engine` | -- | `'chromium'`\|`'firefox'` | Which engine drives this session. Always readable (both shapes carry it); a typed literal, so it also narrows the union: `if (page.engine === 'firefox') page.bidi.…`. |
-| `capabilities` | -- | object | Feature introspection: `{ engine, mode, attach, escapeHatch, reloadIgnoreCache, downloads, stealth, cookieInjection }`. Ask "what can this session do?" without probing for `cdp`/`bidi`. All fields are launch-fixed except `stealth`, which is a live getter reflecting the session's current headed/headless state (it can flip mid-session after a hybrid bot-challenge relaunch). `reloadIgnoreCache` is false on Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection` reflect mode + attach + incognito. |
+| `capabilities` | -- | object | Feature introspection: `{ engine, mode, attach, escapeHatch, reloadIgnoreCache, downloads, stealth, cookieInjection }`. Ask "what can this session do?" without probing for `cdp`/`bidi`. All fields are launch-fixed except `stealth`, which is a live getter reflecting the session's current headed/headless state (it can flip mid-session after a hybrid bot-challenge relaunch). `reloadIgnoreCache` is false on Firefox (upstream BiDi gap); `downloads`/`stealth`/`cookieInjection` reflect mode + attach + incognito. The MCP tool also returns `cookies: { url, injected, cookies: ["name @ domain/path"], error? }` for the last goto (names only, never values; `{ url, injected: 0, incognito: true }` under incognito; `null` before any goto). |
 | `close()` | -- | void | Close page, disconnect CDP, kill browser (if headless). The tab close is bounded (2.5s), so a dead/hung browser still gets killed and its profile + owned download dir removed. Attach mode never kills your browser |
 
 **connect() options** (in addition to mode/port/consent):
@@ -262,6 +262,7 @@ barebrowse pdf                         # → .barebrowse/page-<timestamp>.pdf
 barebrowse wait-for --text="Success"   # Wait for content to appear
 barebrowse tabs                        # List open tabs
 barebrowse save-state                  # → .barebrowse/state-<timestamp>.json
+barebrowse switch-engine firefox       # Swap chromium/firefox in place (page/tabs/refs reset; goto after; not with --port; cookies re-injected for open's URL only)
 barebrowse close                       # Kill daemon + browser
 ```
 
@@ -386,7 +387,7 @@ Useful for agent threshold decisions: "skip sites above score 40", "warn if term
 
 9. **Screenshot returns base64.** Write to file with `fs.writeFileSync('shot.png', Buffer.from(base64, 'base64'))` or pass directly to a vision model.
 
-10. **Two engines.** The default is CDP, which drives Chrome, Chromium, Edge, Brave, Vivaldi (~80% desktop share). Firefox is driven over WebDriver BiDi (CDP is deprecated there) — select it with `connect({ engine: 'firefox' })`, CLI `--engine firefox`, or MCP `BAREBROWSE_ENGINE=firefox`. Same `page.*` API on both; feature parity reached in v0.19.x, with the only remaining gap being `reload()` ignoring `ignoreCache` (upstream BiDi limitation). Note the engine is chosen at launch, not per-call. See the `engine` connect() option below for the full parity timeline.
+10. **Two engines.** The default is CDP, which drives Chrome, Chromium, Edge, Brave, Vivaldi (~80% desktop share). Firefox is driven over WebDriver BiDi (CDP is deprecated there) — select it with `connect({ engine: 'firefox' })`, CLI `--engine firefox`, or MCP `BAREBROWSE_ENGINE=firefox`. Same `page.*` API on both; feature parity reached in v0.19.x, with the only remaining gap being `reload()` ignoring `ignoreCache` (upstream BiDi limitation). The engine is chosen at launch and can be swapped at runtime via MCP `switch_engine` or CLI `switch-engine <chromium|firefox>` (page, tabs and refs reset, so call `goto` after; not available in attach mode). See the `engine` connect() option below for the full parity timeline.
 
 11. **`--site-per-process` is on by default (v0.9.0).** Required for iframe support — without it, same-origin iframes stay in the parent process and `Input.dispatchMouseEvent` coords don't match `DOM.getBoxModel` coords for iframe-internal elements. Memory cost: +50-150MB per cross-origin frame. Real Chrome does this for cross-origin by default; we just extend it to all iframes. If you attach via `connect({port})`, the user's browser is whatever they launched it as — for iframe interaction reliability, start it with `--site-per-process` too.
 
