@@ -1,5 +1,52 @@
 # Changelog
 
+## [0.24.0] - 2026-10-23
+
+### Added
+
+- **Switch browser engine mid-session.** The MCP server has a new
+  `switch_engine` tool (`chromium` or `firefox`), so an agent no longer needs a
+  server restart to try the other engine. The page, tabs and refs are reset
+  (call `goto` again); logins from your real browser are re-injected on the next
+  `goto`. Expect about 2s to Chromium and 4-5s to Firefox. Switching to the
+  active engine is a no-op.
+- **`barebrowse switch-engine <chromium|firefox>` for CLI sessions.** Swaps the
+  daemon's browser in place. The new browser is connected first, so a failed
+  launch leaves the old one running. Refused when the session was opened with
+  `--port` (attached to your own browser). Console and network capture are
+  re-attached to the new browser.
+- **MCP `capabilities` reports the last cookie injection.** It now returns a
+  `cookies` field with the URL, how many cookies were injected, and each as
+  `name @ domain/path`, plus any read error, so an agent can tell "logged out"
+  from "no cookie found" from "the cookie read failed". Names, domains and paths
+  only, never values.
+
+### Fixed
+
+- **Same-name cookies on different paths are no longer dropped.** The default
+  merge of Chromium and Firefox cookie jars keyed cookies by name and domain, so
+  two cookies differing only by path collapsed into one. They are now keyed by
+  name, domain and path.
+- **Partitioned (CHIPS) Firefox cookies are skipped.** A partitioned cookie
+  sharing a name, domain and path with the top-level cookie could replace it in
+  the injected set, so a site saw the embed's value instead of your login
+  cookie. Only top-level cookies are injected.
+- **A non-numeric `wait_for` timeout no longer resets the page.** A value like
+  `"abc"` made the deadline invalid, which fired after about 1ms and wiped the
+  page. Numeric strings are now accepted, and anything not a positive number
+  falls back to the 30s default.
+- **A browser that fails to start no longer leaks.** When Chromium or Firefox
+  timed out, exited early or failed to spawn, the process and its temporary
+  profile directory were left behind forever (and could hang a test run). Both
+  are now killed and removed before the error is raised.
+- **Chromium cleanup kills helper processes even after the main process
+  exited.** Helpers sharing its process group used to survive and keep the
+  deleted profile directory open.
+
+### Docs
+
+- The CLI skill docs now mention the 7-day output cleanup at `barebrowse open`.
+
 ## [0.23.0] - 2026-10-14
 
 ### Added
