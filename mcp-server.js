@@ -121,6 +121,8 @@ export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
 
 let _page = null;
 let _pageConnecting = null;
+// Active engine: starts from BAREBROWSE_ENGINE, changed at runtime by switch_engine.
+let _engine = process.env.BAREBROWSE_ENGINE === 'firefox' ? 'firefox' : 'chromium';
 // Last goto's cookie injection (names/domains/paths only, never values), so an
 // agent can tell "logged out" from "no cookie found" from "the read failed".
 let _lastCookies = null;
@@ -184,16 +186,16 @@ function armIdle() {
 }
 
 /**
- * The engine + mode this server is configured to use, derived from env WITHOUT
- * launching a browser. Both engines ship in the library; which one this server
- * drives is fixed at launch by BAREBROWSE_ENGINE and cannot change mid-session
- * (one browser is connected and reused across tool calls). Surfaced to the
+ * The engine + mode this server is using, WITHOUT launching a browser. Both
+ * engines ship in the library; the starting engine is BAREBROWSE_ENGINE and the
+ * `switch_engine` tool changes it at runtime (one browser is connected and
+ * reused across tool calls; a switch replaces it). Surfaced to the
  * agent via `initialize.instructions`, the `capabilities` tool, and the `browse`
  * tool description so the Firefox engine is discoverable — it was invisible
  * before, and a session concluded (wrongly) that only Chromium was supported.
  */
 function engineInfo() {
-  const engine = process.env.BAREBROWSE_ENGINE === 'firefox' ? 'firefox' : 'chromium';
+  const engine = _engine;
   const mode = process.env.BAREBROWSE_MODE || 'hybrid';
   const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
   return {
@@ -201,10 +203,10 @@ function engineInfo() {
     mode,
     incognito,
     availableEngines: ['chromium', 'firefox'],
-    // Engine is chosen once at server launch — the agent cannot switch it.
+    // BAREBROWSE_ENGINE only sets the starting engine; the agent can switch.
     switchEngine:
-      "To use the other engine, restart the MCP server with BAREBROWSE_ENGINE=firefox "
-      + "(or unset it for the chromium default). It cannot be changed during a session.",
+      'To use the other engine, call the "switch_engine" tool (the page, tabs and refs are lost; '
+      + 'takes a few seconds). BAREBROWSE_ENGINE sets the starting engine.',
   };
 }
 
@@ -221,7 +223,7 @@ async function getPage() {
   // across tool calls, so it's an env var (BAREBROWSE_INCOGNITO=1), not a
   // per-request flag. Skips all auth injection for a clean, logged-out session.
   const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
-  const connectOpts = process.env.BAREBROWSE_ENGINE === 'firefox'
+  const connectOpts = _engine === 'firefox'
     ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito }
     : { mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito };
   _pageConnecting = connect(connectOpts);
@@ -454,8 +456,19 @@ export const TOOLS = [
     },
   },
   {
+    name: 'switch_engine',
+    description: 'Switch the browser engine (chromium or firefox) without restarting the MCP server. LOSES all in-session state: the current page, tabs, refs, and any logins or form state made inside the session. Logins from your real browser are re-injected on the next goto. Costs a few seconds (about 2s to chromium, 4-5s to firefox) as the new browser launches on your next call. After switching, call goto. Same engine as the active one is a no-op.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        engine: { type: 'string', enum: ['chromium', 'firefox'], description: 'Engine to switch to' },
+      },
+      required: ['engine'],
+    },
+  },
+  {
     name: 'capabilities',
-    description: 'Report which browser engine this session drives (chromium or firefox) and what it can do — no navigation, no side effects. Use it to answer "can this drive Firefox?" or "is this an authenticated session?". Returns the active engine + mode, that both engines are supported, how to switch (a server-restart env var; the engine is fixed for a running session), and, if a page is already open, its live capability flags. Also returns `cookies`: the cookie injection of the last goto as { url, injected, cookies: ["name @ domain/path", ...], error? } (names, domains and paths only, never values; { url, injected: 0, incognito: true } under incognito; null before any goto or after the browser is released). Use it to tell "logged out" from "no cookie found" from "the cookie read failed".',
+    description: 'Report which browser engine this session drives (chromium or firefox) and what it can do — no navigation, no side effects. Use it to answer "can this drive Firefox?" or "is this an authenticated session?". Returns the active engine + mode, that both engines are supported, how to switch (the switch_engine tool), and, if a page is already open, its live capability flags. Also returns `cookies`: the cookie injection of the last goto as { url, injected, cookies: ["name @ domain/path", ...], error? } (names, domains and paths only, never values; { url, injected: 0, incognito: true } under incognito; null before any goto or after the browser is released). Use it to tell "logged out" from "no cookie found" from "the cookie read failed".',
     inputSchema: { type: 'object', properties: {} },
   },
 ];
@@ -510,6 +523,17 @@ async function handleToolCall(name, args) {
       }
       info.cookies = _lastCookies; // null until a goto
       return info;
+    }
+    case 'switch_engine': {
+      const target = args.engine;
+      if (target !== 'chromium' && target !== 'firefox') throw new Error('engine must be "chromium" or "firefox"');
+      if (target === _engine) return `already on ${target}; nothing changed`;
+      // A launch in progress would land as _page with the old engine after the
+      // switch. Let it finish (its outcome is irrelevant), then close it.
+      if (_pageConnecting) await _pageConnecting.catch(() => {});
+      resetPage();
+      _engine = target;
+      return `switched to ${target} — the previous page, tabs and refs are gone; call goto`;
     }
     case 'browse': {
       let timer;
