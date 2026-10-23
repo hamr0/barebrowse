@@ -335,7 +335,7 @@ Architecture: `open` spawns a detached child process running an HTTP server on a
 
 **Auth (v0.11.0):** loopback alone is not an authorization boundary (shared across local users), so the daemon mints a 32-byte token at startup, writes it into `session.json` (mode `0600`) and requires it on `POST /command` via `x-barebrowse-token` (constant-time compare). `session-client` sends it transparently. Session dir is `0700`; snapshots/`saveState`/logs are `0600`. `GET /status` stays open (liveness only).
 
-Full commands: open, close, status, goto, back, forward, snapshot, screenshot, pdf, click, type, fill, press, scroll, hover, select, drag, upload, tabs, tab, eval, wait-idle, wait-for, console-logs, network-log, dialog-log, save-state.
+Full commands: open, close, status, goto, back, forward, snapshot, screenshot, pdf, click, type, fill, press, scroll, hover, select, drag, upload, tabs, tab, eval, wait-idle, wait-for, console-logs, network-log, dialog-log, save-state, switch-engine.
 
 Self-sufficiency features (console/network capture, eval) let agents debug without guessing -- they see JS errors and failed requests directly.
 
