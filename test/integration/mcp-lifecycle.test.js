@@ -76,7 +76,8 @@ async function startServer(env = {}, seed) {
     return { isError: !!r.result?.isError, text: r.result?.content?.[0]?.text ?? '' };
   };
   const stop = async () => {
-    for (const b of ownedBrowsers(child.pid, env.BAREBROWSE_ENGINE)) { try { process.kill(b.pid, 'SIGKILL'); } catch {} }
+    // Either engine may be live: switch_engine changes it mid-test.
+    for (const b of [...ownedBrowsers(child.pid, 'chromium'), ...ownedBrowsers(child.pid, 'firefox')]) { try { process.kill(b.pid, 'SIGKILL'); } catch {} }
     child.kill('SIGKILL');
     await sleep(300);
     for (const d of profileDirs(child.pid)) rmSync(join('/tmp', d), { recursive: true, force: true });
@@ -238,5 +239,67 @@ describe('MCP capabilities cookies field', () => {
     const s = await boot({ BAREBROWSE_INCOGNITO: '1' });
     assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
     assert.deepEqual((await caps(s)).cookies, { url: siteUrl, injected: 0, incognito: true });
+  });
+});
+
+describe('MCP switch_engine', { skip: hasFirefox ? false : 'firefox not installed' }, () => {
+  const caps = async (s) => JSON.parse((await s.call('capabilities', {})).text);
+  const gone = async (pid) => { for (let i = 0; i < 40 && ps().some((r) => r.pid === pid); i++) await sleep(250); return !ps().some((r) => r.pid === pid); };
+
+  it('swaps chromium -> firefox -> chromium; the old browser exits and the new one browses', async () => {
+    const s = await boot();
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    assert.equal((await caps(s)).activeEngine, 'chromium');
+    const [chromium] = ownedBrowsers(s.pid);
+    assert.ok(chromium, 'chromium running');
+
+    const sw = await s.call('switch_engine', { engine: 'firefox' });
+    assert.equal(sw.isError, false, sw.text);
+    assert.match(sw.text, /switched to firefox/);
+    const c = await caps(s);
+    assert.equal(c.activeEngine, 'firefox');
+    assert.equal(c.connected, false, 'new browser launches lazily');
+    assert.ok(await gone(chromium.pid), 'old chromium process gone');
+
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    const snap = await s.call('snapshot', {});
+    assert.equal(snap.isError, false, snap.text);
+    assert.match(snap.text, /lifecycle fixture/);
+    assert.equal(ownedBrowsers(s.pid, 'firefox').length, 1);
+    assert.equal((await caps(s)).cookies.url, siteUrl);
+
+    const [ff] = ownedBrowsers(s.pid, 'firefox');
+    assert.equal((await s.call('switch_engine', { engine: 'chromium' })).isError, false);
+    assert.ok(await gone(ff.pid), 'old firefox process gone');
+    assert.equal((await caps(s)).activeEngine, 'chromium');
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    assert.equal(ownedBrowsers(s.pid).length, 1);
+  });
+
+  it('the same engine is a no-op that leaves the browser alone', async () => {
+    const s = await boot();
+    await s.call('goto', { url: siteUrl });
+    const [before] = ownedBrowsers(s.pid);
+    const sw = await s.call('switch_engine', { engine: 'chromium' });
+    assert.equal(sw.isError, false);
+    assert.match(sw.text, /already on chromium/);
+    assert.equal(ownedBrowsers(s.pid)[0].pid, before.pid);
+    assert.equal((await s.call('switch_engine', { engine: 'netscape' })).isError, true);
+  });
+
+  it('a switch during a launch in flight closes that browser instead of leaking it', async () => {
+    const s = await boot();
+    const first = s.call('goto', { url: siteUrl }); // starts the chromium launch
+    await sleep(150);
+    const sw = await s.call('switch_engine', { engine: 'firefox' });
+    assert.equal(sw.isError, false, sw.text);
+    await first; // the call may fail or retry on the new engine; the chromium it launched must not survive
+    for (let i = 0; i < 40 && (ownedBrowsers(s.pid).length || profileDirs(s.pid).length); i++) await sleep(250);
+    assert.equal(ownedBrowsers(s.pid).length, 0, 'stale chromium closed');
+    assert.deepEqual(profileDirs(s.pid), [], 'stale profile dir removed');
+    assert.equal((await caps(s)).activeEngine, 'firefox');
+    assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
+    assert.equal(ownedBrowsers(s.pid, 'firefox').length, 1);
+    assert.equal(ownedBrowsers(s.pid).length, 0, 'still no chromium');
   });
 });
