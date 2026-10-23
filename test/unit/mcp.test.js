@@ -7,7 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, unlinkSync } from 'node:fs';
-import { TIMEOUTS, TOOLS, saveSnapshot, idleMs, waitForDeadline } from '../../mcp-server.js';
+import { TIMEOUTS, TOOLS, saveSnapshot, idleMs, waitForDeadline, cookieReport } from '../../mcp-server.js';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join as joinPath } from 'node:path';
@@ -413,4 +413,24 @@ describe('waitForDeadline (wait_for outer deadline follows requested wait)', () 
   for (const [t, want] of cases) {
     it(`${t} -> ${want}`, () => assert.equal(waitForDeadline(t), want));
   }
+});
+
+describe('cookieReport (capabilities cookies field)', () => {
+  const jar = [
+    { name: 'sid', domain: '.example.com', path: '/', value: 'SECRET-VALUE-1' },
+    { name: 'sid', domain: '.example.com', path: '/api', value: 'SECRET-VALUE-2' },
+  ];
+
+  it('lists name @ domain/path and never a value', () => {
+    const r = cookieReport('https://example.com/', { cookies: jar });
+    assert.equal(r.injected, 2);
+    assert.deepEqual(r.cookies, ['sid @ .example.com/', 'sid @ .example.com/api']);
+    assert.ok(!JSON.stringify(r).includes('SECRET-VALUE'));
+  });
+
+  it('carries the error, and reports incognito without reading cookies', () => {
+    assert.equal(cookieReport('https://a.test/', { error: 'boom' }).error, 'boom');
+    assert.deepEqual(cookieReport('https://a.test/', { cookies: jar, incognito: true }),
+      { url: 'https://a.test/', injected: 0, incognito: true });
+  });
 });

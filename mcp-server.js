@@ -13,6 +13,7 @@
 import { browse, connect } from './src/index.js';
 import { formatReadable } from './src/readable.js';
 import { cleanOld } from './src/output-clean.js';
+import { scopedCookiesForUrl } from './src/auth.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -120,6 +121,20 @@ export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
 
 let _page = null;
 let _pageConnecting = null;
+// Last goto's cookie injection (names/domains/paths only, never values), so an
+// agent can tell "logged out" from "no cookie found" from "the read failed".
+let _lastCookies = null;
+
+/**
+ * Shape the capabilities `cookies` field. Takes cookie objects but copies only
+ * name, domain and path, so a value can never leak into the report.
+ */
+export function cookieReport(url, { cookies = [], error, incognito } = {}) {
+  if (incognito) return { url, injected: 0, incognito: true };
+  const r = { url, injected: cookies.length, cookies: cookies.map((c) => `${c.name} @ ${c.domain}${c.path}`) };
+  if (error) r.error = error;
+  return r;
+}
 
 /**
  * Forget the current session AND close its browser. A bare `_page = null`
@@ -129,6 +144,7 @@ let _pageConnecting = null;
 function resetPage() {
   const p = _page;
   _page = null;
+  _lastCookies = null;
   if (p) p.close().catch(() => {});
 }
 
@@ -439,7 +455,7 @@ export const TOOLS = [
   },
   {
     name: 'capabilities',
-    description: 'Report which browser engine this session drives (chromium or firefox) and what it can do — no navigation, no side effects. Use it to answer "can this drive Firefox?" or "is this an authenticated session?". Returns the active engine + mode, that both engines are supported, how to switch (a server-restart env var; the engine is fixed for a running session), and, if a page is already open, its live capability flags.',
+    description: 'Report which browser engine this session drives (chromium or firefox) and what it can do — no navigation, no side effects. Use it to answer "can this drive Firefox?" or "is this an authenticated session?". Returns the active engine + mode, that both engines are supported, how to switch (a server-restart env var; the engine is fixed for a running session), and, if a page is already open, its live capability flags. Also returns `cookies`: the cookie injection of the last goto as { url, injected, cookies: ["name @ domain/path", ...], error? } (names, domains and paths only, never values; { url, injected: 0, incognito: true } under incognito; null before any goto or after the browser is released). Use it to tell "logged out" from "no cookie found" from "the cookie read failed".',
     inputSchema: { type: 'object', properties: {} },
   },
 ];
@@ -492,6 +508,7 @@ async function handleToolCall(name, args) {
         info.connected = false;
         info.capabilities = null; // populated on first navigation
       }
+      info.cookies = _lastCookies; // null until a goto
       return info;
     }
     case 'browse': {
@@ -510,7 +527,15 @@ async function handleToolCall(name, args) {
     }
     case 'goto': return withRetry(async () => {
       const page = await getPage();
-      try { await page.injectCookies(args.url); } catch {}
+      if (process.env.BAREBROWSE_INCOGNITO === '1') {
+        _lastCookies = cookieReport(args.url, { incognito: true });
+      } else {
+        let cookies = [];
+        let error;
+        try { cookies = scopedCookiesForUrl(args.url); } catch (e) { error = e.message; }
+        try { await page.injectCookies(args.url); } catch (e) { error ??= e.message; }
+        _lastCookies = cookieReport(args.url, { cookies, error });
+      }
       await page.goto(args.url);
       return 'ok';
     }, TIMEOUTS.goto);
