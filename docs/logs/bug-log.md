@@ -312,3 +312,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** MCP doesn't enforce schema types. `waitForDeadline` computed `('abc' || 30000) + 5000` = `'abc5000'`, which `Math.max`/`Math.min` turned into NaN; `setTimeout(NaN)` fires after ~1ms, and that "timed out" message is transient.
 **Fix:** new `waitTimeout()` coerces with `Number()` and falls back to 30000 when not finite or <= 0. `waitForDeadline` uses it, and the `wait_for` handler passes the same coerced value to `page.waitFor`.
 **Regression test:** `test/unit/mcp.test.js` — "waitForDeadline" `'abc'` -> 60000 (red against the old code: NaN), plus NaN/-5/''/Infinity/null and `waitTimeout`.
+
+## [2026-10-23] Partitioned Firefox cookies could shadow the top-level cookie (K2)
+
+**Symptom:** a partitioned (CHIPS) Firefox cookie sharing name + domain + path with the top-level cookie could replace it in the injected set, so a site saw the embed's value instead of its login cookie.
+**Root cause:** `extractFirefoxCookies()` ignored `originAttributes`. Partitioned cookies carry `partitionKey` there (e.g. `^partitionKey=%28https%2Ccloudflare.com%29`), and `mergeCookies` (keyed name + domain + path) keeps whichever comes last.
+**Fix:** the `moz_cookies` query now excludes rows whose `originAttributes` contain `partitionKey=`; only top-level cookies are injected (a deliberate drop, since CDP/BiDi injection here has no partition key to attach). `extractFirefoxCookies` is now exported for the test.
+**Regression test:** `test/unit/auth.test.js` — temp sqlite DB with two same-name cookies, one partitioned; only the top-level value comes out (red against the old query).

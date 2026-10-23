@@ -7,7 +7,11 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies } from '../../src/auth.js';
+import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies, extractFirefoxCookies } from '../../src/auth.js';
+import { DatabaseSync } from 'node:sqlite';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 // extractCookies() reads the real on-disk browser cookie database; skip when
 // none exists (e.g. a CI runner with no browser profile). The pure
@@ -134,5 +138,23 @@ describe('mergeCookies()', () => {
     const out = mergeCookies([[ck('/', 'chromium')], [ck('/', 'firefox')]]);
     assert.equal(out.length, 1);
     assert.equal(out[0].value, 'firefox');
+  });
+});
+
+describe('extractFirefoxCookies() — partitioned cookies', () => {
+  it('skips CHIPS cookies so they cannot shadow the top-level cookie', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'bb-ffcookies-'));
+    try {
+      const file = join(dir, 'cookies.sqlite');
+      const db = new DatabaseSync(file);
+      db.exec(`CREATE TABLE moz_cookies (host TEXT, name TEXT, value TEXT, path TEXT, expiry INTEGER,
+        isSecure INTEGER, isHttpOnly INTEGER, sameSite INTEGER, originAttributes TEXT)`);
+      const ins = db.prepare('INSERT INTO moz_cookies VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)');
+      ins.run('.example.com', 'sid', 'top-level', '/', 0, 1, 1, 1, '');
+      ins.run('.example.com', 'sid', 'partitioned', '/', 0, 1, 1, 0, '^partitionKey=%28https%2Cother.com%29');
+      db.close();
+      const got = extractFirefoxCookies(file, 'example.com');
+      assert.deepEqual(got.map((c) => c.value), ['top-level']);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
   });
 });
