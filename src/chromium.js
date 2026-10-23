@@ -252,12 +252,14 @@ export async function cleanupBrowser(browser) {
     });
     try { browser.process.kill(); } catch {}
     await exited;
-    // SIGKILL the whole Chromium process group. The parent may have exited
-    // already (above) but renderer/GPU/network children — separate processes
-    // under --site-per-process — can outlive it by seconds, and they hold
-    // profile-dir file handles. Because launch() spawned with detached:true,
-    // the children share Chromium's pgid (not Node's), so process.kill on a
-    // negative PID reaps the whole group without touching anything else.
+  }
+  // SIGKILL the whole Chromium process group — unconditionally, even if the
+  // parent already exited or was already signalled: renderer/GPU/network
+  // children (separate processes under --site-per-process) can outlive it,
+  // and they hold profile-dir file handles. Because launch() spawned with
+  // detached:true, the children share Chromium's pgid (not Node's), so a
+  // negative PID reaps the whole group without touching anything else.
+  if (browser.process?.pid != null) {
     try { process.kill(-browser.process.pid, 'SIGKILL'); } catch {
       // ESRCH = group already gone; anything else is best-effort here.
     }

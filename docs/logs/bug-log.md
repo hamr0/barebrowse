@@ -326,3 +326,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the browser is added to `activeBrowsers` (the exit/signal reaper) only after the ws endpoint is parsed. Every failure between `spawn` and that point (start timeout, spawn error, early exit, `new URL()` throw) rejected without killing the detached process group or removing the profile dir.
 **Fix:** `launch()` and `launchFirefox()` wrap that window in try/catch and call `cleanupBrowser` / `cleanupFirefox` on a stand-in `{process, ownedProfileDir}` before rethrowing. Successful launches are unchanged.
 **Regression test:** `test/unit/launch-failure.test.js` — fake browser script that ignores SIGTERM and never prints an endpoint; after the rejection the process must be dead and its profile dir gone (red against the old code on both engines).
+
+## [2026-10-23] A failed Chromium's helper processes survived its exit (L2)
+
+**Symptom:** `launch()` rejected with `Browser exited with code 1`, but a helper the browser had forked stayed running (and kept holding the profile dir that was then deleted underneath it).
+**Root cause:** related to L1. `cleanupBrowser()` ran the process-group SIGKILL only inside the `!killed && exitCode === null` guard, so once the Chromium parent had already exited the group was never signalled. Helpers share the parent's pgid (`detached:true`) and outlive it. `cleanupFirefox` already killed the group unconditionally.
+**Fix:** the `process.kill(-pid, 'SIGKILL')` in `cleanupBrowser` (src/chromium.js) now runs whenever the browser has a pid, outside the guard (ESRCH still swallowed). The SIGTERM + 2s wait stays inside the guard. Successful launches are unchanged.
+**Regression test:** `test/unit/launch-failure.test.js` — fake browser forks `sleep 300 &` then `exit 1`; after the rejection the helper must be dead and the profile dir gone (red against the old code: helper still running).
