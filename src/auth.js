@@ -235,19 +235,27 @@ export function extractCookies(opts = {}) {
     return extractChromiumCookies(path, domain);
   }
 
-  // Auto: try all browsers, merge (last-write-wins by name+domain)
-  const all = new Map();
+  // Auto: try all browsers, merge (last-write-wins by name+domain+path)
   const chromium = findChromiumCookieDb();
-  if (chromium) {
-    for (const c of extractChromiumCookies(chromium.path, domain))
-      all.set(`${c.name}@${c.domain}`, c);
-  }
   const firefox = findFirefoxCookieDb();
-  if (firefox) {
-    for (const c of extractFirefoxCookies(firefox, domain))
-      all.set(`${c.name}@${c.domain}`, c);
-  }
-  if (all.size === 0) throw new Error('No browser cookie database found');
+  const lists = [];
+  if (chromium) lists.push(extractChromiumCookies(chromium.path, domain));
+  if (firefox) lists.push(extractFirefoxCookies(firefox, domain));
+  const merged = mergeCookies(lists);
+  if (merged.length === 0) throw new Error('No browser cookie database found');
+  return merged;
+}
+
+/**
+ * Merge cookie lists; a later list wins on an identical cookie. Identity is
+ * name + domain + path (RFC 6265): the same name on two paths are two cookies.
+ * @param {Array<Array<object>>} lists
+ * @returns {Array<object>}
+ */
+export function mergeCookies(lists) {
+  const all = new Map();
+  for (const list of lists)
+    for (const c of list) all.set(`${c.name}@${c.domain}${c.path}`, c);
   return [...all.values()];
 }
 

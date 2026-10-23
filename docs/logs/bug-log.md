@@ -298,3 +298,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `OURS` in `src/output-clean.js` accepted any `[\dTZ-]+` after the prefix, far looser than the stamp barebrowse writes.
 **Fix:** require the exact `toISOString()` stamp (`YYYY-MM-DDTHH-MM-SS-mmmZ`) via one shared sub-pattern, same prefix/extension pairing. All writer sites (mcp-server.js, src/daemon.js) emit exactly that stamp with no suffix.
 **Regression test:** `test/unit/output-clean.test.js` — old `screenshot-2026-01-01.png`, `page-2025-03-04.pdf`, `page-20250304.yml` must survive (red against the old regex).
+
+## [2026-10-23] Default cookie merge dropped same-name cookies on different paths, logging Cloudflare out (K1)
+
+**Symptom:** with the default `auto` cookie source, dash.cloudflare.com landed on /login (16 cookies injected); `browser:'firefox'` injected all 18 and stayed logged in.
+**Root cause:** the `auto` merge in `extractCookies()` keyed its Map by `name@domain`, but cookie identity is name + domain + path (RFC 6265). Two `curr-account` cookies on different paths collapsed into one.
+**Fix:** the merge moved into an exported `mergeCookies(lists)` keyed by name + domain + path; last-write-wins across browsers is kept for identical cookies.
+**Regression test:** `test/unit/auth.test.js` — "mergeCookies()" keeps both paths (red against the old key).
