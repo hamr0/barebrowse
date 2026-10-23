@@ -7,7 +7,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, statSync, unlinkSync } from 'node:fs';
-import { TIMEOUTS, TOOLS, saveSnapshot, idleMs, waitForDeadline, cookieReport } from '../../mcp-server.js';
+import { TIMEOUTS, TOOLS, saveSnapshot, idleMs, waitForDeadline, waitTimeout, cookieReport } from '../../mcp-server.js';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join as joinPath } from 'node:path';
@@ -413,6 +413,16 @@ describe('waitForDeadline (wait_for outer deadline follows requested wait)', () 
   for (const [t, want] of cases) {
     it(`${t} -> ${want}`, () => assert.equal(waitForDeadline(t), want));
   }
+  // MCP doesn't enforce schema types: non-numeric input must fall back to the default, not NaN.
+  for (const t of ['abc', NaN, -5, '', Infinity, null]) {
+    it(`${String(t)} -> default deadline`, () => assert.equal(waitForDeadline(t), 60000));
+  }
+  it('numeric string "90000" -> 95000', () => assert.equal(waitForDeadline('90000'), 95000));
+  it('waitTimeout coerces what page.waitFor receives', () => {
+    assert.equal(waitTimeout('abc'), 30000);
+    assert.equal(waitTimeout('90000'), 90000);
+    assert.equal(waitTimeout(-5), 30000);
+  });
 });
 
 describe('cookieReport (capabilities cookies field)', () => {
