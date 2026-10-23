@@ -89,6 +89,7 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 | `barebrowse network-log --failed` | Only failed/4xx/5xx requests |
 | `barebrowse dialog-log` | JS dialog log → `.barebrowse/dialogs-<timestamp>.json` |
 | `barebrowse save-state` | Cookies + localStorage → `.barebrowse/state-<timestamp>.json` |
+| `barebrowse switch-engine <chromium\|firefox>` | Swap the session's browser engine in place; page, tabs and refs are lost, so `goto` again |
 
 **wait-for flags:**
 - `--text=STRING` — Wait for text to appear in page body

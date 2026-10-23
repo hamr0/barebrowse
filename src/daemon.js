@@ -219,9 +219,10 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   // token is written into session.json (mode 0600) so only the owner reads it.
   const authToken = randomBytes(32).toString('hex');
 
-  // Connect to browser
-  const page = await connect({
-    engine: opts.engine,
+  // Connect to browser. Engine is a parameter so `switch-engine` can reuse the
+  // exact same open options with a different one.
+  const connectPage = (engine) => connect({
+    engine,
     mode: opts.mode || 'headless',
     port: opts.port ? Number(opts.port) : undefined,
     consent: opts.consent,
@@ -237,6 +238,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     // is the legacy per-open equivalent. Either yields a logged-out session.
     incognito: opts.incognito || opts.cookies === false,
   });
+  let page = await connectPage(opts.engine);
 
   // Console + network log capture. CDP uses Runtime/Network events off
   // page.cdp; the Firefox/BiDi engine (page.bidi) captures the same shape over
@@ -246,52 +248,56 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   const networkLogs = [];
   const pendingRequests = new Map();
 
-  if (page.cdp) {
-    await page.cdp.send('Runtime.enable');
-    page.cdp.on('Runtime.consoleAPICalled', (params) => {
-      consoleLogs.push({
-        type: params.type,
-        timestamp: new Date().toISOString(),
-        args: params.args.map((a) => a.value ?? a.description ?? a.type),
-      });
-    });
-
-    // Network log capture (Network.enable already called by connect)
-    page.cdp.on('Network.requestWillBeSent', (params) => {
-      pendingRequests.set(params.requestId, {
-        url: params.request.url,
-        method: params.request.method,
-        timestamp: new Date().toISOString(),
-      });
-    });
-
-    page.cdp.on('Network.responseReceived', (params) => {
-      const req = pendingRequests.get(params.requestId);
-      if (req) {
-        networkLogs.push({
-          ...req,
-          status: params.response.status,
-          statusText: params.response.statusText,
-          mimeType: params.response.mimeType,
+  // Wire capture onto a page; called again for the new page after a switch.
+  async function attachCapture(page) {
+    if (page.cdp) {
+      await page.cdp.send('Runtime.enable');
+      page.cdp.on('Runtime.consoleAPICalled', (params) => {
+        consoleLogs.push({
+          type: params.type,
+          timestamp: new Date().toISOString(),
+          args: params.args.map((a) => a.value ?? a.description ?? a.type),
         });
-        pendingRequests.delete(params.requestId);
-      }
-    });
+      });
 
-    page.cdp.on('Network.loadingFailed', (params) => {
-      const req = pendingRequests.get(params.requestId);
-      if (req) {
-        networkLogs.push({
-          ...req,
-          status: 0,
-          error: params.errorText,
+      // Network log capture (Network.enable already called by connect)
+      page.cdp.on('Network.requestWillBeSent', (params) => {
+        pendingRequests.set(params.requestId, {
+          url: params.request.url,
+          method: params.request.method,
+          timestamp: new Date().toISOString(),
         });
-        pendingRequests.delete(params.requestId);
-      }
-    });
-  } else if (page.bidi) {
-    await attachBiDiCapture(page.bidi, { consoleLogs, networkLogs, pendingRequests });
+      });
+
+      page.cdp.on('Network.responseReceived', (params) => {
+        const req = pendingRequests.get(params.requestId);
+        if (req) {
+          networkLogs.push({
+            ...req,
+            status: params.response.status,
+            statusText: params.response.statusText,
+            mimeType: params.response.mimeType,
+          });
+          pendingRequests.delete(params.requestId);
+        }
+      });
+
+      page.cdp.on('Network.loadingFailed', (params) => {
+        const req = pendingRequests.get(params.requestId);
+        if (req) {
+          networkLogs.push({
+            ...req,
+            status: 0,
+            error: params.errorText,
+          });
+          pendingRequests.delete(params.requestId);
+        }
+      });
+    } else if (page.bidi) {
+      await attachBiDiCapture(page.bidi, { consoleLogs, networkLogs, pendingRequests });
+    }
   }
+  await attachCapture(page);
 
   // Navigate to initial URL if provided
   if (initialUrl) {
@@ -505,6 +511,34 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       return { ok: true, file, count: logs.length };
     },
 
+    async 'switch-engine'({ engine }) {
+      if (engine !== 'chromium' && engine !== 'firefox') {
+        return { ok: false, error: 'engine must be "chromium" or "firefox"' };
+      }
+      if (engine === page.engine) return { ok: true, value: `already on ${engine}; nothing changed` };
+      if (opts.port) return { ok: false, error: 'cannot switch engines on an attached browser (--port)' };
+      // Connect the new browser first: if it fails to launch, the old page
+      // keeps serving. Only then retire the old one.
+      const next = await connectPage(engine);
+      try {
+        await attachCapture(next);
+        if (initialUrl && opts.cookies !== false) {
+          try { await next.injectCookies(initialUrl, { browser: opts.browser }); } catch { /* no cookies */ }
+        }
+      } catch (err) {
+        await next.close().catch(() => {});
+        throw err;
+      }
+      const old = page;
+      page = next;
+      consoleLogs.length = 0;
+      networkLogs.length = 0;
+      pendingRequests.clear();
+      await old.close().catch(() => {});
+      writeSession();
+      return { ok: true, value: `switched to ${engine} — the previous page, tabs and refs are gone; run goto` };
+    },
+
     async close() {
       await page.close();
       // Clean up session file
@@ -607,16 +641,19 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   // Write session.json so parent/clients can find us. Owner-only: it carries
   // the auth token that gates /command.
   const sessionPath = join(absDir, SESSION_FILE);
-  writeFilePrivate(sessionPath, JSON.stringify({
+  // Rewritten by switch-engine so status/doctor see the live engine.
+  const writeSession = () => writeFilePrivate(sessionPath, JSON.stringify({
     port,
     pid: process.pid,
     token: authToken,
-    startedAt: new Date().toISOString(),
+    startedAt,
     // Persisted so `status`/`doctor` can report the live engine + feature set
     // without an HTTP round-trip (page.engine/capabilities, added in v0.21.0).
     engine: page.engine,
     capabilities: page.capabilities,
   }));
+  const startedAt = new Date().toISOString();
+  writeSession();
 
   // Handle SIGTERM gracefully
   process.on('SIGTERM', async () => {
