@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCookies, cookieDomainMatch, scopedCookiesForUrl } from '../../src/auth.js';
+import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies } from '../../src/auth.js';
 
 // extractCookies() reads the real on-disk browser cookie database; skip when
 // none exists (e.g. a CI runner with no browser profile). The pure
@@ -119,5 +119,20 @@ describe('scopedCookiesForUrl() — cross-engine cookie scoping', { skip: cookie
     let scoped = [];
     try { scoped = scopedCookiesForUrl('https://no-such-host.invalid-tld-zzz/'); } catch { scoped = []; }
     assert.equal(scoped.length, 0, 'an unowned host must contribute no cookies');
+  });
+});
+
+describe('mergeCookies()', () => {
+  const ck = (path, value, name = 'curr-account') => ({ name, domain: '.example.com', path, value });
+
+  it('keeps same-name same-domain cookies on different paths', () => {
+    const out = mergeCookies([[ck('/', 'a'), ck('/api', 'b')]]);
+    assert.deepEqual(out.map((c) => c.path).sort(), ['/', '/api']);
+  });
+
+  it('last list wins for an identical name+domain+path across browsers', () => {
+    const out = mergeCookies([[ck('/', 'chromium')], [ck('/', 'firefox')]]);
+    assert.equal(out.length, 1);
+    assert.equal(out[0].value, 'firefox');
   });
 });
