@@ -270,6 +270,7 @@ function browserStillUsing(path, host) {
  * barebrowse-<pid>-<ms> (Chromium) or barebrowse-ff-<pid>-<6 random chars>
  * (Firefox), or the dl-/ff-dl- download-dir forms of those, and removes it only when that pid is dead (EPERM means alive), and only if no browser lock in it names a live pid or a foreign host.
  * Dirs only, never processes; old pid-less dirs are never matched. Known limit: a reused pid keeps its dir.
+ * Foreign-host rule: if the hostname changed (renamed machine, container with a random hostname sharing /tmp), a dead launcher's dir is kept forever, a deliberate leak-over-delete tradeoff.
  * With no argument sweeps both '/tmp' (Chromium profiles) and tmpdir() (download
  * dirs, Firefox profiles); they differ when TMPDIR is set.
  * @param {string} [dir]
