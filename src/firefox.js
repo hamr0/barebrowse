@@ -15,7 +15,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -54,6 +54,8 @@ function registerExitHandlers() {
     process.once(sig, () => { reapAllSync(); process.kill(process.pid, sig); });
   }
 }
+
+const SETPRIV = ['/usr/bin/setpriv', '/bin/setpriv'];
 
 const CANDIDATES = [
   'firefox',
@@ -167,7 +169,18 @@ export async function launchFirefox(opts = {}) {
   args.push('about:blank');
 
   // detached:true → own process group, so cleanup can signal the whole tree.
-  const child = spawn(binary, args, { stdio: ['ignore', 'pipe', 'pipe'], detached: true });
+  //
+  // Parent-death tether: Firefox has no --remote-debugging-pipe, so a SIGKILLed
+  // or crashed Node parent (no exit handler runs) would orphan it. On Linux we
+  // exec it through util-linux `setpriv --pdeathsig SIGKILL`: setpriv execs
+  // Firefox (child.pid stays Firefox's pid) and the kernel SIGKILLs it when this
+  // process dies; its children follow. Without setpriv (or off Linux) we spawn
+  // exactly as before and a hard kill still orphans it.
+  const setpriv = process.platform === 'linux' && SETPRIV.find(existsSync);
+  const child = spawn(setpriv || binary, setpriv ? ['--pdeathsig', 'SIGKILL', binary, ...args] : args, {
+    stdio: ['ignore', 'pipe', 'pipe'],
+    detached: true,
+  });
 
   // Not in activeBrowsers yet, so nothing else would reap it: any failure
   // before registration must kill the process group and remove the profile.
