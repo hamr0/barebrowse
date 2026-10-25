@@ -6,7 +6,7 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, rmSync } from 'node:fs';
+import { existsSync, rmSync, readdirSync } from 'node:fs';
 
 /** Block the current thread for `ms` without spawning a process. */
 function sleepSync(ms) {
@@ -157,6 +157,7 @@ export async function launch(opts = {}) {
   if (opts.userDataDir) {
     args.push(`--user-data-dir=${opts.userDataDir}`);
   } else {
+    sweepStaleProfiles();
     ownedProfileDir = `/tmp/barebrowse-${process.pid}-${Date.now()}`;
     args.push(`--user-data-dir=${ownedProfileDir}`);
   }
@@ -242,6 +243,24 @@ export async function launch(opts = {}) {
   child.once('exit', () => activeBrowsers.delete(browser));
 
   return browser;
+}
+
+/**
+ * Remove profile dirs left by launchers that were hard-killed (the pipe tether
+ * kills their Chromium but cannot delete the dir). Matches exactly
+ * barebrowse-<pid>-<ms> and removes it only when that pid is dead (EPERM means
+ * alive). Dirs only, never processes. Known limit: a reused pid keeps its dir.
+ * @param {string} [dir='/tmp']
+ */
+export function sweepStaleProfiles(dir = '/tmp') {
+  let names = [];
+  try { names = readdirSync(dir); } catch {}
+  for (const name of names) {
+    const m = /^barebrowse-(\d+)-(\d+)$/.exec(name);
+    if (!m || Number(m[1]) === process.pid) continue;
+    try { process.kill(Number(m[1]), 0); continue; } catch (err) { if (err.code !== 'ESRCH') continue; }
+    try { rmSync(`${dir}/${name}`, { recursive: true, force: true }); } catch {}
+  }
 }
 
 /**
