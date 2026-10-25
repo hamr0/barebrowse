@@ -252,13 +252,13 @@ export async function launch(opts = {}) {
  * Chromium: SingletonLock -> '<hostname>-<pid>'; Firefox: lock -> '<ip>:+<pid>'.
  * Download dirs have no lock.
  */
-function browserStillUsing(path) {
+function browserStillUsing(path, host) {
   for (const f of ['SingletonLock', 'lock']) {
     let t;
     try { t = readlinkSync(`${path}/${f}`); } catch { continue; }
     const m = f === 'lock' ? /:\+?(\d+)$/.exec(t) : /^(.*)-(\d+)$/.exec(t);
     if (!m) continue;
-    if (f !== 'lock' && m[1] !== hostname()) return true;
+    if (f !== 'lock' && m[1] !== host) return true;
     try { process.kill(Number(m.at(-1)), 0); return true; } catch (err) { if (err.code !== 'ESRCH') return true; }
   }
   return false;
@@ -273,10 +273,11 @@ function browserStillUsing(path) {
  * With no argument sweeps both '/tmp' (Chromium profiles) and tmpdir() (download
  * dirs, Firefox profiles); they differ when TMPDIR is set.
  * @param {string} [dir]
+ * @param {string} [host] hostname a Chromium lock must name to be judged by its pid (default: this machine's; injectable for tests)
  */
-export function sweepStaleProfiles(dir) {
+export function sweepStaleProfiles(dir, host = hostname()) {
   if (dir === undefined) {
-    for (const d of new Set(['/tmp', tmpdir()])) sweepStaleProfiles(d);
+    for (const d of new Set(['/tmp', tmpdir()])) sweepStaleProfiles(d, host);
     return;
   }
   let names = [];
@@ -286,7 +287,7 @@ export function sweepStaleProfiles(dir) {
     const pid = Number(m?.[1] ?? m?.[2]);
     if (!m || pid === process.pid) continue;
     try { process.kill(pid, 0); continue; } catch (err) { if (err.code !== 'ESRCH') continue; }
-    if (browserStillUsing(`${dir}/${name}`)) continue;
+    if (browserStillUsing(`${dir}/${name}`, host)) continue;
     try { rmSync(`${dir}/${name}`, { recursive: true, force: true }); } catch {}
   }
 }

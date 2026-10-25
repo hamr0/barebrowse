@@ -75,4 +75,23 @@ describe('sweepStaleProfiles', () => {
       for (const d of [cDead, cNone, fDead]) assert.ok(!existsSync(d), d + ' removed');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+
+  it('parses a hyphenated hostname by splitting the lock at the last "-"', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bb-sweep-'));
+    try {
+      const dead = spawnSync(process.execPath, ['-e', '']).pid;
+      const alive = process.ppid;
+      const host = 'my-host-name';
+      const mk = (n, target) => {
+        mkdirSync(join(root, n));
+        symlinkSync(target, join(root, n, 'SingletonLock'));
+        return join(root, n);
+      };
+      const live = mk(`barebrowse-${dead}-1`, `${host}-${alive}`);
+      const gone = mk(`barebrowse-${dead}-2`, `${host}-${dead}`);
+      sweepStaleProfiles(root, host);
+      assert.ok(existsSync(live), 'own-host live pid kept');
+      assert.ok(!existsSync(gone), 'own-host dead pid removed');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });
