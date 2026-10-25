@@ -18,6 +18,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { sweepStaleProfiles } from './chromium.js';
 
 /** Block the current thread for `ms` (sync, for the 'exit' reaper). */
 function sleepSync(ms) {
@@ -105,7 +106,9 @@ export function findFirefox() {
 export async function launchFirefox(opts = {}) {
   const binary = opts.binary || findFirefox();
   const port = opts.port || 0;
-  const profileDir = mkdtempSync(join(tmpdir(), 'barebrowse-ff-'));
+  // Always our own profile: sweep dirs of hard-killed launchers, then pid-tag ours.
+  sweepStaleProfiles(tmpdir());
+  const profileDir = mkdtempSync(join(tmpdir(), `barebrowse-ff-${process.pid}-`));
 
   // Proxy + prompt-suppressing prefs go in user.js (read at profile load).
   const prefs = [
