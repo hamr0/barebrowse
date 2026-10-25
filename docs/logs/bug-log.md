@@ -339,7 +339,7 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Symptom:** when the Node process that called `launch()` was SIGKILLed or crashed, Chromium (and its helpers) lived on, reparented to init, with its `/tmp/barebrowse-<pid>-<ms>` profile dir. A peer project found 42 such orphans.
 **Root cause:** the only reapers were in-process exit/signal handlers (`registerExitHandlers`), which cannot run on SIGKILL, and the MCP idle TTL, which only covers MCP-launched browsers. Nothing tied the browser's lifetime to the parent's.
 **Fix:** `launch()` adds `--remote-debugging-pipe` (keeping `--remote-debugging-port=0`, so the ws URL on stderr and the ws CDP path are unchanged) and spawns with `stdio: ['ignore','pipe','pipe','pipe','pipe']`. fds 3/4 are never read or written; when the parent dies the kernel closes them, Chromium sees EOF and exits with its helpers. Our ends are destroyed on child exit so they can't hold the event loop. Firefox is not changed (it survives the same kill; see decisions).
-**Regression test:** `test/unit/orphan-kill.test.js` — child script launches, parent SIGKILLs it, Chromium pid must be gone within 10s (red without the flag: still alive); plus a launch->cleanup script must exit on its own.
+**Regression test:** `test/integration/orphan-kill.test.js` — child script launches, parent SIGKILLs it, Chromium pid must be gone within 10s (red without the flag: still alive); plus a launch->cleanup script must exit on its own.
 
 ## [2026-10-25] A hard-killed launcher left its profile dir in /tmp forever (L4)
 
@@ -353,7 +353,7 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Symptom:** same as L3 for the Firefox engine: after `kill -9` of the Node launcher, all ~11 processes of Firefox's group lived on, reparented to init.
 **Root cause:** Firefox has no `--remote-debugging-pipe` equivalent, so the L3 tether does not apply; the in-process exit handlers cannot run on SIGKILL.
 **Fix:** on Linux, when `setpriv` exists (`/usr/bin/setpriv` or `/bin/setpriv`), `launchFirefox()` spawns `setpriv --pdeathsig SIGKILL <firefox> ...args`. setpriv execs Firefox, so `child.pid` is still Firefox's pid; the kernel SIGKILLs it when the launcher dies and its children follow (POC: 11 procs left plain, 0 with setpriv). Other platforms, or no setpriv, spawn exactly as before (still orphan-prone). `detached:true` and cleanup paths unchanged.
-**Regression test:** `test/unit/orphan-kill.test.js` Firefox cases (skipped without Firefox/setpriv) — launcher SIGKILLed, launcher group SIGKILLed: Firefox pid must be gone within 10s (red with the wrap disabled); plus launch->cleanup exits on its own.
+**Regression test:** `test/integration/orphan-kill.test.js` Firefox cases (skipped without Firefox/setpriv) — launcher SIGKILLed, launcher group SIGKILLed: Firefox pid must be gone within 10s (red with the wrap disabled); plus launch->cleanup exits on its own.
 
 ## [2026-10-25] A hard-killed launcher left its Firefox profile dir in /tmp (L6)
 
