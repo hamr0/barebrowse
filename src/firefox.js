@@ -179,6 +179,9 @@ export async function launchFirefox(opts = {}) {
   // Firefox (child.pid stays Firefox's pid) and the kernel SIGKILLs it when this
   // process dies; its children follow. Without setpriv (or off Linux) we spawn
   // exactly as before and a hard kill still orphans it.
+  // A setuid wrapper (e.g. Snap's snap-confine) clears pdeathsig on exec, so a Snap
+  // Firefox can still be orphaned even with setpriv; the stale-profile sweep keeps
+  // its profile dir while it runs (it checks the browser lock).
   const setpriv = process.platform === 'linux' && SETPRIV.find(existsSync);
   const child = spawn(setpriv || binary, setpriv ? ['--pdeathsig', 'SIGKILL', binary, ...args] : args, {
     stdio: ['ignore', 'pipe', 'pipe'],
