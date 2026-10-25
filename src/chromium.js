@@ -6,8 +6,8 @@
  */
 
 import { execFileSync, spawn } from 'node:child_process';
-import { existsSync, rmSync, readdirSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { existsSync, rmSync, readdirSync, readlinkSync } from 'node:fs';
+import { tmpdir, hostname } from 'node:os';
 
 /** Block the current thread for `ms` without spawning a process. */
 function sleepSync(ms) {
@@ -247,10 +247,28 @@ export async function launch(opts = {}) {
 }
 
 /**
+ * True when a profile dir's browser lock says a browser may still be using it: the
+ * lock's pid is alive, or (Chromium) it names another host (shared dir, can't judge).
+ * Chromium: SingletonLock -> '<hostname>-<pid>'; Firefox: lock -> '<ip>:+<pid>'.
+ * Download dirs have no lock.
+ */
+function browserStillUsing(path) {
+  for (const f of ['SingletonLock', 'lock']) {
+    let t;
+    try { t = readlinkSync(`${path}/${f}`); } catch { continue; }
+    const m = f === 'lock' ? /:\+?(\d+)$/.exec(t) : /^(.*)-(\d+)$/.exec(t);
+    if (!m) continue;
+    if (f !== 'lock' && m[1] !== hostname()) return true;
+    try { process.kill(Number(m.at(-1)), 0); return true; } catch (err) { if (err.code !== 'ESRCH') return true; }
+  }
+  return false;
+}
+
+/**
  * Remove profile dirs left by launchers that were hard-killed (the pipe tether
  * kills their Chromium but cannot delete the dir). Matches exactly
  * barebrowse-<pid>-<ms> (Chromium) or barebrowse-ff-<pid>-<6 random chars>
- * (Firefox), or the dl-/ff-dl- download-dir forms of those, and removes it only when that pid is dead (EPERM means alive).
+ * (Firefox), or the dl-/ff-dl- download-dir forms of those, and removes it only when that pid is dead (EPERM means alive), and only if no browser lock in it names a live pid or a foreign host.
  * Dirs only, never processes; old pid-less dirs are never matched. Known limit: a reused pid keeps its dir.
  * With no argument sweeps both '/tmp' (Chromium profiles) and tmpdir() (download
  * dirs, Firefox profiles); they differ when TMPDIR is set.
@@ -268,6 +286,7 @@ export function sweepStaleProfiles(dir) {
     const pid = Number(m?.[1] ?? m?.[2]);
     if (!m || pid === process.pid) continue;
     try { process.kill(pid, 0); continue; } catch (err) { if (err.code !== 'ESRCH') continue; }
+    if (browserStillUsing(`${dir}/${name}`)) continue;
     try { rmSync(`${dir}/${name}`, { recursive: true, force: true }); } catch {}
   }
 }

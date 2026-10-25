@@ -375,3 +375,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `sweepStaleProfiles` defaulted to the literal `/tmp`, while download dirs and the Firefox profile are created under `tmpdir()` and the Chromium profile under `/tmp`.
 **Fix:** called with no argument it sweeps `/tmp` and `tmpdir()` (deduped when equal); both launch sites now call it with no argument. The `dir` parameter still works for tests.
 **Regression test:** `test/unit/sweep-profiles.test.js` — child process with `TMPDIR` pointing at a temp dir holding a dead-owner dl dir; the no-arg sweep must remove it (red before the fix).
+
+## [2026-10-25] The sweep deleted the profile of a browser that outlived its launcher (L9)
+
+**Symptom:** when a launcher is hard-killed but its browser survives (no `setpriv`, non-Linux, Snap Firefox), the next launch's sweep `rmSync`ed the profile dir the live browser was still using.
+**Root cause:** the sweep judged only the launcher pid embedded in the dir name, never whether a browser held the profile.
+**Fix:** before removing a dead-owner dir, `sweepStaleProfiles` reads the browser's lock symlink: Chromium `SingletonLock` (`<hostname>-<pid>`, seen `hamr-1853329`) and Firefox `lock` (`<ip>:+<pid>`, seen `192.168.178.220:+1853530`). The dir is kept if that pid is alive (EPERM counts as alive) or, for Chromium, the hostname differs from `os.hostname()`. No lock (download dirs, never-started browsers) keeps the old rule.
+**Regression test:** `test/unit/sweep-profiles.test.js` — fake lock symlinks: live pid kept, foreign hostname kept, dead pid removed, no lock removed (red with the check disabled).

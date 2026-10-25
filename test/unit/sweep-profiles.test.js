@@ -2,8 +2,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, mkdirSync, existsSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
+import { mkdtempSync, mkdirSync, existsSync, rmSync, symlinkSync } from 'node:fs';
+import { tmpdir, hostname } from 'node:os';
 import { join } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { sweepStaleProfiles } from '../../src/chromium.js';
@@ -50,6 +50,29 @@ describe('sweepStaleProfiles', () => {
         "import { sweepStaleProfiles } from './src/chromium.js'; sweepStaleProfiles();"],
         { env: { ...process.env, TMPDIR: root }, cwd: new URL('../..', import.meta.url) });
       assert.ok(!existsSync(dl), 'dead-owner dir in TMPDIR removed');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it('keeps a dead-owner profile whose browser lock is still live or foreign', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bb-sweep-'));
+    try {
+      const dead = spawnSync(process.execPath, ['-e', '']).pid;
+      const alive = process.ppid;
+      const mk = (n, file, target) => {
+        mkdirSync(join(root, n));
+        if (file) symlinkSync(target, join(root, n, file));
+        return join(root, n);
+      };
+      const host = hostname();
+      const cLive = mk(`barebrowse-${dead}-1`, 'SingletonLock', `${host}-${alive}`);
+      const cDead = mk(`barebrowse-${dead}-2`, 'SingletonLock', `${host}-${dead}`);
+      const cForeign = mk(`barebrowse-${dead}-3`, 'SingletonLock', `otherhost-${dead}`);
+      const cNone = mk(`barebrowse-${dead}-4`);
+      const fLive = mk(`barebrowse-ff-${dead}-aB3dE9`, 'lock', `10.0.0.1:+${alive}`);
+      const fDead = mk(`barebrowse-ff-${dead}-aB3dE8`, 'lock', `10.0.0.1:+${dead}`);
+      sweepStaleProfiles(root);
+      for (const d of [cLive, cForeign, fLive]) assert.ok(existsSync(d), d + ' kept');
+      for (const d of [cDead, cNone, fDead]) assert.ok(!existsSync(d), d + ' removed');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 });
