@@ -361,3 +361,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the Firefox profile name carried no owner pid, so the L4 sweep could not tell a dead launcher's dir from a live one's.
 **Fix:** profiles are now `mkdtemp('barebrowse-ff-<pid>-')`; `sweepStaleProfiles` also removes `barebrowse-ff-<pid>-<6 alnum>` dirs under the same dead-owner rules (ESRCH only, own pid skipped, EPERM = alive, never signals). `launchFirefox()` runs it before creating its profile (always our own). `barebrowse-dl-*` / `barebrowse-ff-dl-*` download dirs and old pid-less `barebrowse-ff-XXXXXX` dirs are never matched.
 **Regression test:** `test/unit/sweep-profiles.test.js` — adds dead/live/own-pid/download/malformed ff dirs; only the dead-owner one goes.
+
+## [2026-10-25] A hard-killed launcher left its empty download dir in /tmp (L7)
+
+**Symptom:** after L5/L6, `/tmp/barebrowse-dl-XXXXXX` (Chromium) and `/tmp/barebrowse-ff-dl-XXXXXX` (Firefox) stayed behind after `kill -9` of the launcher.
+**Root cause:** download-dir names carried no owner pid, so the sweep could not tell dead from live.
+**Fix:** names are now `barebrowse-dl-<pid>-XXXXXX` / `barebrowse-ff-dl-<pid>-XXXXXX` (`src/index.js`); `sweepStaleProfiles` also removes those forms when the owner is dead (same rules as L4/L6). Existing launch-time sweep call sites suffice: attach mode creates no download dir, and both engines sweep during launch. Old pid-less dl dirs are never matched.
+**Regression test:** `test/unit/sweep-profiles.test.js` — dead/live/own-pid/old pid-less dl dirs; only dead-owner ones go.
