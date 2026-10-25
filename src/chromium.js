@@ -248,17 +248,19 @@ export async function launch(opts = {}) {
 /**
  * Remove profile dirs left by launchers that were hard-killed (the pipe tether
  * kills their Chromium but cannot delete the dir). Matches exactly
- * barebrowse-<pid>-<ms> and removes it only when that pid is dead (EPERM means
- * alive). Dirs only, never processes. Known limit: a reused pid keeps its dir.
+ * barebrowse-<pid>-<ms> (Chromium) or barebrowse-ff-<pid>-<6 random chars>
+ * (Firefox) and removes it only when that pid is dead (EPERM means alive).
+ * Dirs only, never processes; download dirs are never matched. Known limit: a reused pid keeps its dir.
  * @param {string} [dir='/tmp']
  */
 export function sweepStaleProfiles(dir = '/tmp') {
   let names = [];
   try { names = readdirSync(dir); } catch {}
   for (const name of names) {
-    const m = /^barebrowse-(\d+)-(\d+)$/.exec(name);
-    if (!m || Number(m[1]) === process.pid) continue;
-    try { process.kill(Number(m[1]), 0); continue; } catch (err) { if (err.code !== 'ESRCH') continue; }
+    const m = /^barebrowse-(?:(\d+)-\d+|ff-(\d+)-[A-Za-z0-9]{6})$/.exec(name);
+    const pid = Number(m?.[1] ?? m?.[2]);
+    if (!m || pid === process.pid) continue;
+    try { process.kill(pid, 0); continue; } catch (err) { if (err.code !== 'ESRCH') continue; }
     try { rmSync(`${dir}/${name}`, { recursive: true, force: true }); } catch {}
   }
 }

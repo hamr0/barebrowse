@@ -354,3 +354,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** Firefox has no `--remote-debugging-pipe` equivalent, so the L3 tether does not apply; the in-process exit handlers cannot run on SIGKILL.
 **Fix:** on Linux, when `setpriv` exists (`/usr/bin/setpriv` or `/bin/setpriv`), `launchFirefox()` spawns `setpriv --pdeathsig SIGKILL <firefox> ...args`. setpriv execs Firefox, so `child.pid` is still Firefox's pid; the kernel SIGKILLs it when the launcher dies and its children follow (POC: 11 procs left plain, 0 with setpriv). Other platforms, or no setpriv, spawn exactly as before (still orphan-prone). `detached:true` and cleanup paths unchanged.
 **Regression test:** `test/unit/orphan-kill.test.js` Firefox cases (skipped without Firefox/setpriv) — launcher SIGKILLed, launcher group SIGKILLed: Firefox pid must be gone within 10s (red with the wrap disabled); plus launch->cleanup exits on its own.
+
+## [2026-10-25] A hard-killed launcher left its Firefox profile dir in /tmp (L6)
+
+**Symptom:** after L5, a SIGKILLed launcher's Firefox exits but `/tmp/barebrowse-ff-XXXXXX` stays behind.
+**Root cause:** the Firefox profile name carried no owner pid, so the L4 sweep could not tell a dead launcher's dir from a live one's.
+**Fix:** profiles are now `mkdtemp('barebrowse-ff-<pid>-')`; `sweepStaleProfiles` also removes `barebrowse-ff-<pid>-<6 alnum>` dirs under the same dead-owner rules (ESRCH only, own pid skipped, EPERM = alive, never signals). `launchFirefox()` runs it before creating its profile (always our own). `barebrowse-dl-*` / `barebrowse-ff-dl-*` download dirs and old pid-less `barebrowse-ff-XXXXXX` dirs are never matched.
+**Regression test:** `test/unit/sweep-profiles.test.js` — adds dead/live/own-pid/download/malformed ff dirs; only the dead-owner one goes.
