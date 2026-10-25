@@ -397,7 +397,7 @@ export async function connect(opts = {}) {
     if (!downloadPath) {
       const { mkdtempSync } = await import('node:fs');
       const { tmpdir } = await import('node:os');
-      ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), 'barebrowse-dl-'));
+      ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), `barebrowse-dl-${process.pid}-`));
       downloadPath = ownedDownloadDir;
     }
     // Register listeners BEFORE sending setDownloadBehavior so no
@@ -888,7 +888,7 @@ async function connectFirefox(opts) {
   if (!downloadDir) {
     const { mkdtempSync } = await import('node:fs');
     const { tmpdir } = await import('node:os');
-    ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), 'barebrowse-ff-dl-'));
+    ownedDownloadDir = mkdtempSync(pathJoin(tmpdir(), `barebrowse-ff-dl-${process.pid}-`));
     downloadDir = ownedDownloadDir;
   }
 
