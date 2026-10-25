@@ -6,7 +6,7 @@
 node --test test/unit/*.test.js test/integration/*.test.js
 ```
 
-198 unit tests in 17 files (`npm run test:unit`, ~40s) plus the 138-test integration suite in 13 files (`npm run test:integration`; launches real Chromium and Firefox and hits live sites, so it is local-only and takes ~5 min). No test framework -- uses Node's built-in `node:test` runner.
+192 unit tests in 16 files (`npm run test:unit`, ~40s) plus the 144-test integration suite in 14 files (`npm run test:integration`; launches real Chromium and Firefox and hits live sites, so it is local-only and takes ~5 min). No test framework -- uses Node's built-in `node:test` runner.
 
 ## Test pyramid
 
@@ -76,7 +76,7 @@ Tests browser discovery, launch, CDP WebSocket client, and session handling.
 | 4 | creates session-scoped handles | Target.createTarget + session() dispatches to correct target |
 | 5 | gets accessibility tree from a page | Accessibility.getFullAXTree returns nodes with role/name |
 
-### `test/unit/orphan-kill.test.js` -- 6 tests
+### `test/integration/orphan-kill.test.js` -- 6 tests
 
 Spawns a child script that calls `launch()` / `launchFirefox()`, then SIGKILLs the child (and, separately, its whole process group). The browser pid must be gone within 10s (Chromium via the `--remote-debugging-pipe` tether, Firefox via `setpriv --pdeathsig`; the Firefox cases skip without Firefox or setpriv, or off Linux). A launch-then-cleanup script must also exit on its own, so the tether fds cannot hold the event loop.
 
