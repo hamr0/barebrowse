@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.24.1] - 2026-10-25
+
+### Fixed
+
+- **Browsers are no longer orphaned when the launching process is hard-killed.**
+  `kill -9`, a process-group SIGKILL or a crash used to leave Chromium or
+  Firefox running forever. Chromium is now tethered to its launcher through
+  `--remote-debugging-pipe` (all launches), so it exits when the launcher dies.
+  Firefox is tethered with `setpriv --pdeathsig` on Linux when `setpriv` is
+  installed. Where there is no `setpriv`, on non-Linux systems, or with Snap
+  Firefox (a setuid wrapper defeats the tether), a hard kill can still orphan
+  the browser.
+- **Stale temporary directories of dead launchers are cleaned up.** At the next
+  launch, leftover `barebrowse-*` profile and download directories whose
+  launcher is gone are removed, in both `/tmp` and the system temp directory. A
+  directory whose browser lock is still live is kept. Profile and download
+  directory names now carry the launcher's pid to make this possible. A reused
+  pid or a changed hostname keeps a directory instead of removing it.
+
 ## [0.24.0] - 2026-10-23
 
 ### Added
