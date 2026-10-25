@@ -368,3 +368,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** download-dir names carried no owner pid, so the sweep could not tell dead from live.
 **Fix:** names are now `barebrowse-dl-<pid>-XXXXXX` / `barebrowse-ff-dl-<pid>-XXXXXX` (`src/index.js`); `sweepStaleProfiles` also removes those forms when the owner is dead (same rules as L4/L6). Existing launch-time sweep call sites suffice: attach mode creates no download dir, and both engines sweep during launch. Old pid-less dl dirs are never matched.
 **Regression test:** `test/unit/sweep-profiles.test.js` — dead/live/own-pid/old pid-less dl dirs; only dead-owner ones go.
+
+## [2026-10-25] The sweep only looked in /tmp, but half the dirs live in tmpdir() (L8)
+
+**Symptom:** with `TMPDIR=/var/tmp/x`, a hard-killed launcher's `barebrowse-dl-<pid>-*` / `barebrowse-ff-*` dirs sat in `$TMPDIR` and the next Chromium launch (which swept only `/tmp`) never removed them; reverse, a Firefox launch swept `tmpdir()` and never reached Chromium's `/tmp/barebrowse-<pid>-<ms>`.
+**Root cause:** `sweepStaleProfiles` defaulted to the literal `/tmp`, while download dirs and the Firefox profile are created under `tmpdir()` and the Chromium profile under `/tmp`.
+**Fix:** called with no argument it sweeps `/tmp` and `tmpdir()` (deduped when equal); both launch sites now call it with no argument. The `dir` parameter still works for tests.
+**Regression test:** `test/unit/sweep-profiles.test.js` — child process with `TMPDIR` pointing at a temp dir holding a dead-owner dl dir; the no-arg sweep must remove it (red before the fix).

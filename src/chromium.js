@@ -7,6 +7,7 @@
 
 import { execFileSync, spawn } from 'node:child_process';
 import { existsSync, rmSync, readdirSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 
 /** Block the current thread for `ms` without spawning a process. */
 function sleepSync(ms) {
@@ -251,9 +252,15 @@ export async function launch(opts = {}) {
  * barebrowse-<pid>-<ms> (Chromium) or barebrowse-ff-<pid>-<6 random chars>
  * (Firefox), or the dl-/ff-dl- download-dir forms of those, and removes it only when that pid is dead (EPERM means alive).
  * Dirs only, never processes; old pid-less dirs are never matched. Known limit: a reused pid keeps its dir.
- * @param {string} [dir='/tmp']
+ * With no argument sweeps both '/tmp' (Chromium profiles) and tmpdir() (download
+ * dirs, Firefox profiles); they differ when TMPDIR is set.
+ * @param {string} [dir]
  */
-export function sweepStaleProfiles(dir = '/tmp') {
+export function sweepStaleProfiles(dir) {
+  if (dir === undefined) {
+    for (const d of new Set(['/tmp', tmpdir()])) sweepStaleProfiles(d);
+    return;
+  }
   let names = [];
   try { names = readdirSync(dir); } catch {}
   for (const name of names) {

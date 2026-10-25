@@ -38,4 +38,18 @@ describe('sweepStaleProfiles', () => {
       for (const d of [liveDir, selfDir, dl, ff, odd, ffLive, ffSelf, ffDl, ffOdd, dlLive, ffDlLive, dlSelf, ffDlSelf, dlOld]) assert.ok(existsSync(d), d);
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+
+  it('with no argument also sweeps tmpdir() when TMPDIR differs from /tmp', () => {
+    const root = mkdtempSync(join(tmpdir(), 'bb-sweep-'));
+    try {
+      const dead = spawnSync(process.execPath, ['-e', '']).pid;
+      const dl = join(root, `barebrowse-dl-${dead}-aB3dE9`);
+      mkdirSync(dl);
+      // Child sees TMPDIR=root, so its no-arg sweep must reach it (it also sweeps /tmp).
+      spawnSync(process.execPath, ['--input-type=module', '-e',
+        "import { sweepStaleProfiles } from './src/chromium.js'; sweepStaleProfiles();"],
+        { env: { ...process.env, TMPDIR: root }, cwd: new URL('../..', import.meta.url) });
+      assert.ok(!existsSync(dl), 'dead-owner dir in TMPDIR removed');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });
