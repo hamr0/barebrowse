@@ -107,7 +107,7 @@ export async function launchFirefox(opts = {}) {
   const binary = opts.binary || findFirefox();
   const port = opts.port || 0;
   // Always our own profile: sweep dirs of hard-killed launchers, then pid-tag ours.
-  sweepStaleProfiles(tmpdir());
+  sweepStaleProfiles();
   const profileDir = mkdtempSync(join(tmpdir(), `barebrowse-ff-${process.pid}-`));
 
   // Proxy + prompt-suppressing prefs go in user.js (read at profile load).
