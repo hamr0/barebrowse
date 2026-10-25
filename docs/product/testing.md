@@ -6,7 +6,7 @@
 node --test test/unit/*.test.js test/integration/*.test.js
 ```
 
-188 unit tests in 15 files (`npm run test:unit`, ~40s) plus the 138-test integration suite in 13 files (`npm run test:integration`; launches real Chromium and Firefox and hits live sites, so it is local-only and takes ~5 min). No test framework -- uses Node's built-in `node:test` runner.
+198 unit tests in 17 files (`npm run test:unit`, ~40s) plus the 138-test integration suite in 13 files (`npm run test:integration`; launches real Chromium and Firefox and hits live sites, so it is local-only and takes ~5 min). No test framework -- uses Node's built-in `node:test` runner.
 
 ## Test pyramid
 
@@ -75,6 +75,14 @@ Tests browser discovery, launch, CDP WebSocket client, and session handling.
 | 3 | connects to browser and sends commands | createCDP() connects, Browser.getVersion responds |
 | 4 | creates session-scoped handles | Target.createTarget + session() dispatches to correct target |
 | 5 | gets accessibility tree from a page | Accessibility.getFullAXTree returns nodes with role/name |
+
+### `test/unit/orphan-kill.test.js` -- 6 tests
+
+Spawns a child script that calls `launch()` / `launchFirefox()`, then SIGKILLs the child (and, separately, its whole process group). The browser pid must be gone within 10s (Chromium via the `--remote-debugging-pipe` tether, Firefox via `setpriv --pdeathsig`; the Firefox cases skip without Firefox or setpriv, or off Linux). A launch-then-cleanup script must also exit on its own, so the tether fds cannot hold the event loop.
+
+### `test/unit/sweep-profiles.test.js` -- 4 tests
+
+`sweepStaleProfiles()` against a temp dir: removes only dead-owner `barebrowse-<pid>-<ms>`, `barebrowse-ff-<pid>-*`, `barebrowse-dl-<pid>-*` and `barebrowse-ff-dl-<pid>-*` dirs (live, own-pid, pid-less and malformed names are kept); no-argument sweep also reaches `TMPDIR`; a dir whose browser lock (Chromium `SingletonLock`, Firefox `lock`) names a live pid or a foreign host is kept; a hyphenated hostname is parsed by splitting at the last `-`.
 
 ---
 
