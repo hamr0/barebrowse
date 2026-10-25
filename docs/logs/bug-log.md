@@ -340,3 +340,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the only reapers were in-process exit/signal handlers (`registerExitHandlers`), which cannot run on SIGKILL, and the MCP idle TTL, which only covers MCP-launched browsers. Nothing tied the browser's lifetime to the parent's.
 **Fix:** `launch()` adds `--remote-debugging-pipe` (keeping `--remote-debugging-port=0`, so the ws URL on stderr and the ws CDP path are unchanged) and spawns with `stdio: ['ignore','pipe','pipe','pipe','pipe']`. fds 3/4 are never read or written; when the parent dies the kernel closes them, Chromium sees EOF and exits with its helpers. Our ends are destroyed on child exit so they can't hold the event loop. Firefox is not changed (it survives the same kill; see decisions).
 **Regression test:** `test/unit/orphan-kill.test.js` — child script launches, parent SIGKILLs it, Chromium pid must be gone within 10s (red without the flag: still alive); plus a launch->cleanup script must exit on its own.
+
+## [2026-10-25] A hard-killed launcher left its profile dir in /tmp forever (L4)
+
+**Symptom:** after L3, a SIGKILLed launcher's Chromium now exits, but `/tmp/barebrowse-<ownerpid>-<ms>` stays behind (nothing is left alive to delete it).
+**Root cause:** profile cleanup only runs in-process (`cleanupBrowser`, exit handlers), which a hard kill skips.
+**Fix:** `launch()` calls new `sweepStaleProfiles(dir='/tmp')` before creating its own profile dir (never for caller-supplied `userDataDir`). It `rmSync`s only dirs named exactly `barebrowse-<pid>-<ms>` whose owner pid is dead (`ESRCH`; `EPERM` counts as alive), skipping its own pid. It never signals processes and ignores `barebrowse-dl-*`, `barebrowse-ff-*` and anything else. Test runs sweep the real /tmp too, which is fine: with the tether a dead-owner dir is garbage. Known limit: if a dead owner's pid was reused, its dir is kept; harmless, it just stays.
+**Regression test:** `test/unit/sweep-profiles.test.js` — temp dir with dead-owner, live-owner, own-pid, `-dl-`, `-ff-` and malformed dirs; only the dead-owner dir goes (red when the removal is disabled).
