@@ -333,3 +333,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** related to L1. `cleanupBrowser()` ran the process-group SIGKILL only inside the `!killed && exitCode === null` guard, so once the Chromium parent had already exited the group was never signalled. Helpers share the parent's pgid (`detached:true`) and outlive it. `cleanupFirefox` already killed the group unconditionally.
 **Fix:** the `process.kill(-pid, 'SIGKILL')` in `cleanupBrowser` (src/chromium.js) now runs whenever the browser has a pid, outside the guard (ESRCH still swallowed). The SIGTERM + 2s wait stays inside the guard. Successful launches are unchanged.
 **Regression test:** `test/unit/launch-failure.test.js` — fake browser forks `sleep 300 &` then `exit 1`; after the rejection the helper must be dead and the profile dir gone (red against the old code: helper still running).
+
+## [2026-10-25] A hard-killed parent orphaned Chromium forever (L3)
+
+**Symptom:** when the Node process that called `launch()` was SIGKILLed or crashed, Chromium (and its helpers) lived on, reparented to init, with its `/tmp/barebrowse-<pid>-<ms>` profile dir. A peer project found 42 such orphans.
+**Root cause:** the only reapers were in-process exit/signal handlers (`registerExitHandlers`), which cannot run on SIGKILL, and the MCP idle TTL, which only covers MCP-launched browsers. Nothing tied the browser's lifetime to the parent's.
+**Fix:** `launch()` adds `--remote-debugging-pipe` (keeping `--remote-debugging-port=0`, so the ws URL on stderr and the ws CDP path are unchanged) and spawns with `stdio: ['ignore','pipe','pipe','pipe','pipe']`. fds 3/4 are never read or written; when the parent dies the kernel closes them, Chromium sees EOF and exits with its helpers. Our ends are destroyed on child exit so they can't hold the event loop. Firefox is not changed (it survives the same kill; see decisions).
+**Regression test:** `test/unit/orphan-kill.test.js` — child script launches, parent SIGKILLs it, Chromium pid must be gone within 10s (red without the flag: still alive); plus a launch->cleanup script must exit on its own.
