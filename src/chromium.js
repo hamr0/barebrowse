@@ -121,6 +121,7 @@ export async function launch(opts = {}) {
 
   const args = [
     `--remote-debugging-port=${port}`,
+    '--remote-debugging-pipe',
     '--no-first-run',
     '--no-default-browser-check',
     '--disable-background-networking',
@@ -176,10 +177,19 @@ export async function launch(opts = {}) {
   // directly. The SIGINT handler in registerExitHandlers() that calls
   // reapAllSync() is what actually kills Chromium under Ctrl-C now. Do not
   // remove that handler without restoring some other path to reap children.
+  //
+  // Parent-death tether: --remote-debugging-pipe makes Chromium read CDP from
+  // fd 3 and write to fd 4. We never use them (CDP still goes over the ws
+  // port) — they exist so that when this Node process dies by SIGKILL/crash,
+  // where no exit handler can run, the kernel closes our end, Chromium reads
+  // EOF and exits itself, helpers included. Without it the browser is
+  // orphaned to init with its profile dir. Nothing may write to these fds.
   const child = spawn(binary, args, {
-    stdio: ['ignore', 'pipe', 'pipe'],
+    stdio: ['ignore', 'pipe', 'pipe', 'pipe', 'pipe'],
     detached: true,
   });
+  // Drop our ends once Chromium is gone so they can't hold the event loop.
+  child.once('exit', () => { child.stdio[3]?.destroy(); child.stdio[4]?.destroy(); });
 
   // Not in activeBrowsers yet, so nothing else would reap it: any failure
   // before registration (start timeout, spawn error, early exit, bad URL)
@@ -194,7 +204,7 @@ export async function launch(opts = {}) {
         reject(new Error(`Browser failed to start within 10s. stderr: ${stderr}`));
       }, 10000);
 
-      child.stderr.on('data', (chunk) => {
+      child.stderr?.on('data', (chunk) => {
         stderr += chunk.toString();
         const match = stderr.match(/ws:\/\/[^\s]+/);
         if (match) {
