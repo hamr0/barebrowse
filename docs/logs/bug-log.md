@@ -347,3 +347,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** profile cleanup only runs in-process (`cleanupBrowser`, exit handlers), which a hard kill skips.
 **Fix:** `launch()` calls new `sweepStaleProfiles(dir='/tmp')` before creating its own profile dir (never for caller-supplied `userDataDir`). It `rmSync`s only dirs named exactly `barebrowse-<pid>-<ms>` whose owner pid is dead (`ESRCH`; `EPERM` counts as alive), skipping its own pid. It never signals processes and ignores `barebrowse-dl-*`, `barebrowse-ff-*` and anything else. Test runs sweep the real /tmp too, which is fine: with the tether a dead-owner dir is garbage. Known limit: if a dead owner's pid was reused, its dir is kept; harmless, it just stays.
 **Regression test:** `test/unit/sweep-profiles.test.js` — temp dir with dead-owner, live-owner, own-pid, `-dl-`, `-ff-` and malformed dirs; only the dead-owner dir goes (red when the removal is disabled).
+
+## [2026-10-25] A hard-killed parent orphaned Firefox forever (L5)
+
+**Symptom:** same as L3 for the Firefox engine: after `kill -9` of the Node launcher, all ~11 processes of Firefox's group lived on, reparented to init.
+**Root cause:** Firefox has no `--remote-debugging-pipe` equivalent, so the L3 tether does not apply; the in-process exit handlers cannot run on SIGKILL.
+**Fix:** on Linux, when `setpriv` exists (`/usr/bin/setpriv` or `/bin/setpriv`), `launchFirefox()` spawns `setpriv --pdeathsig SIGKILL <firefox> ...args`. setpriv execs Firefox, so `child.pid` is still Firefox's pid; the kernel SIGKILLs it when the launcher dies and its children follow (POC: 11 procs left plain, 0 with setpriv). Other platforms, or no setpriv, spawn exactly as before (still orphan-prone). `detached:true` and cleanup paths unchanged.
+**Regression test:** `test/unit/orphan-kill.test.js` Firefox cases (skipped without Firefox/setpriv) — launcher SIGKILLed, launcher group SIGKILLed: Firefox pid must be gone within 10s (red with the wrap disabled); plus launch->cleanup exits on its own.
