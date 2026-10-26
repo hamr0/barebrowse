@@ -1,5 +1,48 @@
 # Changelog
 
+## [0.25.0] - 2026-10-26
+
+### Added
+
+- **Opt-in data mode for pages made of records.** `snapshot({ mode: 'data' })`
+  turns tables, listings and repeated items into one line per record instead of
+  a nested tree: table rows are mapped to their column headers, repeated
+  siblings are grouped, and noise is dropped. Refs are shared with the default
+  mode, so you can still click what you read. It is available as
+  `pruneMode: 'data'` in `browse()` and `connect()`, as the `pruneMode`
+  argument of the MCP `browse` and `snapshot` tools, as
+  `barebrowse open --prune-mode=data` and `barebrowse snapshot --mode=data` in
+  the CLI, and in the bareagent tools. The default (`act`) and `read` output
+  are unchanged.
+- **Every data-mode snapshot starts with a one-line legend.** An agent that has
+  never seen the format learns how to read table rows, groups and
+  title-plus-detail blocks from the output itself. Data mode keeps main content
+  only, so use `act` for menus and page controls. Buttons and links whose only
+  name is an icon-font glyph (private-use characters) are dropped as nameless.
+
+### Fixed
+
+- **A consent dialog whose only button says "Consent" is now dismissed.** The
+  bare label matched no accept pattern, so a Google Funding Choices dialog
+  stayed open. It is matched only inside a consent dialog, never page-wide, so
+  "Manage consent", "Consent settings" and "Do not consent" are not clicked.
+- **Consent dialogs that render 1-3s after load are dismissed.** Consent used
+  to run once, right after navigation, and never looked again. The first
+  `snapshot()` after a `goto()` now checks once more, with no added waiting, and
+  rebuilds the snapshot if it dismissed something. It only fires on the same
+  document the `goto()` landed on, so a later redirect or click to a different
+  page is not auto-accepted, while `pushState` and hash changes on the same
+  page do not skip it. This also applies in attach mode (`connect({port})`).
+  `createTab().goto()` and the one-shot `browse()` are not covered.
+- **Chromium `snapshot()` now honours the `connect({ pruneMode })` default.** It
+  ignored the option and always returned `act` output, while Firefox honoured
+  it. An explicit `snapshot({ mode })` still wins, then the `connect()` default,
+  then `act`. Behaviour change: Chromium callers who set `pruneMode` (for
+  example `read`) will now get that mode from a bare `snapshot()`.
+- **Data mode's "% pruned" no longer counts the legend.** A tiny page could
+  report a negative figure because the legend outweighed the content. A page
+  with no records now returns an empty string instead of a lone legend line.
+
 ## [0.24.1] - 2026-10-25
 
 ### Fixed
