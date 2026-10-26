@@ -28,6 +28,7 @@
     "src/",
     "types/",
     "cli.js",
+    "commands/",
     "mcp-server.js",
     "barebrowse.context.md",
     "README.md",
