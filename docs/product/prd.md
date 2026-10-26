@@ -421,6 +421,7 @@ This section exists so we don't re-debate settled decisions.
 - **Session recording/replay** — Record browsing sessions as CDP commands, replay for testing.
 - **Visual grounding** — Combine ARIA tree with screenshot regions for multimodal agents.
 - **Agent memory integration** — Remember visited pages, cache snapshots, track which sites need headed mode.
+- **WebMCP site tools** — *(Parked until widely adopted.)* Sites register agent tools via `document.modelContext.registerTool()` (was `navigator.modelContext`). Planned surface: opt-in `page.tools()` / `page.callTool(name, args)`. 2026-10-26 POC: a pre-load shim catching `registerTool` works even though Chromium 155 has no native API (origin trial only, Chrome 149–156) — read and called `searchFlights` on Chrome Labs' demo and `search_products` live on target.com. Findings that parked it: ~0 sites ship tools (1 of 6 checked; Google Flights, Expedia, Booking, Etsy, Redfin had none); tools perform actions but don't return data (Target's returned 102 chars, results still needed an 11k-char snapshot), so it does not replace pruning; it does not help with bot blockers (tools run inside the page, which must load first); and a stub `modelContext` on every page is a detectable tell, so it must stay off by default. Revisit when Chrome ships it on by default and major sites ship data-returning tools.
 
 ---
 
