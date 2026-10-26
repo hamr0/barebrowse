@@ -564,7 +564,8 @@ Session:
     --browser=firefox|chromium      Cookie source browser
     --timeout=N                     Navigation timeout in ms
     --prune-mode=act|read|data      Default pruning mode (data: one line per record — tables with headers,
-                                    repeated items grouped; for data pages, not articles)
+                                    repeated items grouped; for data pages, not articles;
+                                    output starts with a one-line legend)
     --no-consent                    Skip consent dismissal
     --proxy=URL                     HTTP/SOCKS proxy server
     --viewport=WxH                  Viewport size (e.g. 1280x720)
