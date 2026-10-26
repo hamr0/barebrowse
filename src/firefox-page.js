@@ -17,7 +17,7 @@
 
 import { formatTree } from './aria.js';
 import { prune as pruneTree } from './prune.js';
-import { dataSnapshot } from './data.js';
+import { dataSnapshot, stripLegend } from './data.js';
 import { axSnapshotExpression, REF_ATTR } from './ax-snapshot.js';
 import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
 import { scopedCookiesForUrl } from './auth.js';
@@ -369,8 +369,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
       let out;
       if (mode === 'data') out = dataSnapshot(root);
       else { const pruned = pruneTree(root, { mode }); out = pruned ? formatTree(pruned) : ''; }
-      const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars`
-        + ` (${raw.length ? Math.round((1 - out.length / raw.length) * 100) : 0}% pruned)`;
+      const sized = mode === 'data' ? stripLegend(out) : out; // the legend is not content
+      const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars`
+        + ` (${raw.length ? Math.round((1 - sized.length / raw.length) * 100) : 0}% pruned)`;
       return stats + '\n' + out;
     },
 
