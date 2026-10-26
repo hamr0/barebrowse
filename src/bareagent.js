@@ -62,7 +62,7 @@ export function createBrowseTools(opts = {}) {
         type: 'object',
         properties: {
           url: { type: 'string', description: 'URL to browse' },
-          pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs); "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles.' },
+          pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs); "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line.' },
         },
         required: ['url'],
       },
@@ -86,7 +86,7 @@ export function createBrowseTools(opts = {}) {
       parameters: {
         type: 'object',
         properties: {
-          pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs); "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles.' },
+          pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs); "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line.' },
         },
       },
       execute: async (/** @type {{ pruneMode?: string }} */ { pruneMode } = {}) => {

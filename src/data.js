@@ -43,6 +43,9 @@ const NFC = new Set(['link', 'button', 'heading', 'generic', 'cell', 'gridcell',
 const WRAP = new Set(['generic', 'none', 'group', 'presentation', 'paragraph', 'sectionheader', 'rowgroup', 'LayoutTable', 'LayoutTableRow', 'LayoutTableCell', 'list', 'Section', 'div', 'document']);
 const MIN_RUN = 3;
 
+/** First line of every data-mode snapshot: tells an agent with no docs how to read it. */
+export const LEGEND = '# data mode: one line per record. Tables: row "<label>": <column>: <value> · …  Groups: <label>: a, b, c.  A title line followed by detail lines is one block, up to the next title line.';
+
 const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
 const hasInteractive = (n) => INTERACTIVE.has(n.role) || (n.children || []).some(hasInteractive);
 const isLeaf = (n) => n.text === undefined && !n.children.length && n.name;
@@ -70,7 +73,7 @@ function inline(n, refs) {
  * Render a raw ARIA tree in data mode.
  *
  * @param {object} root - Root node from buildTree() (CDP vocabulary)
- * @returns {string} One line per record, YAML-ish like formatTree()
+ * @returns {string} LEGEND line, then one line per record, YAML-ish like formatTree()
  */
 export function dataSnapshot(root) {
   if (!root) return '';
@@ -287,5 +290,5 @@ export function dataSnapshot(root) {
     for (const k of c.children) emit(k, d + 1);
   }
   for (const c of res.children) emit(c, 0);
-  return lines.join('\n');
+  return [LEGEND, ...lines].join('\n');
 }

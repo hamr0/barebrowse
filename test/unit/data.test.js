@@ -9,7 +9,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { dataSnapshot } from '../../src/data.js';
+import { dataSnapshot, LEGEND } from '../../src/data.js';
 import { prune } from '../../src/prune.js';
 import { formatTree } from '../../src/aria.js';
 
@@ -22,7 +22,8 @@ const row = (...cells) => node('row', '', cells);
 const hdr = (v) => node('columnheader', v, [text(v)]);
 const rowhdr = (v) => node('rowheader', v, [text(v)]);
 const page = (...kids) => node('RootWebArea', 'T', [node('main', '', kids)]);
-const lines = (tree) => dataSnapshot(tree).split('\n');
+const allLines = (tree) => dataSnapshot(tree).split('\n');
+const lines = (tree) => allLines(tree).slice(1);          // without the legend
 const recs = (tree) => lines(tree).map((l) => l.trim()).filter((l) => /^- (row|columns)/.test(l));
 const fixture = (n) => JSON.parse(readFileSync(new URL(`../fixtures/${n}`, import.meta.url), 'utf8'));
 const golden = (n) => readFileSync(new URL(`../fixtures/${n}`, import.meta.url), 'utf8');
@@ -160,6 +161,15 @@ describe('data: noise rules (N1-N6) and refs', () => {
     assert.ok(!dataSnapshot(withMain).includes('ads'));
     const noMain = node('RootWebArea', 'T', [node('heading', 'Only', [], { level: 1 })]);
     assert.ok(dataSnapshot(noMain).includes('heading "Only"'));
+  });
+
+  it('legend is the first line, exactly once', () => {
+    for (const t of [page(node('table', '', [row(hdr('A')), row(cell('x'))])), page(), fixture('data-mbta.json'), fixture('data-movie.json')]) {
+      const ls = allLines(t);
+      assert.equal(ls[0], LEGEND);
+      assert.equal(ls.filter((l) => l.startsWith('# data mode:')).length, 1);
+    }
+    assert.ok(!LEGEND.includes('\n'));
   });
 
   it('returns empty string for no tree', () => {

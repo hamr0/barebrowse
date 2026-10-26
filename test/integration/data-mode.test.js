@@ -41,6 +41,8 @@ for (const engine of ['chromium', 'firefox']) {
         const snap = await page.snapshot({ mode: 'data' });
         const bos = snap.split('\n').find((l) => l.includes('row "Boston"'));
         assert.ok(bos && bos.includes('Arrives: 6:02 AM') && bos.includes('Platform: 2'), snap);
+        const sl = snap.split('\n'); // line 0 is the url/stats header; the legend opens the data body
+        assert.ok(sl[2].startsWith('# data mode:') && sl.filter((l) => l.startsWith('# data mode:')).length === 1, snap);
         assert.ok(snap.split('\n').some((l) => l.includes('Lines:') && l.includes('Red') && l.includes('Blue')), snap);
         assert.ok(!snap.includes('StaticText'));
 
