@@ -496,7 +496,7 @@ export async function connect(opts = {}) {
       consentRecheck = false;
       if (opts.consent !== false) {
         const dismissed = await dismissConsent(page.session);
-        consentRecheck = !dismissed && !attachMode;
+        consentRecheck = !dismissed;
       }
 
       // Check for bot challenge
@@ -520,7 +520,7 @@ export async function connect(opts = {}) {
           await navigate(page, url, timeout);
           consentRecheck = false;
           if (opts.consent !== false) {
-            consentRecheck = !(await dismissConsent(page.session)) && !attachMode;
+            consentRecheck = !(await dismissConsent(page.session));
           }
 
           // Re-check after headed fallback

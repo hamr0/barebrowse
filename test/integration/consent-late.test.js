@@ -80,3 +80,20 @@ for (const engine of ['chromium', 'firefox']) {
     });
   });
 }
+
+describe('late consent dialog — attach mode (chromium)', () => {
+  it('goto runs consent in attach mode, so the first snapshot re-checks too', async () => {
+    const { launch, cleanupBrowser } = await import('../../src/chromium.js');
+    const srvr = await serve();
+    const running = await launch({});
+    try {
+      const page = await connect({ port: running.port, allowLocalUrls: true });
+      try {
+        await page.goto(srvr.url + '/late');
+        await new Promise((r) => setTimeout(r, 2500));
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('consent clicked'), 'Consent button must have been clicked:\n' + snap);
+      } finally { await page.close(); }
+    } finally { await cleanupBrowser(running); await srvr.close(); }
+  });
+});
