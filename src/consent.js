@@ -10,7 +10,7 @@
  * tree walk + click.
  */
 
-import { ACCEPT_PATTERNS, DIALOG_ROLES, CONSENT_DIALOG_HINTS } from './consent-patterns.js';
+import { ACCEPT_PATTERNS, DIALOG_ONLY_ACCEPT_PATTERNS, DIALOG_ROLES, CONSENT_DIALOG_HINTS } from './consent-patterns.js';
 
 /**
  * Click a node via JavaScript .click() instead of mouse events.
@@ -134,7 +134,7 @@ function hasConsentContent(dialogId, nodes, nodeMap, parentMap) {
  * Find the best "accept" button inside a dialog subtree.
  */
 function findAcceptButton(dialogId, nodes, nodeMap, parentMap) {
-  for (const pattern of ACCEPT_PATTERNS) {
+  for (const pattern of [...ACCEPT_PATTERNS, ...DIALOG_ONLY_ACCEPT_PATTERNS]) {
     for (const node of nodes) {
       if (node.role?.value !== 'button') continue;
       const name = node.name?.value || '';

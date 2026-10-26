@@ -127,6 +127,13 @@ export const ACCEPT_PATTERNS = [
   /^ok$/i,
 ];
 
+// Accept labels that are only safe INSIDE an already-detected consent dialog
+// (e.g. Google Funding Choices' bare "Consent" button). Never used by the
+// page-wide fallback, where a lone "Consent" could be any unrelated control.
+export const DIALOG_ONLY_ACCEPT_PATTERNS = [
+  /^consent$/i,
+];
+
 // Roles that indicate a consent dialog container.
 export const DIALOG_ROLES = new Set(['dialog', 'alertdialog']);
 
