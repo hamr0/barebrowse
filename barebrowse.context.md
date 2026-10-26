@@ -49,7 +49,7 @@ const snapshot = await browse('https://example.com', {
   incognito: false,      // clean, unauthenticated session: skip ALL auth injection
   browser: 'firefox',    // cookie source: 'firefox' | 'chromium' (auto-detected)
   prune: true,           // apply ARIA pruning (47-95% token reduction)
-  pruneMode: 'act',      // 'act' (interactive elements) | 'read' (all content)
+  pruneMode: 'act',      // 'act' (interactive elements) | 'read' (all content) | 'data' (one line per record)
   consent: true,         // auto-dismiss cookie consent dialogs
   blockAds: true,        // block 128 ad/tracker URL patterns (default on for owned browsers)
   blockUrls: [],         // extra URL globs to block (merged with the default)
@@ -193,7 +193,7 @@ barebrowse can inject cookies from the user's real browser sessions, bypassing l
 
 | Obstacle | How | Mode |
 |---|---|---|
-| Cookie consent | ARIA scan for the accept button, 29 languages. CDP: `jsClick` (overlay-bypassing) then a real-mouse-click fallback for CMPs that ignore synthetic clicks. Firefox/BiDi: a single real pointer click. A page-wide accept scan runs only for banner-style consent (no dialog) — when a dialog is detected but has no in-dialog accept button, no page-wide scan runs, to avoid clicking an unrelated `Accept all …` control | Both engines |
+| Cookie consent | ARIA scan for the accept button, 29 languages. CDP: `jsClick` (overlay-bypassing) then a real-mouse-click fallback for CMPs that ignore synthetic clicks. Firefox/BiDi: a single real pointer click. A page-wide accept scan runs only for banner-style consent (no dialog) — when a dialog is detected but has no in-dialog accept button, no page-wide scan runs, to avoid clicking an unrelated `Accept all …` control. A bare `Consent` button (Google Funding Choices) is accepted only inside a detected dialog. If `goto()` found no dialog, the first `snapshot()` after it re-checks once, on the same document only, for CMPs that render 1-3s after load (not covered by one-shot `browse()` or `createTab().goto()`) | Both engines |
 | Consent behind iframes | Scanned/clicked in the owning frame (CDP `DOM.resolveNode`; Firefox resolves the ref in its browsing context) | Both engines |
 | Permission prompts | Launch flags + CDP Browser.setPermission auto-deny | Both |
 | Media autoplay blocked | `--autoplay-policy=no-user-gesture-required` | Both |
