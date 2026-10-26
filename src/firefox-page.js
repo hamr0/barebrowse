@@ -57,7 +57,13 @@ export async function createFirefoxPage(bidi, opts = {}) {
   const consent = opts.consent !== false;
   // True when the consent pass after the latest goto() found nothing: the first
   // snapshot() re-checks once (late-rendered CMP dialogs).
-  let consentRecheck = false;
+  // Document identity (tab + performance.timeOrigin) the latest goto() landed on
+  // when its consent pass found nothing; null when no re-check is pending.
+  let consentRecheck = null;
+  async function docKey() {
+    try { return `${topContext}:${await bidi.evaluate(topContext, 'performance.timeOrigin', false)}`; }
+    catch { return null; }
+  }
   // Hybrid mode: on a bot-challenge page, relaunch headed and retry. The
   // relaunch tears down this Firefox+BiDi and returns a fresh one, so the
   // browser lifecycle is owned by connectFirefox, which supplies relaunchHeaded.
@@ -264,9 +270,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     // the pre-dismiss tree avoids a second full AX reconstruction per goto.
     let root = null;
     try { root = await buildTree(); } catch { /* null → treated as challenge */ }
-    consentRecheck = false;
+    consentRecheck = null;
     if (consent && root) {
-      try { consentRecheck = !(await dismissConsentFirefox(root, (ref) => pointerClick(ref))); }
+      try { if (!(await dismissConsentFirefox(root, (ref) => pointerClick(ref)))) consentRecheck = await docKey(); }
       catch { /* consent dismissal is best-effort */ }
     }
     return isChallengePage(root, countNodes(root));
@@ -307,6 +313,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       // view-source: and (optionally) private-network hosts before navigating.
       assertNavigable(url, urlGuard);
       refContexts = new Map(); // refs from the previous page are now stale
+      consentRecheck = null; // a throwing navigate() must not leave the old page's flag
       await withTimeout(
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
         timeout, `goto(${url})`);
@@ -346,9 +353,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
     async snapshot(pruneOpts = {}) {
       let root = await buildTree();
       if (root && consentRecheck) {
-        consentRecheck = false; // once per navigation
+        const key = consentRecheck;
+        consentRecheck = null; // once per navigation
         try {
-          if (await dismissConsentFirefox(root, (ref) => pointerClick(ref))) root = await buildTree();
+          if (key === await docKey() && await dismissConsentFirefox(root, (ref) => pointerClick(ref))) root = await buildTree();
         } catch { /* best-effort */ }
       }
       if (!root) return '';
@@ -504,7 +512,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
         bidi.send('browsingContext.reload', { context: topContext, wait: 'complete' }),
         30000, 'reload');
       refContexts = new Map();
-      consentRecheck = false;
+      consentRecheck = null;
       await new Promise((r) => setTimeout(r, 300));
     },
 
@@ -657,7 +665,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       bidi.send('browsingContext.traverseHistory', { context: topContext, delta }),
       30000, 'history navigation');
     refContexts = new Map();
-    consentRecheck = false;
+    consentRecheck = null;
     await new Promise((r) => setTimeout(r, 500));
   }
 

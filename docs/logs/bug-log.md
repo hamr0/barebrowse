@@ -406,3 +406,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `pruneOpts?.mode || opts.pruneMode || 'act'`: explicit `snapshot({mode})` wins, then the connect() default, then act. The act-mode hint and stats use the resolved mode. `browse()` already used `opts.pruneMode || 'act'` consistently.
 **Behaviour change:** Chromium callers who set `connect({pruneMode: 'read'|'browse'|...})` now get that mode from a bare `snapshot()`; that is the documented behaviour, previously silently ignored.
 **Regression test:** `test/integration/data-mode.test.js` — `connect({pruneMode:'data'})` bare snapshot has the legend, explicit mode wins, unset stays act (red on Chromium before the fix).
+
+## [2026-10-26] The late-consent re-check could fire on a different page than the goto's (N4)
+
+**Symptom:** `goto(A)` (no popup) then a navigation not made through `goto()` (page's own redirect, a click, Enter on a link, switchTab) to page B: the first `snapshot()` re-ran the consent pass on B and auto-accepted B's dialog. A `navigate()` that threw also left the previous page's flag set.
+**Root cause:** `consentRecheck` was a boolean cleared only by the first snapshot and by goBack/goForward/reload; nothing tied it to the document the goto landed on.
+**Fix:** the flag now holds the document identity the goto's consent pass saw: Chromium `targetId:history-entry-id` (`Page.getNavigationHistory`), Firefox `context:performance.timeOrigin`. The first snapshot re-checks only if the identity is unchanged, then clears the flag either way. `goto()` also clears it before navigating. Chosen over clearing in click/press/select/createTab because it covers every path, including navigations the page starts itself, with one comparison instead of a hook per action.
+**Cost:** one extra round-trip on the first snapshot after a goto that dismissed nothing (Chromium `getNavigationHistory`, which snapshot() already calls, now runs earlier on that path only; Firefox one `script.evaluate`, and one more at goto time).
+**Regression test:** `test/integration/consent-late.test.js` — page A redirects itself to B (late dialog); snapshot must still show B's dialog, both engines (red before the fix). The round-trip count test now expects +1 on both engines.
