@@ -429,3 +429,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** Chromium keys on `targetId:loaderId` of the main frame (`Page.getFrameTree`). POC on real Chromium: loaderId (and timeOrigin) unchanged across pushState, hash change and replaceState, changed across a self-redirect. loaderId chosen: one round-trip, no page-side script. N4's redirect protection is unchanged.
 **Cost:** none beyond N4 (`getFrameTree` replaces `getNavigationHistory` in the key).
 **Regression test:** `test/integration/consent-late.test.js` — pushState and location.hash variants, then a late dialog; first snapshot must dismiss it, both engines (red on Chromium before the fix, Firefox already green).
+
+## [2026-10-26] `barebrowse install --skill` failed for every npm install: commands/ not packaged (N7)
+
+**Symptom:** `npx barebrowse install --skill` from a published package could not find the skill file; `--help` points at `commands/barebrowse.md`, also absent. The 0.25.0 and 0.24.1 tarballs contain no `commands/` files.
+**Root cause:** `package.json` `files` allowlist omitted `commands/`; `cli.js` reads `commands/barebrowse/SKILL.md` relative to the package dir. It worked from a git checkout, so nothing local caught it.
+**Fix:** added `"commands/"` to `files` (ships `commands/barebrowse.md` and `commands/barebrowse/SKILL.md`, the only tracked files there).
+**Regression test:** `test/unit/package-files.test.js`: `npm pack --dry-run --json` must list both files (red before the fix; unit, so CI runs it).
