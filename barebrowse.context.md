@@ -69,7 +69,7 @@ const snapshot = await browse('https://example.com', {
 | `goBack()` | -- | void | Navigate back in browser history |
 | `goForward()` | -- | void | Navigate forward in browser history |
 | `reload(opts?)` | { ignoreCache?: boolean, timeout?: number } | void | Reload the current page. Clears refMap (refs from pre-reload reject). |
-| `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read' } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. |
+| `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read'\|'data' } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. |
 | `readable()` | -- | object | Clean article text (Reader-View engine). `{ ok, title, byline, text, length, confidence: 'high'\|'low', readerable, hint? }` or `{ ok: false, hint }`. For *reading*, not interacting — see note below. |
 | `click(ref)` | ref: string | void | Scroll into view + mouse press+release at center |
 | `type(ref, text, opts?)` | ref: string, text: string, opts: { clear?, keyEvents? } | void | Focus + insert text. `clear: true` replaces existing. |
@@ -302,7 +302,7 @@ Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. 
 
 `browse`, `snapshot`, and `readable` accept a `maxChars` param (default 30000). If the output exceeds the limit it's saved to `.barebrowse/` and a short message with the file path is returned instead (`page-<timestamp>.yml` for snapshots, `article-<timestamp>.txt` for `readable`). `screenshot` always saves to `.barebrowse/screenshot-<timestamp>.{png,jpeg,webp}` and returns the file path (raw base64 in a JSON-RPC response would blow `maxChars`). `tabs` returns the JSON array, or with `switchTo: N` it switches and returns `'ok'`. All files MCP writes are owner-only (`0600` in a `0700` dir) — they can hold authenticated page content, so they're not world-readable on a shared host.
 
-`browse` and `snapshot` also accept `pruneMode: 'act'|'read'`. `act` (the default) keeps interactive elements and short labels — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. Same surface on the bareagent adapter. If act mode collapses a content-heavy page (raw > 5 KB → pruned < 500 chars AND < 5% of raw), the result includes a `hint: act mode dropped most of the page — retry with pruneMode='read' …` line between the stats and the tree so the caller knows to re-snapshot in read mode instead of bailing to a separate HTTP fetch.
+`browse` and `snapshot` also accept `pruneMode: 'act'|'read'|'data'`. `act` (the default) keeps interactive elements and short labels — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. `data` (opt-in) is one line per record — tables with headers (`row "Label": Header: value · …`), repeated items grouped (`Label: a, b, c`) — for data pages (timetables, listings, results), not articles; it keeps `[ref=N]` on interactive nodes (clickable like act) and is *larger* than act on prose pages — use `read`/`readable()` there. Same surface on the bareagent adapter. If act mode collapses a content-heavy page (raw > 5 KB → pruned < 500 chars AND < 5% of raw), the result includes a `hint: act mode dropped most of the page — retry with pruneMode='read' …` line between the stats and the tree so the caller knows to re-snapshot in read mode instead of bailing to a separate HTTP fetch.
 
 Session runs in hybrid mode (headless with automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation for authenticated access.
 
@@ -373,7 +373,7 @@ Useful for agent threshold decisions: "skip sites above score 40", "warn if term
 
 2. **SPA navigation has no loadEventFired.** For single-page apps (React, YouTube, GitHub), use `waitForNetworkIdle()` or a timed wait after click instead of `waitForNavigation()`.
 
-3. **Pruning modes matter.** `act` mode (default) keeps interactive elements + visible labels. `read` mode keeps all text content. Use `read` for content extraction, `act` for form filling and navigation.
+3. **Pruning modes matter.** `act` mode (default) keeps interactive elements + visible labels. `read` mode keeps all text content. Use `read` for content extraction, `act` for form filling and navigation, `data` for tables and listings.
 
 4. **Headed mode auto-launches Chromium.** No need to start a browser manually — barebrowse launches a headed Chromium instance with CDP enabled automatically.
 

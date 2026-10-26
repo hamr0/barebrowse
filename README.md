@@ -102,7 +102,7 @@ MCP tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `
 
 **Hard-kill safety (Linux).** If the process that launched a browser is `kill -9`'d or crashes, the browser dies with it: Chromium via a `--remote-debugging-pipe` tether, Firefox via `setpriv --pdeathsig` (needs `setpriv` from util-linux; without it, or off Linux, a hard kill still orphans Firefox, as does a Snap Firefox). The dead launcher's leftover `barebrowse-*` temp dirs are cleaned at the next launch. Known limits: a reused pid keeps its dir, and dirs created under a different hostname are never removed.
 
-`browse` and `snapshot` accept `pruneMode: 'act'|'read'`. `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch.
+`browse` and `snapshot` accept `pruneMode: 'act'|'read'|'data'`. `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch. `data` is one line per record — tables with headers, repeated items grouped; for data pages, not articles.
 
 `npx barebrowse doctor` reports the runtime environment first — default engine/mode, installed Chromium/Firefox binaries, cookie sources, and any live session's engine + capabilities — then scans every known MCP config location and flags scope conflicts. `npx barebrowse install --force` overwrites an existing entry pointing at a different endpoint.
 
@@ -203,7 +203,7 @@ Raw ARIA output from a page is noisy -- decorative wrappers, hidden elements, st
 | Wikipedia (article) | 109,479 chars | 40,566 chars | 63% |
 | DuckDuckGo | 42,254 chars | 5,407 chars | 87% |
 
-Two pruning modes: **act** (default) keeps interactive elements and visible labels -- for clicking, typing, navigating. **read** keeps all text content -- for reading articles and extracting information.
+Three snapshot modes: **act** (default) keeps interactive elements and visible labels -- for clicking, typing, navigating. **read** keeps all text content -- for reading articles and extracting information. **data** (opt-in) emits one line per record -- tables become `row "Label": Header: value · ...`, repeated items are grouped (`Lines: Red, Green, Blue`) -- for data pages (timetables, listings, results). `[ref=N]` stays on interactive nodes, so click/type work as in act. It is larger than act on prose pages; use `read` or `readable()` for articles.
 
 ## Actions
 
@@ -213,7 +213,7 @@ Everything the agent can do through barebrowse:
 |--------|-------------|
 | **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
 | **Back / Forward** | Browser history navigation |
-| **Snapshot** | Pruned ARIA tree with `[ref=N]` markers. Two modes: `act` (buttons, links, inputs) and `read` (full text). 40-90% token reduction. |
+| **Snapshot** | Pruned ARIA tree with `[ref=N]` markers. Modes: `act` (buttons, links, inputs), `read` (full text), `data` (one line per record, for tables/listings). 40-90% token reduction. |
 | **Readable** | Clean article text (title + body, chrome stripped — Reader-View engine). For *reading* article-like pages, not interacting. Advisory `confidence`; falls back to snapshot on non-articles. |
 | **Click** | Scroll into view + mouse click at element center, JS fallback for hidden elements |
 | **Type** | Focus + insert text, with option to clear existing content first |
