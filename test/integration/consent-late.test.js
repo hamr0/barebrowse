@@ -24,12 +24,23 @@ const LATE = `<!doctype html><html><body><main><h1 id="out">idle</h1><p>Showtime
 // A has no popup but navigates itself to B after goto() returned; B shows a dialog.
 const REDIR = '<!doctype html><html><body><main><h1>A</h1></main><script>setTimeout(() => { location.href = "/b"; }, 1500);</script></body></html>';
 const B = LATE.replace('1500', '200');
+// No dialog at load; the page changes its history entry (pushState or hash) on the SAME
+// document, then renders a late dialog. Still the document the goto landed on.
+const SPA = (nav) => `<!doctype html><html><body><main><h1 id="out">idle</h1><p>Showtimes</p></main>
+<script>setTimeout(() => { ${nav} }, 800);
+setTimeout(() => {
+  const d = document.createElement('div');
+  d.setAttribute('role', 'dialog'); d.setAttribute('aria-label', 'Example asks for your consent');
+  d.innerHTML = '<p>We and our partners use cookies</p><button id="c">Consent</button><button>Manage options</button>';
+  d.querySelector('#c').onclick = () => { document.getElementById('out').textContent = 'consent clicked'; d.remove(); };
+  document.body.appendChild(d);
+}, 1500);</script></body></html>`;
 const PLAIN = '<!doctype html><html><body><main><h1>Plain</h1><p>No popup here</p></main></body></html>';
 
 async function serve() {
   const srv = createServer((q, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(q.url.startsWith('/late') ? LATE : q.url.startsWith('/redir') ? REDIR : q.url.startsWith('/b') ? B : PLAIN);
+    res.end(q.url.startsWith('/push') ? SPA("history.pushState({}, '', '/pushed');") : q.url.startsWith('/hash') ? SPA("location.hash = '#z';") : q.url.startsWith('/late') ? LATE : q.url.startsWith('/redir') ? REDIR : q.url.startsWith('/b') ? B : PLAIN);
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
@@ -78,6 +89,20 @@ for (const engine of ['chromium', 'firefox']) {
         assert.equal(second, third, 'later snapshots must not re-check');
       } finally { await page.close(); await srvr.close(); }
     });
+
+    for (const kind of ['push', 'hash']) {
+      it(`same-document history change (${kind === 'push' ? 'pushState' : 'location.hash'}) still gets the late re-check`, async () => {
+        const srvr = await serve();
+        const page = await connect({ engine, mode: 'headless', allowLocalUrls: true });
+        try {
+          await page.goto(srvr.url + '/' + kind);
+          await new Promise((r) => setTimeout(r, 2500));
+          const snap = await page.snapshot();
+          assert.ok(snap.includes('consent clicked'), 'Consent button must have been clicked:\n' + snap);
+          assert.ok(!/dialog/.test(snap), 'dialog must be gone from the snapshot:\n' + snap);
+        } finally { await page.close(); await srvr.close(); }
+      });
+    }
 
     it('a flag set for page A does not auto-accept a dialog on page B reached without goto()', async () => {
       const srvr = await serve();
