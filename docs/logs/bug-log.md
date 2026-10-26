@@ -411,8 +411,8 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 
 **Symptom:** `goto(A)` (no popup) then a navigation not made through `goto()` (page's own redirect, a click, Enter on a link, switchTab) to page B: the first `snapshot()` re-ran the consent pass on B and auto-accepted B's dialog. A `navigate()` that threw also left the previous page's flag set.
 **Root cause:** `consentRecheck` was a boolean cleared only by the first snapshot and by goBack/goForward/reload; nothing tied it to the document the goto landed on.
-**Fix:** the flag now holds the document identity the goto's consent pass saw: Chromium `targetId:history-entry-id` (`Page.getNavigationHistory`), Firefox `context:performance.timeOrigin`. The first snapshot re-checks only if the identity is unchanged, then clears the flag either way. `goto()` also clears it before navigating. Chosen over clearing in click/press/select/createTab because it covers every path, including navigations the page starts itself, with one comparison instead of a hook per action.
-**Cost:** one extra round-trip on the first snapshot after a goto that dismissed nothing (Chromium `getNavigationHistory`, which snapshot() already calls, now runs earlier on that path only; Firefox one `script.evaluate`, and one more at goto time).
+**Fix:** the flag now holds the document identity the goto's consent pass saw: Chromium `targetId:loaderId` (main frame, `Page.getFrameTree`; see N6, it was first the history entry), Firefox `context:performance.timeOrigin`. The first snapshot re-checks only if the identity is unchanged, then clears the flag either way. `goto()` also clears it before navigating. Chosen over clearing in click/press/select/createTab because it covers every path, including navigations the page starts itself, with one comparison instead of a hook per action.
+**Cost:** one extra round-trip on the first snapshot after a goto that dismissed nothing (Chromium `Page.getFrameTree`; Firefox one `script.evaluate`, and one more at goto time).
 **Regression test:** `test/integration/consent-late.test.js` — page A redirects itself to B (late dialog); snapshot must still show B's dialog, both engines (red before the fix). The round-trip count test now expects +1 on both engines.
 
 ## [2026-10-26] The data-mode legend counted toward "% pruned", and an empty result was a lone legend (N5)
@@ -421,3 +421,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the stats measured `dataSnapshot()`'s whole output, legend included; `dataSnapshot` always prepended the legend.
 **Fix:** `dataSnapshot` returns `''` when there are no records (same as the other modes on an empty tree). New `stripLegend()` in `src/data.js`; `browse()`, Chromium `snapshot()` and Firefox `snapshot()` compute the stat on the stripped body. The legend stays in the output.
 **Regression test:** `test/integration/data-mode.test.js` (stat counts the body only, both engines) and `test/unit/data.test.js` (empty tree gives `''`); both red before the fix.
+
+## [2026-10-26] Chromium's late-consent key was per history entry, so pushState skipped the re-check (N6)
+
+**Symptom:** goto a page with no dialog, the page calls `history.pushState` (or sets `location.hash`) and later renders a consent dialog: the first `snapshot()` left it up on Chromium; Firefox accepted it. SPAs often pushState right after load.
+**Root cause:** N4 keyed Chromium on `targetId:history-entry-id`. pushState and hash changes create a new history entry on the SAME document, so the key looked like a different page. Firefox's `performance.timeOrigin` key was already per document.
+**Fix:** Chromium keys on `targetId:loaderId` of the main frame (`Page.getFrameTree`). POC on real Chromium: loaderId (and timeOrigin) unchanged across pushState, hash change and replaceState, changed across a self-redirect. loaderId chosen: one round-trip, no page-side script. N4's redirect protection is unchanged.
+**Cost:** none beyond N4 (`getFrameTree` replaces `getNavigationHistory` in the key).
+**Regression test:** `test/integration/consent-late.test.js` — pushState and location.hash variants, then a late dialog; first snapshot must dismiss it, both engines (red on Chromium before the fix, Firefox already green).

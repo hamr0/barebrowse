@@ -369,15 +369,17 @@ export async function connect(opts = {}) {
   let botBlocked = false;
   // Set when the consent pass after the latest goto() found nothing: the first
   // snapshot() re-checks once, since some CMPs (Google Funding Choices) render
-  // their dialog 1-3s after load. Holds the document identity (tab + history
-  // entry) the goto landed on, so a snapshot of any other document (click,
-  // redirect, switchTab) never re-checks. Null when no re-check is pending.
+  // their dialog 1-3s after load. Holds the document identity (tab + main-frame
+  // loaderId) the goto landed on, so a snapshot of any other document (click,
+  // redirect, switchTab) never re-checks. loaderId changes on every
+  // cross-document navigation but not on pushState/replaceState/hash change.
+  // Null when no re-check is pending.
   // Also set in attach mode (goto() runs consent there too).
   let consentRecheck = null;
   async function navKey() {
     try {
-      const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
-      return `${page.targetId}:${entries[currentIndex]?.id}`;
+      const { frameTree } = await page.session.send('Page.getFrameTree');
+      return `${page.targetId}:${frameTree.frame.loaderId}`;
     } catch { return null; }
   }
 
