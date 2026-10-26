@@ -414,3 +414,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** the flag now holds the document identity the goto's consent pass saw: Chromium `targetId:history-entry-id` (`Page.getNavigationHistory`), Firefox `context:performance.timeOrigin`. The first snapshot re-checks only if the identity is unchanged, then clears the flag either way. `goto()` also clears it before navigating. Chosen over clearing in click/press/select/createTab because it covers every path, including navigations the page starts itself, with one comparison instead of a hook per action.
 **Cost:** one extra round-trip on the first snapshot after a goto that dismissed nothing (Chromium `getNavigationHistory`, which snapshot() already calls, now runs earlier on that path only; Firefox one `script.evaluate`, and one more at goto time).
 **Regression test:** `test/integration/consent-late.test.js` — page A redirects itself to B (late dialog); snapshot must still show B's dialog, both engines (red before the fix). The round-trip count test now expects +1 on both engines.
+
+## [2026-10-26] The data-mode legend counted toward "% pruned", and an empty result was a lone legend (N5)
+
+**Symptom:** a tiny page (`<main><p>hi</p></main>`) reported a negative `% pruned` in data mode because the ~190-char legend outweighed the content; an empty main produced only the legend line.
+**Root cause:** the stats measured `dataSnapshot()`'s whole output, legend included; `dataSnapshot` always prepended the legend.
+**Fix:** `dataSnapshot` returns `''` when there are no records (same as the other modes on an empty tree). New `stripLegend()` in `src/data.js`; `browse()`, Chromium `snapshot()` and Firefox `snapshot()` compute the stat on the stripped body. The legend stays in the output.
+**Regression test:** `test/integration/data-mode.test.js` (stat counts the body only, both engines) and `test/unit/data.test.js` (empty tree gives `''`); both red before the fix.

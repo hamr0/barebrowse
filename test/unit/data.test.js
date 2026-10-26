@@ -163,8 +163,14 @@ describe('data: noise rules (N1-N6) and refs', () => {
     assert.ok(dataSnapshot(noMain).includes('heading "Only"'));
   });
 
+  it('an empty result is the empty string, not a lone legend', () => {
+    assert.equal(dataSnapshot(page()), '');
+    assert.equal(dataSnapshot(null), '');
+    assert.equal(dataSnapshot(page(node('main', '', []))), '');
+  });
+
   it('legend is the first line, exactly once', () => {
-    for (const t of [page(node('table', '', [row(hdr('A')), row(cell('x'))])), page(), fixture('data-mbta.json'), fixture('data-movie.json')]) {
+    for (const t of [page(node('table', '', [row(hdr('A')), row(cell('x'))])), fixture('data-mbta.json'), fixture('data-movie.json')]) {
       const ls = allLines(t);
       assert.equal(ls[0], LEGEND);
       assert.equal(ls.filter((l) => l.startsWith('# data mode:')).length, 1);

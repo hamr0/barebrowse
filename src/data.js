@@ -72,11 +72,14 @@ function inline(n, refs) {
   return refs && n.ref && INTERACTIVE.has(n.role) ? `${out} [ref=${n.ref}]` : out;
 }
 
+/** A data-mode result without its legend line, for size stats ('' stays ''). */
+export const stripLegend = (s) => (s.startsWith(LEGEND) ? s.slice(LEGEND.length + 1) : s);
+
 /**
  * Render a raw ARIA tree in data mode.
  *
  * @param {object} root - Root node from buildTree() (CDP vocabulary)
- * @returns {string} LEGEND line, then one line per record, YAML-ish like formatTree()
+ * @returns {string} LEGEND line, then one line per record, YAML-ish like formatTree(); '' when there are no records
  */
 export function dataSnapshot(root) {
   if (!root) return '';
@@ -293,5 +296,5 @@ export function dataSnapshot(root) {
     for (const k of c.children) emit(k, d + 1);
   }
   for (const c of res.children) emit(c, 0);
-  return [LEGEND, ...lines].join('\n');
+  return lines.length ? [LEGEND, ...lines].join('\n') : '';
 }

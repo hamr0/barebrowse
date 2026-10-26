@@ -74,5 +74,21 @@ for (const engine of ['chromium', 'firefox']) {
         await dataPage.close(); await actPage.close(); await srvr.close();
       }
     });
+
+    it('the % pruned stat excludes the legend (tiny page is not negative)', async () => {
+      const srv = createServer((_q, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end('<!doctype html><main><p>hi</p></main>'); });
+      await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true });
+      try {
+        await page.goto(`http://127.0.0.1:${srv.address().port}`);
+        const snap = await page.snapshot({ mode: 'data' });
+        assert.ok(snap.includes('# data mode:'), snap);
+        const m = snap.match(/([\d,]+) chars → ([\d,]+) chars(?: \((-?\d+)% pruned\))?/);
+        const [raw, out] = [m[1], m[2]].map((x) => Number(x.replace(/,/g, '')));
+        const body = snap.slice(snap.indexOf('\n# data mode:') + 1).split('\n').slice(1).join('\n');
+        assert.equal(out, body.length, `stat must count the body only:\n${snap}`);
+        assert.ok(out < raw, snap);
+      } finally { await page.close(); await new Promise((r) => srv.close(r)); }
+    });
   });
 }
