@@ -172,6 +172,20 @@ describe('data: noise rules (N1-N6) and refs', () => {
     assert.ok(!LEGEND.includes('\n'));
   });
 
+  it('N5/N6: icon-font buttons and links (private-use glyph name) are dropped, real ones kept', () => {
+    const icon = '\uece0';
+    const out = dataSnapshot(page(
+      node('button', icon, [text(icon)]),
+      node('link', icon),
+      node('button', `${icon} Save`, [text(`${icon} Save`)]),
+      node('button', '+', [text('+')]),
+    ));
+    assert.ok(out.includes(`button "${icon} Save"`), out);        // mixed with real text: untouched
+    assert.ok(out.includes('button "+"'), out);
+    assert.equal((out.match(/button/g) || []).length, 2, out);
+    assert.equal((out.match(/link/g) || []).length, 0, out);
+  });
+
   it('returns empty string for no tree', () => {
     assert.equal(dataSnapshot(null), '');
   });

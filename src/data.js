@@ -14,6 +14,7 @@
  *         (unless the child is, or holds, something interactive)
  *     N5  unwrap unnamed wrappers; all-text wrappers become one text leaf
  *     N6  drop empty/nameless leaves that say nothing and can't be targeted
+ *         (a name of only icon-font glyphs counts as no name)
  *   Repeated siblings (R1-R3)
  *     R1  a run of >=3 same-shape leaves collapses to "label: a, b, c"
  *     R2  a run of 2 collapses too when a >=3 run of the same shape and
@@ -46,7 +47,9 @@ const MIN_RUN = 3;
 /** First line of every data-mode snapshot: tells an agent with no docs how to read it. */
 export const LEGEND = '# data mode: one line per record. Tables: row "<label>": <column>: <value> · …  Groups: <label>: a, b, c.  A title line followed by detail lines is one block, up to the next title line.';
 
-const norm = (s) => (s || '').replace(/\s+/g, ' ').trim();
+// A name made only of private-use code points (icon-font glyphs, unreadable to an
+// agent) is no name. Glyphs mixed into real text are left as they are.
+const norm = (s) => (/^[\p{Co}\s]*$/u.test(s || '') ? '' : s.replace(/\s+/g, ' ').trim());
 const hasInteractive = (n) => INTERACTIVE.has(n.role) || (n.children || []).some(hasInteractive);
 const isLeaf = (n) => n.text === undefined && !n.children.length && n.name;
 const showRef = (n) => !!n.ref && INTERACTIVE.has(n.role);
