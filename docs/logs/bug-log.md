@@ -383,3 +383,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** before removing a dead-owner dir, `sweepStaleProfiles` reads the browser's lock symlink: Chromium `SingletonLock` (`<hostname>-<pid>`, seen `hamr-1853329`) and Firefox `lock` (`<ip>:+<pid>`, seen `192.168.178.220:+1853530`). The dir is kept if that pid is alive (EPERM counts as alive) or, for Chromium, the hostname differs from `os.hostname()`. No lock (download dirs, never-started browsers) keeps the old rule.
 **Known tradeoff:** the foreign-host rule means a dead launcher's dir is kept forever if the hostname changed (renamed machine, container with a random hostname sharing `/tmp`), a deliberate leak-over-delete choice.
 **Regression test:** `test/unit/sweep-profiles.test.js` — fake lock symlinks: live pid kept, foreign hostname kept, dead pid removed, no lock removed (red with the check disabled).
+
+## [2026-10-26] A bare "Consent" button in a consent dialog was never clicked (N1)
+
+**Symptom:** on moviefone.com a Google Funding Choices dialog (`dialog "Moviefone asks for your consent…"`, buttons `Consent` / `Manage options`) stayed open on both engines.
+**Root cause:** the accept button's label is just "Consent", which matched no `ACCEPT_PATTERNS` entry.
+**Fix:** new `DIALOG_ONLY_ACCEPT_PATTERNS = [/^consent$/i]` in `src/consent-patterns.js`, searched after `ACCEPT_PATTERNS` by `findAcceptButton` in both walkers. It is a separate list, so the page-wide fallbacks (`ACCEPT_PATTERNS.slice(0, -3)`) never see it. Anchored: "Manage consent", "Consent settings", "Do not consent", "Consent preferences" do not match.
+**Regression test:** `test/unit/consent.test.js` — pattern accept/reject cases; both walkers click it inside a consent dialog and never page-wide (red without the change).

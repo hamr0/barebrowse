@@ -16,7 +16,7 @@
  * makes "descendant of dialog" a plain subtree walk — no parentMap needed.
  */
 
-import { ACCEPT_PATTERNS, DIALOG_ROLES, CONSENT_DIALOG_HINTS } from './consent-patterns.js';
+import { ACCEPT_PATTERNS, DIALOG_ONLY_ACCEPT_PATTERNS, DIALOG_ROLES, CONSENT_DIALOG_HINTS } from './consent-patterns.js';
 
 /** Roles whose text confirms a container is a consent dialog. */
 const CONSENT_TEXT_ROLES = new Set(['heading', 'StaticText', 'generic']);
@@ -44,7 +44,7 @@ function hasConsentContent(dialog) {
  * ACCEPT_PATTERNS priority (most specific first).
  */
 function findAcceptButton(dialog) {
-  for (const pattern of ACCEPT_PATTERNS) {
+  for (const pattern of [...ACCEPT_PATTERNS, ...DIALOG_ONLY_ACCEPT_PATTERNS]) {
     for (const node of walk(dialog)) {
       if (node.role === 'button' && node.name && pattern.test(node.name)) return node;
     }
