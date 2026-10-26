@@ -21,12 +21,15 @@ const LATE = `<!doctype html><html><body><main><h1 id="out">idle</h1><p>Showtime
   d.querySelector('#c').onclick = () => { document.getElementById('out').textContent = 'consent clicked'; d.remove(); };
   document.body.appendChild(d);
 }, 1500);</script></body></html>`;
+// A has no popup but navigates itself to B after goto() returned; B shows a dialog.
+const REDIR = '<!doctype html><html><body><main><h1>A</h1></main><script>setTimeout(() => { location.href = "/b"; }, 1500);</script></body></html>';
+const B = LATE.replace('1500', '200');
 const PLAIN = '<!doctype html><html><body><main><h1>Plain</h1><p>No popup here</p></main></body></html>';
 
 async function serve() {
   const srv = createServer((q, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(q.url.startsWith('/late') ? LATE : PLAIN);
+    res.end(q.url.startsWith('/late') ? LATE : q.url.startsWith('/redir') ? REDIR : q.url.startsWith('/b') ? B : PLAIN);
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
@@ -69,13 +72,23 @@ for (const engine of ['chromium', 'firefox']) {
         const second = await count();
         const third = await count();
         t.send = orig;
-        if (engine === 'chromium') {
-          assert.equal(first, second + 1, `first snapshot adds exactly one AX-tree fetch (first=${first}, second=${second})`);
-        } else {
-          // Firefox re-checks on the tree snapshot() already built: zero extra round-trips.
-          assert.equal(first, second, `no extra round-trips on Firefox (first=${first}, second=${second})`);
-        }
+        // Chromium: one extra AX-tree fetch. Firefox: one extra document-identity evaluate
+        // (the re-check reuses the tree snapshot() already built).
+        assert.equal(first, second + 1, `first snapshot adds exactly one round-trip (first=${first}, second=${second})`);
         assert.equal(second, third, 'later snapshots must not re-check');
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('a flag set for page A does not auto-accept a dialog on page B reached without goto()', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true });
+      try {
+        await page.goto(srvr.url + '/redir');
+        await new Promise((r) => setTimeout(r, 3500)); // A navigates to B, B shows its dialog
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('/b\n'), 'must be on page B:\n' + snap);
+        assert.ok(!snap.includes('consent clicked'), 'must not click B\'s dialog:\n' + snap);
+        assert.ok(/dialog/.test(snap), 'B\'s dialog must still be in the snapshot:\n' + snap);
       } finally { await page.close(); await srvr.close(); }
     });
   });
