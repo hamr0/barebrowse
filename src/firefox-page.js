@@ -17,6 +17,7 @@
 
 import { formatTree } from './aria.js';
 import { prune as pruneTree } from './prune.js';
+import { dataSnapshot } from './data.js';
 import { axSnapshotExpression, REF_ATTR } from './ax-snapshot.js';
 import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
 import { scopedCookiesForUrl } from './auth.js';
@@ -39,7 +40,7 @@ const BIDI_KEYS = {
  * Build a Firefox/BiDi-backed page object.
  * @param {object} bidi - BiDi client from createBiDi()
  * @param {object} [opts]
- * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Default prune mode.
+ * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Default prune mode.
  * @param {{allowLocalUrls?: boolean, blockPrivateNetwork?: boolean}} [opts.urlGuard] - Navigation safety policy, applied on every goto().
  * @param {string} [opts.uploadDir] - When set, upload() rejects files outside this dir.
  * @param {boolean} [opts.incognito=false] - Clean session: injectCookies() is a no-op.
@@ -347,8 +348,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (pruneOpts === false) return `url: ${pageUrl}\n` + raw;
 
       const mode = pruneOpts?.mode || defaultPruneMode;
-      const pruned = pruneTree(root, { mode });
-      const out = pruned ? formatTree(pruned) : '';
+      let out;
+      if (mode === 'data') out = dataSnapshot(root);
+      else { const pruned = pruneTree(root, { mode }); out = pruned ? formatTree(pruned) : ''; }
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars`
         + ` (${raw.length ? Math.round((1 - out.length / raw.length) * 100) : 0}% pruned)`;
       return stats + '\n' + out;
