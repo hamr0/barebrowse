@@ -16,6 +16,7 @@ import { createFirefoxPage } from './firefox-page.js';
 import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
+import { dataSnapshot } from './data.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
@@ -58,7 +59,7 @@ import { chmodSync } from 'node:fs';
  * @param {{width: number, height: number}} [opts.viewport] - Viewport dimensions.
  * @param {string} [opts.browser] - Source browser for cookie extraction.
  * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs.
- * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Pruning mode.
+ * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Pruning mode.
  * @returns {Promise<string>} ARIA snapshot text
  */
 export async function browse(url, opts = {}) {
@@ -141,8 +142,9 @@ export async function browse(url, opts = {}) {
     const raw = formatTree(tree);
     let snapshot;
     if (opts.prune !== false) {
-      const pruned = pruneTree(tree, { mode: opts.pruneMode || 'act' });
-      snapshot = formatTree(pruned);
+      snapshot = opts.pruneMode === 'data'
+        ? dataSnapshot(tree)
+        : formatTree(pruneTree(tree, { mode: opts.pruneMode || 'act' }));
     } else {
       snapshot = raw;
     }
@@ -204,7 +206,7 @@ export async function browse(url, opts = {}) {
 /**
  * Options for `page.snapshot()`. Pass `false` instead of an object to skip
  * pruning and return the raw ARIA tree.
- * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read' }} SnapshotOptions
+ * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read'|'data' }} SnapshotOptions
  */
 
 /**
@@ -257,7 +259,7 @@ export async function browse(url, opts = {}) {
  * @param {boolean} [opts.incognito=false] - Clean, unauthenticated session:
  *   skip storageState loading and make injectCookies() a no-op, so no auth
  *   ever enters the session even if a caller injects unconditionally.
- * @param {'act'|'browse'|'navigate'|'full'|'read'} [opts.pruneMode='act'] - Pruning mode.
+ * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Pruning mode.
  * @param {'chromium'|'firefox'} [opts.engine='chromium'] - Browser engine.
  *   'firefox' drives over WebDriver BiDi (a separate transport / page object);
  *   'chromium' (default) uses CDP.
@@ -568,8 +570,7 @@ export async function connect(opts = {}) {
       const warn = botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '';
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
       const mode = pruneOpts?.mode || 'act';
-      const pruned = pruneTree(result.tree, { mode });
-      const out = formatTree(pruned);
+      const out = mode === 'data' ? dataSnapshot(result.tree) : formatTree(pruneTree(result.tree, { mode }));
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
       const hint = (mode === 'act' && raw.length > 5000 && out.length < 500 && out.length < raw.length * 0.05)
         ? `hint: act mode dropped most of the page — retry with pruneMode='read' for paragraphs and long text\n`

@@ -266,7 +266,7 @@ export const TOOLS = [
       properties: {
         url: { type: 'string', description: 'URL to browse' },
         mode: { type: 'string', enum: ['headless', 'headed', 'hybrid'], description: 'Browser mode (default: headless)' },
-        pruneMode: { type: 'string', enum: ['act', 'read'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If the page is content-heavy and act-mode returns mostly empty, retry with "read".' },
+        pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If the page is content-heavy and act-mode returns mostly empty, retry with "read". "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles.' },
         incognito: { type: 'boolean', description: 'Clean, unauthenticated session: skip cookie injection so the page loads logged-out (default: false).' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
@@ -290,7 +290,7 @@ export const TOOLS = [
     inputSchema: {
       type: 'object',
       properties: {
-        pruneMode: { type: 'string', enum: ['act', 'read'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If a previous snapshot looked empty on a content-heavy page, retry with "read".' },
+        pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If a previous snapshot looked empty on a content-heavy page, retry with "read". "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles.' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
     },
