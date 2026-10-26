@@ -55,6 +55,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
   const uploadDir = opts.uploadDir || null;
   const incognito = !!opts.incognito;
   const consent = opts.consent !== false;
+  // True when the consent pass after the latest goto() found nothing: the first
+  // snapshot() re-checks once (late-rendered CMP dialogs).
+  let consentRecheck = false;
   // Hybrid mode: on a bot-challenge page, relaunch headed and retry. The
   // relaunch tears down this Firefox+BiDi and returns a fresh one, so the
   // browser lifecycle is owned by connectFirefox, which supplies relaunchHeaded.
@@ -261,8 +264,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     // the pre-dismiss tree avoids a second full AX reconstruction per goto.
     let root = null;
     try { root = await buildTree(); } catch { /* null → treated as challenge */ }
+    consentRecheck = false;
     if (consent && root) {
-      try { await dismissConsentFirefox(root, (ref) => pointerClick(ref)); }
+      try { consentRecheck = !(await dismissConsentFirefox(root, (ref) => pointerClick(ref))); }
       catch { /* consent dismissal is best-effort */ }
     }
     return isChallengePage(root, countNodes(root));
@@ -340,7 +344,13 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     /** @param {import('./index.js').SnapshotOptions|false} [pruneOpts] */
     async snapshot(pruneOpts = {}) {
-      const root = await buildTree();
+      let root = await buildTree();
+      if (root && consentRecheck) {
+        consentRecheck = false; // once per navigation
+        try {
+          if (await dismissConsentFirefox(root, (ref) => pointerClick(ref))) root = await buildTree();
+        } catch { /* best-effort */ }
+      }
       if (!root) return '';
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
@@ -494,6 +504,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
         bidi.send('browsingContext.reload', { context: topContext, wait: 'complete' }),
         30000, 'reload');
       refContexts = new Map();
+      consentRecheck = false;
       await new Promise((r) => setTimeout(r, 300));
     },
 
@@ -646,6 +657,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       bidi.send('browsingContext.traverseHistory', { context: topContext, delta }),
       30000, 'history navigation');
     refContexts = new Map();
+    consentRecheck = false;
     await new Promise((r) => setTimeout(r, 500));
   }
 

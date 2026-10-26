@@ -366,6 +366,10 @@ export async function connect(opts = {}) {
   let page = await createPage(cdp, !currentlyHeaded, pageOpts);
   let refMap = new Map();
   let botBlocked = false;
+  // True when the consent pass after the latest goto() found nothing: the first
+  // snapshot() re-checks once, since some CMPs (Google Funding Choices) render
+  // their dialog 1-3s after load. Never set in attach mode.
+  let consentRecheck = false;
 
   // Suppress permission prompts. Skipped in attach mode — Browser.setPermission
   // is browser-wide (no origin scope here), so flipping permissions to denied
@@ -489,8 +493,10 @@ export async function connect(opts = {}) {
       }
 
       await navigate(page, url, timeout);
+      consentRecheck = false;
       if (opts.consent !== false) {
-        await dismissConsent(page.session);
+        const dismissed = await dismissConsent(page.session);
+        consentRecheck = !dismissed && !attachMode;
       }
 
       // Check for bot challenge
@@ -512,7 +518,10 @@ export async function connect(opts = {}) {
           setupDialogHandler(page.session);
           await suppressPermissions(cdp);
           await navigate(page, url, timeout);
-          if (opts.consent !== false) await dismissConsent(page.session);
+          consentRecheck = false;
+          if (opts.consent !== false) {
+            consentRecheck = !(await dismissConsent(page.session)) && !attachMode;
+          }
 
           // Re-check after headed fallback
           const after = await ariaTree(page);
@@ -531,6 +540,7 @@ export async function connect(opts = {}) {
       await page.session.send('Page.navigateToHistoryEntry', { entryId: entries[currentIndex - 1].id });
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
       refMap = new Map(); // refs from the previous page are now invalid
+      consentRecheck = false;
     },
 
     async goForward() {
@@ -540,6 +550,7 @@ export async function connect(opts = {}) {
       await page.session.send('Page.navigateToHistoryEntry', { entryId: entries[currentIndex + 1].id });
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
       refMap = new Map();
+      consentRecheck = false;
     },
 
     async reload(reloadOpts = {}) {
@@ -550,6 +561,7 @@ export async function connect(opts = {}) {
       });
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
       refMap = new Map(); // refs from the pre-reload page are invalid
+      consentRecheck = false;
     },
 
     /** @param {string} url @param {CookieOptions} [cookieOpts] */
@@ -562,6 +574,10 @@ export async function connect(opts = {}) {
 
     /** @param {SnapshotOptions|false} [pruneOpts] */
     async snapshot(pruneOpts = {}) {
+      if (consentRecheck) {
+        consentRecheck = false; // once per navigation
+        try { await dismissConsent(page.session); } catch { /* best-effort */ }
+      }
       const result = await ariaTree(page);
       refMap = result.refMap;
       const raw = formatTree(result.tree);

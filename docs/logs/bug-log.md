@@ -390,3 +390,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the accept button's label is just "Consent", which matched no `ACCEPT_PATTERNS` entry.
 **Fix:** new `DIALOG_ONLY_ACCEPT_PATTERNS = [/^consent$/i]` in `src/consent-patterns.js`, searched after `ACCEPT_PATTERNS` by `findAcceptButton` in both walkers. It is a separate list, so the page-wide fallbacks (`ACCEPT_PATTERNS.slice(0, -3)`) never see it. Anchored: "Manage consent", "Consent settings", "Do not consent", "Consent preferences" do not match.
 **Regression test:** `test/unit/consent.test.js` — pattern accept/reject cases; both walkers click it inside a consent dialog and never page-wide (red without the change).
+
+## [2026-10-26] A consent dialog rendered 1-3s after load was never dismissed (N2)
+
+**Symptom:** on moviefone.com the Funding Choices dialog stayed in `snapshot()` output on both engines even with the N1 label fix.
+**Root cause:** consent runs once right after navigation; the dialog does not exist yet at that moment, and nothing ever looks again.
+**Fix:** `goto()` records whether that pass dismissed anything (`consentRecheck`, only when consent is enabled and not attach mode). The FIRST `snapshot()` after that goto re-runs the consent pass once and, if it clicked something, builds the snapshot from the fresh tree. Cleared by the first snapshot, and by goBack/goForward/reload (no consent pass runs there). No added waiting. Chromium cost: one extra `getFullAXTree` on the first snapshot per navigation; Firefox re-checks on the tree snapshot() already built (no extra round-trips unless something was dismissed).
+**Known limits:** `browse()` (one-shot) and `createTab().goto()` are unchanged; a dialog later than the first snapshot is not caught.
+**Regression test:** `test/integration/consent-late.test.js` — local server injects the dialog after 1.5s; goto, wait, snapshot: dialog gone, button clicked; plain page: only the first snapshot pays the extra check. Both engines; red without the change.
