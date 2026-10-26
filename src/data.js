@@ -45,7 +45,7 @@ const WRAP = new Set(['generic', 'none', 'group', 'presentation', 'paragraph', '
 const MIN_RUN = 3;
 
 /** First line of every data-mode snapshot: tells an agent with no docs how to read it. */
-export const LEGEND = '# data mode: one line per record. Tables: row "<label>": <column>: <value> · …  Groups: <label>: a, b, c.  A title line followed by detail lines is one block, up to the next title line.';
+export const LEGEND = '# data mode: one line per record. Tables: row "<label>": <column>: <value> · …  Groups: <label>: a, b, c.  A title line followed by detail lines is one block, up to the next title line. Main content only; use mode "act" for menus and page controls.';
 
 // A name made only of private-use code points (icon-font glyphs, unreadable to an
 // agent) is no name. Glyphs mixed into real text are left as they are.
