@@ -134,6 +134,9 @@ export const DIALOG_ONLY_ACCEPT_PATTERNS = [
   /^consent$/i,
 ];
 
+// Priority-ordered list the dialog-scoped search walks, built once.
+export const DIALOG_ACCEPT_PATTERNS = [...ACCEPT_PATTERNS, ...DIALOG_ONLY_ACCEPT_PATTERNS];
+
 // Roles that indicate a consent dialog container.
 export const DIALOG_ROLES = new Set(['dialog', 'alertdialog']);
 
