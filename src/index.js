@@ -585,7 +585,7 @@ export async function connect(opts = {}) {
       const pageUrl = entries[currentIndex]?.url || '';
       const warn = botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '';
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
-      const mode = pruneOpts?.mode || 'act';
+      const mode = pruneOpts?.mode || opts.pruneMode || 'act';
       const out = mode === 'data' ? dataSnapshot(result.tree) : formatTree(pruneTree(result.tree, { mode }));
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${out.length.toLocaleString()} chars (${Math.round((1 - out.length / raw.length) * 100)}% pruned)`;
       const hint = (mode === 'act' && raw.length > 5000 && out.length < 500 && out.length < raw.length * 0.05)
