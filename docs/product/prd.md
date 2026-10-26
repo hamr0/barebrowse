@@ -201,7 +201,8 @@ The agent doesn't have to think about any of this:
 | Obstacle | How it's handled | Mode |
 |----------|-----------------|------|
 | **Cookie consent walls** | ARIA tree scan + jsClick accept button, 29 languages | Both |
-| **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside | Both |
+| **Consent in dialog role** | Detect `dialog`/`alertdialog` with consent hints, click accept inside (a bare `Consent` label counts only here) | Both |
+| **Late-rendered consent dialog** (Google Funding Choices) | If `goto()` found no dialog, the first `snapshot()` re-checks once, only on the same document (Chromium `targetId:loaderId`, Firefox `context:timeOrigin`) | Both |
 | **Consent outside dialog** (BBC SourcePoint) | Fallback global button scan when dialog has no accept button | Both |
 | **Consent behind iframe overlay** | JS click via DOM.resolveNode bypasses z-index/overlay issues, real mouse click fallback for CMPs ignoring synthetic clicks | Both |
 | **Permission prompts** (location, camera, mic) | Launch flags + CDP Browser.setPermission auto-deny | Both |
