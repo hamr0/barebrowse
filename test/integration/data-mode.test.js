@@ -59,5 +59,20 @@ for (const engine of ['chromium', 'firefox']) {
         await srvr.close();
       }
     });
+
+    it('connect({pruneMode}) is the snapshot() default; explicit mode wins; unset stays act', async () => {
+      const srvr = await serve();
+      const dataPage = await connect({ engine, mode: 'headless', allowLocalUrls: true, pruneMode: 'data' });
+      const actPage = await connect({ engine, mode: 'headless', allowLocalUrls: true });
+      try {
+        await dataPage.goto(srvr.url);
+        assert.ok((await dataPage.snapshot()).includes('# data mode:'), 'pruneMode:data default must apply');
+        assert.ok(!(await dataPage.snapshot({ mode: 'act' })).includes('# data mode:'), 'explicit mode wins');
+        await actPage.goto(srvr.url);
+        assert.ok(!(await actPage.snapshot()).includes('# data mode:'), 'no pruneMode stays act');
+      } finally {
+        await dataPage.close(); await actPage.close(); await srvr.close();
+      }
+    });
   });
 }
