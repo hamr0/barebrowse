@@ -192,6 +192,8 @@ Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `
 
 **Modes:** `act` (default) keeps interactive elements and short labels — best for clicking/filling. `read` (alias for `browse`) keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. `navigate` and `full` expose progressively more landmarks. `data` (opt-in) is a separate transform (`src/data.js`) over the raw tree rather than a prune.js mode — prune's collapse step destroys table structure. It emits one line per record: tables map cells to headers positionally (with a width-mismatch guard, since CDP exposes no colspan), repeated sibling leaves (runs of 3+, plus same-shape pairs beside such a run) group under a label, and text already inside a parent's name is dropped; scope is the `main` landmark, falling back to the whole page. Refs are the same ids as act, on interactive nodes only. It is larger than act on prose pages — articles stay with `read`/`readable()`. Every public surface — `browse()`, `connect()`'s `page.snapshot()`, the MCP `browse`/`snapshot` tools, the bareagent `browse`/`snapshot` tools, and the CLI's `--mode=` / `--prune-mode=` flags — accepts the same enum. When act mode collapses a content-heavy page well past what a search/e-commerce page would, the snapshot appends a one-line `hint: …` suggesting `pruneMode='read'` so the caller can re-snapshot instead of bailing to a separate HTTP fetch.
 
+**Links (opt-in):** `links: true` (`snapshot({ links: true })`, `browse(url, { links: true })`, a `connect({ links })` default; MCP/bareagent `links` param; CLI `snapshot --links` / `browse <url> --links`) adds each link's absolute URL after its quoted name — `link "name" <url> [ref=N]` — in every mode (`src/links.js`). A heading that wraps a link keeps the URL on its own line; data mode also adds it to table link cells and collapsed-group items, and its legend gains a links note. `javascript:` and same-page `#fragment` links get no URL, every link line carries its own URL (no cross-line dedupe), and URLs never contain a raw space, `<` or `>`. Off by default: output is byte-identical when off (about +23% chars on a GitHub issue list in data mode).
+
 **What stays in mcprune:** The Playwright MCP proxy architecture. mcprune can continue to exist as a Playwright-based MCP server for users who want that path. But for barebrowse consumers, pruning is built in.
 
 ### Obstacle Course — What barebrowse handles automatically
@@ -254,12 +256,14 @@ const page = await connect({
   blockPrivateNetwork: false,  // opt-in SSRF guard (loopback/RFC-1918/metadata)
   uploadDir: '/tmp/agent-uploads', // opt-in: confine upload() to this directory
 });
-await page.goto('https://amazon.com/cart');
+const { url, status } = await page.goto('https://amazon.com/cart'); // final URL after redirects + HTTP status
 await page.click('[data-action="checkout"]');
 await page.type('#gift-message', 'Happy birthday!');
 const tree = await page.snapshot();  // ARIA + prune
 await page.close();
 ```
+
+**Navigation outcome:** `goto()` resolves `{ url, status }` on both engines (`page.lastNavigation` mirrors it; `status` 0 = no HTTP response observed, e.g. an aborted navigation). A non-2xx page still loads, and the next `snapshot()` / the `browse()` string starts with `[HTTP 404 — the page may be an error page]` (empty-body 4xx/5xx included). When the browser cannot reach a document at all (DNS, refused, TLS), `goto()` and `browse()` reject with `err.code === 'NAV_FAILED'` and the raw browser string in `err.reason`; a download or 204 is not a failure. `goBack`/`goForward`/`reload`/`switchTab` reset `lastNavigation` to `null` — status is reported for `goto()` only.
 
 ### Design Principles
 
@@ -299,7 +303,7 @@ multis (personal assistant) uses barebrowse in headed mode for interactive tasks
 
 **MCP server wrapper (shipped):**
 
-barebrowse ships `mcp-server.js` — a thin wrapper (raw JSON-RPC 2.0 over stdio, no SDK dependency) exposing the same library as MCP tools (`browse`, `goto`, `snapshot`, `readable`, click/type/etc., plus the opt-in `eval`). The server releases its browser after `BAREBROWSE_IDLE_MINUTES` (default 15, `0` = off) of no tool calls and closes (not orphans) the browser on transient errors; `page.close()` always runs the hard cleanup even if the browser is dead. At startup (MCP `runStdio()` and the CLI daemon) it also deletes its own timestamped output files (`page-`, `screenshot-`, `article-`, `console-`, `network-`, `dialogs-`) older than 7 days from `.barebrowse/`; `session.json`, `state-*.json` and any file not matching the exact `YYYY-MM-DDTHH-MM-SS-mmmZ` stamp are never touched. It replaces Playwright MCP + the mcprune proxy with a single, lighter MCP server.
+barebrowse ships `mcp-server.js` — a thin wrapper (raw JSON-RPC 2.0 over stdio, no SDK dependency) exposing the same library as MCP tools (`browse`, `goto`, `snapshot`, `readable`, click/type/etc., plus the opt-in `eval`). `goto` answers `ok` for 2xx and `ok (HTTP 404)` otherwise (an unreachable host is an error); `browse` and `snapshot` take the opt-in `links` param. The server releases its browser after `BAREBROWSE_IDLE_MINUTES` (default 15, `0` = off) of no tool calls and closes (not orphans) the browser on transient errors; `page.close()` always runs the hard cleanup even if the browser is dead. At startup (MCP `runStdio()` and the CLI daemon) it also deletes its own timestamped output files (`page-`, `screenshot-`, `article-`, `console-`, `network-`, `dialogs-`) older than 7 days from `.barebrowse/`; `session.json`, `state-*.json` and any file not matching the exact `YYYY-MM-DDTHH-MM-SS-mmmZ` stamp are never touched. It replaces Playwright MCP + the mcprune proxy with a single, lighter MCP server.
 
 ---
 

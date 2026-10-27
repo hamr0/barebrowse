@@ -35,7 +35,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 
 | Action | Method | What It Does | Status |
 |--------|--------|-------------|--------|
-| Navigate | `page.goto(url)` | Load a URL, wait for page load, dismiss consent | Done |
+| Navigate | `page.goto(url)` | Load a URL, wait for page load, dismiss consent; resolves `{ url, status }`, rejects `NAV_FAILED` when unreachable | Done |
 | Snapshot | `page.snapshot()` | Pruned ARIA tree (47-95% token reduction) | Done |
 | Click | `page.click(ref)` | Scroll into view, mouse press+release at element center | Done |
 | Type | `page.type(ref, text)` | Focus element, insert text (fast batch mode) | Done |
