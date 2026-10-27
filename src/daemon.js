@@ -13,6 +13,7 @@ import { join, resolve } from 'node:path';
 import { connect } from './index.js';
 import { formatReadable } from './readable.js';
 import { cleanOld } from './output-clean.js';
+import { isHttpError } from './navigation.js';
 
 /** Owner-only file write helper — daemon artifacts can hold authenticated content. */
 function writeFilePrivate(path, data) {
@@ -313,8 +314,8 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   // Command handlers
   const handlers = {
     async goto({ url, timeout }) {
-      await page.goto(url, timeout || 30000);
-      return { ok: true };
+      const { status } = await page.goto(url, timeout || 30000);
+      return isHttpError(status) ? { ok: true, status } : { ok: true };
     },
 
     async snapshot({ mode }) {

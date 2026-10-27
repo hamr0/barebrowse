@@ -27,6 +27,7 @@ import { waitForNetworkIdleBiDi } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage, countNodes } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
+import { navFailed, httpWarning } from './navigation.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -71,6 +72,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
   const relaunchHeaded = opts.relaunchHeaded || null;
   let currentlyHeaded = !!opts.headed; // already headed → no fallback needed
   let botBlocked = false;
+  // Outcome of the latest goto() ({url, status}); null before any goto.
+  /** @type {import('./navigation.js').NavigationOutcome|null} */
+  let lastNavigation = null;
   // Last injectCookies(url, opts) args, so a hybrid relaunch (a brand-new
   // Firefox profile) can re-inject them — otherwise the headed retry loads
   // unauthenticated, defeating hybrid on an auth-gated challenge page.
@@ -254,7 +258,37 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function setupSubscriptions() {
     await setupDialogs();
     await setupDownloads();
-    await bidi.subscribe(['browsingContext.load']);
+    await bidi.subscribe(['browsingContext.load', 'network.responseCompleted']);
+  }
+
+  /**
+   * browsingContext.navigate(wait:'complete') plus the navigation's outcome:
+   * the LAST network.responseCompleted for its navigation id in the top
+   * context (one fires per redirect hop; the final hop is where we landed).
+   * A network failure is rewrapped as a typed NAV_FAILED error. NS_BINDING_ABORTED
+   * (a 204, or a download replacing nothing) is not a failure, as with CDP's
+   * ERR_ABORTED: status 0, no HTTP response for a document.
+   * @returns {Promise<import('./navigation.js').NavigationOutcome>}
+   */
+  async function navigateTo(url, timeout) {
+    const events = [];
+    const off = bidi.on('network.responseCompleted', (e) => {
+      if (e.navigation && e.context === topContext) events.push(e);
+    });
+    try {
+      const res = await withTimeout(
+        bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
+        timeout, `goto(${url})`);
+      const last = events.filter((e) => e.navigation === res.navigation).pop();
+      return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
+    } catch (err) {
+      const m = /^BiDi error: unknown error — (?:Error: )?(.+)$/.exec(err.message);
+      if (!m) throw err;
+      if (m[1] === 'NS_BINDING_ABORTED') return { url, status: 0 };
+      throw navFailed(url, m[1]);
+    } finally {
+      off();
+    }
   }
 
   /**
@@ -285,6 +319,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
     get context() { return topContext; },
     /** Whether the last goto() landed on a bot-challenge page (parity w/ CDP). */
     get botBlocked() { return botBlocked; },
+    /** Outcome of the latest goto(): `{url, status}`, or null before any goto. */
+    get lastNavigation() { return lastNavigation; },
 
     /** @type {'firefox'} Engine driving this session (see also `capabilities`). */
     engine: 'firefox',
@@ -314,9 +350,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
       assertNavigable(url, urlGuard);
       refContexts = new Map(); // refs from the previous page are now stale
       consentRecheck = null; // a throwing navigate() must not leave the old page's flag
-      await withTimeout(
-        bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
-        timeout, `goto(${url})`);
+      lastNavigation = null;
+      lastNavigation = await navigateTo(url, timeout);
       // Settle + consent + challenge detection (mirrors the CDP path).
       botBlocked = await afterNavigate();
 
@@ -338,15 +373,14 @@ export async function createFirefoxPage(bidi, opts = {}) {
           if (lastInject) {
             try { await page.injectCookies(lastInject.url, lastInject.cookieOpts); } catch { /* best-effort */ }
           }
-          await withTimeout(
-            bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
-            timeout, `goto(${url})`);
+          lastNavigation = await navigateTo(url, timeout);
           botBlocked = await afterNavigate();
         } catch {
           // Headed relaunch failed (no display?) — keep the headless result;
           // botBlocked stays true so the caller can see it didn't clear.
         }
       }
+      return /** @type {import('./navigation.js').NavigationOutcome} */ (lastNavigation); // set by the navigate above
     },
 
     /** @param {import('./index.js').SnapshotOptions|false} [pruneOpts] */
@@ -363,7 +397,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
       const raw = formatTree(root);
-      if (pruneOpts === false) return `url: ${pageUrl}\n` + raw;
+      const warn = httpWarning(lastNavigation?.status);
+      if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
 
       const mode = pruneOpts?.mode || defaultPruneMode;
       let out;
@@ -372,7 +407,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       const sized = mode === 'data' ? stripLegend(out) : out; // the legend is not content
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars`
         + ` (${raw.length ? Math.round((1 - sized.length / raw.length) * 100) : 0}% pruned)`;
-      return stats + '\n' + out;
+      return stats + '\n' + warn + out;
     },
 
     async readable() {

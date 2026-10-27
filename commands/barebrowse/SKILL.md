@@ -48,7 +48,7 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 
 | Command | Output |
 |---------|--------|
-| `barebrowse goto <url>` | Navigates, waits for load, dismisses consent. Prints "ok". |
+| `barebrowse goto <url>` | Navigates, waits for load, dismisses consent. Prints "ok", or "ok (HTTP 404)" for a non-2xx page (the next snapshot starts with an `[HTTP 404 …]` warning). Unreachable host: error. |
 | `barebrowse back` | Go back in browser history. |
 | `barebrowse forward` | Go forward in browser history. |
 | `barebrowse snapshot` | ARIA snapshot → `.barebrowse/page-<timestamp>.yml` |

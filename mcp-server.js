@@ -14,6 +14,7 @@ import { browse, connect } from './src/index.js';
 import { formatReadable } from './src/readable.js';
 import { cleanOld } from './src/output-clean.js';
 import { scopedCookiesForUrl } from './src/auth.js';
+import { isHttpError } from './src/navigation.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -275,7 +276,7 @@ export const TOOLS = [
   },
   {
     name: 'goto',
-    description: 'Open URL in a persistent interactive browser session (pair with snapshot/click/type/press for multi-step flows). Use when the task needs clicking, typing, or form submission. Injects auth cookies. Returns ok — call snapshot to observe.',
+    description: 'Open URL in a persistent interactive browser session (pair with snapshot/click/type/press for multi-step flows). Use when the task needs clicking, typing, or form submission. Injects auth cookies. Returns ok — call snapshot to observe. A non-2xx page answers `ok (HTTP 404)` and the snapshot starts with an [HTTP …] warning line; an unreachable host (DNS, refused, TLS) is an error.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -566,8 +567,8 @@ async function handleToolCall(name, args) {
         try { await page.injectCookies(args.url); } catch (e) { error ??= e.message; }
         _lastCookies = cookieReport(args.url, { cookies, error });
       }
-      await page.goto(args.url);
-      return 'ok';
+      const { status } = await page.goto(args.url);
+      return isHttpError(status) ? `ok (HTTP ${status})` : 'ok';
     }, TIMEOUTS.goto);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();

@@ -185,7 +185,7 @@ async function cmdProxy(command, cmdArgs) {
       try { unlinkSync(sessionPath); } catch { /* already gone */ }
       process.stdout.write('Session closed.\n');
     } else {
-      process.stdout.write('ok\n');
+      process.stdout.write(result.status ? `ok (HTTP ${result.status})\n` : 'ok\n');
     }
   } catch (err) {
     if (command === 'close') {
