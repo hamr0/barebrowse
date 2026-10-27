@@ -460,3 +460,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** removed the cross-line/cross-item dedupe in `src/data.js` (`seen`, `scope`, `lineUrls`): a node prints its own `urls` (already unique per node by prune.js), so every link line, group item and row cell carries its URL. Duplicates collapse only inside a single node's own url list.
 **Cost:** a URL repeats where two links share it (the old dedupe was the saving).
 **Regression test:** `test/integration/links.test.js`, new "a link sharing a URL with a neighbour still carries its own URL" (both engines; card list + group); red before. The old "duplicate url listed once" assertion in "on, data: table cell, collapsed group, …" was replaced by it (it asserted the removed behavior).
+
+## [2026-10-27] Empty-body 4xx/5xx rejected NAV_FAILED on Chromium (N11)
+
+**Symptom:** `goto()`/`browse()` of a 404/500 with a zero-length body rejected `NAV_FAILED: net::ERR_HTTP_RESPONSE_CODE_FAILURE` on Chromium instead of resolving `{status}` with the `[HTTP n …]` warning (v0.25.0 loaded it; Firefox was fine; a 404 with a body was fine).
+**Root cause:** for an empty-body error response Chromium's `Page.navigate` returns that `errorText`, and N8's `navigate()` treated every `errorText` except `ERR_ABORTED` as a network failure.
+**Fix:** `ERR_HTTP_RESPONSE_CODE_FAILURE` is not a failure in `navigate()`. POC on real Chromium (404/500/403/401/410/503): the Document `responseReceived` carries the status and the same `loaderId` as `Page.navigate`'s result, and `Page.loadEventFired` fires (Chromium renders its error page), so the load wait stays and the existing loaderId match yields the status. No other HTTP-status `errorText` exists in the POC: 204 and 304 give `ERR_ABORTED` (already exempt).
+**Cost:** none.
+**Regression test:** `test/integration/navigation.test.js` (`/404empty`, `/500empty` on both engines; `browse()` on `/500empty`); red on Chromium before the fix.

@@ -1186,7 +1186,11 @@ async function navigate(page, url, timeout = 30000) {
     // ERR_ABORTED is not a failure: a download (isDownload) or a 204 replaces
     // no document and fires no load event, so don't wait for one.
     const aborted = nav.errorText === 'net::ERR_ABORTED';
-    if (nav.errorText && !aborted) throw navFailed(url, nav.errorText);
+    // ERR_HTTP_RESPONSE_CODE_FAILURE is a 4xx/5xx with an empty body: the
+    // document did load (Chromium's error page fires load, the Document
+    // response carries the status), so report it like any other HTTP error.
+    const httpError = nav.errorText === 'net::ERR_HTTP_RESPONSE_CODE_FAILURE';
+    if (nav.errorText && !aborted && !httpError) throw navFailed(url, nav.errorText);
     if (!aborted) await loaded;
     // Brief settle time for dynamic content
     await new Promise((r) => setTimeout(r, 500));
