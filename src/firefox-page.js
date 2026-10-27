@@ -417,7 +417,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       let out;
       if (mode === 'data') out = dataSnapshot(tree, { links });
       else { const pruned = pruneTree(tree, { mode, links }); out = pruned ? formatTree(pruned) : ''; }
-      const sized = mode === 'data' ? stripLegend(out) : out; // the legend is not content
+      const sized = stripLegend(out); // the legend is not content
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars`
         + ` (${raw.length ? Math.round((1 - sized.length / raw.length) * 100) : 0}% pruned)`;
       return stats + '\n' + warn + out;

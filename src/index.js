@@ -157,7 +157,7 @@ export async function browse(url, opts = {}) {
     } else {
       snapshot = links ? formatTree(linked) : raw;
     }
-    const sized = opts.pruneMode === 'data' ? stripLegend(snapshot) : snapshot; // the legend is not content
+    const sized = stripLegend(snapshot); // the legend is not content
     const stats = `url: ${url}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars (${Math.round((1 - sized.length / raw.length) * 100)}% pruned)`;
     const actMode = !opts.pruneMode || opts.pruneMode === 'act';
     const hint = (actMode && raw.length > 5000 && snapshot.length < 500 && snapshot.length < raw.length * 0.05)
@@ -634,7 +634,7 @@ export async function connect(opts = {}) {
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
       const mode = pruneOpts?.mode || opts.pruneMode || 'act';
       const out = mode === 'data' ? dataSnapshot(tree, { links }) : formatTree(pruneTree(tree, { mode, links }));
-      const sized = mode === 'data' ? stripLegend(out) : out; // the legend is not content
+      const sized = stripLegend(out); // the legend is not content
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars (${Math.round((1 - sized.length / raw.length) * 100)}% pruned)`;
       const hint = (mode === 'act' && raw.length > 5000 && out.length < 500 && out.length < raw.length * 0.05)
         ? `hint: act mode dropped most of the page — retry with pruneMode='read' for paragraphs and long text\n`
