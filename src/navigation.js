@@ -5,8 +5,8 @@
 
 /**
  * What goto() resolves to: where the page ended up and how the server answered.
- * `status` is 0 when no HTTP response exists for the navigation (data: URLs,
- * about:blank).
+ * `status` is 0 when no HTTP response was observed for the navigation (e.g. an
+ * aborted navigation that never got one).
  * @typedef {{ url: string, status: number }} NavigationOutcome
  */
 
