@@ -143,7 +143,7 @@ await page.close(); // closes only the tab barebrowse opened — your browser ke
 ### Did the navigation work?
 
 `goto()` resolves to `{ url, status }` — the final URL after redirects and the
-main document's HTTP status (`0` when there is none, e.g. a `data:` URL).
+main document's HTTP status (`0` when no HTTP response was observed, e.g. an aborted navigation).
 `page.lastNavigation` returns the same object (`null` before any goto, and reset
 to `null` by `goBack`/`goForward`/`reload`/`switchTab` — status is reported for
 `goto()` only, so those never leave a stale warning). A
