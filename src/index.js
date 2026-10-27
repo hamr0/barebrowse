@@ -215,7 +215,7 @@ export async function browse(url, opts = {}) {
 
 /**
  * What `goto()` resolves to: the final URL (after redirects) and the main
- * document's HTTP status (0 when there is no HTTP response, e.g. a data: URL).
+ * document's HTTP status (0 when no HTTP response was observed, e.g. an aborted navigation).
  * Network failures reject with an Error whose `code` is 'NAV_FAILED' and
  * `reason` the browser's raw error string.
  * @typedef {import('./navigation.js').NavigationOutcome} NavigationOutcome
