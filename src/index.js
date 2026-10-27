@@ -17,6 +17,7 @@ import { formatTree } from './aria.js';
 import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
 import { dataSnapshot, stripLegend } from './data.js';
+import { annotateLinks } from './links.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
@@ -61,6 +62,7 @@ import { chmodSync } from 'node:fs';
  * @param {string} [opts.browser] - Source browser for cookie extraction.
  * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs.
  * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Pruning mode.
+ * @param {boolean} [opts.links=false] - Show link URLs: `link "name" <url> [ref=N]`.
  * @returns {Promise<string>} ARIA snapshot text
  */
 export async function browse(url, opts = {}) {
@@ -141,13 +143,19 @@ export async function browse(url, opts = {}) {
 
     // Step 6: Prune for agent consumption
     const raw = formatTree(tree);
+    const links = !!opts.links;
+    let linked = tree;
+    if (links) {
+      const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
+      linked = annotateLinks(tree, entries[currentIndex]?.url || url);
+    }
     let snapshot;
     if (opts.prune !== false) {
       snapshot = opts.pruneMode === 'data'
-        ? dataSnapshot(tree)
-        : formatTree(pruneTree(tree, { mode: opts.pruneMode || 'act' }));
+        ? dataSnapshot(linked, { links })
+        : formatTree(pruneTree(linked, { mode: opts.pruneMode || 'act', links }));
     } else {
-      snapshot = raw;
+      snapshot = links ? formatTree(linked) : raw;
     }
     const sized = opts.pruneMode === 'data' ? stripLegend(snapshot) : snapshot; // the legend is not content
     const stats = `url: ${url}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars (${Math.round((1 - sized.length / raw.length) * 100)}% pruned)`;
@@ -216,7 +224,9 @@ export async function browse(url, opts = {}) {
 /**
  * Options for `page.snapshot()`. Pass `false` instead of an object to skip
  * pruning and return the raw ARIA tree.
- * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read'|'data' }} SnapshotOptions
+ * `links: true` adds each link's absolute URL after its name (default off,
+ * or the `connect({ links })` default).
+ * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read'|'data', links?: boolean }} SnapshotOptions
  */
 
 /**
@@ -270,6 +280,7 @@ export async function browse(url, opts = {}) {
  *   skip storageState loading and make injectCookies() a no-op, so no auth
  *   ever enters the session even if a caller injects unconditionally.
  * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Pruning mode.
+ * @param {boolean} [opts.links=false] - Default for `snapshot({ links })`: show link URLs.
  * @param {'chromium'|'firefox'} [opts.engine='chromium'] - Browser engine.
  *   'firefox' drives over WebDriver BiDi (a separate transport / page object);
  *   'chromium' (default) uses CDP.
@@ -615,9 +626,11 @@ export async function connect(opts = {}) {
       const pageUrl = entries[currentIndex]?.url || '';
       const warn = (botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '')
         + httpWarning(lastNavigation?.status);
-      if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
+      const links = !!((pruneOpts || undefined)?.links ?? opts.links);
+      const tree = links ? annotateLinks(result.tree, pageUrl) : result.tree;
+      if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
       const mode = pruneOpts?.mode || opts.pruneMode || 'act';
-      const out = mode === 'data' ? dataSnapshot(result.tree) : formatTree(pruneTree(result.tree, { mode }));
+      const out = mode === 'data' ? dataSnapshot(tree, { links }) : formatTree(pruneTree(tree, { mode, links }));
       const sized = mode === 'data' ? stripLegend(out) : out; // the legend is not content
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars (${Math.round((1 - sized.length / raw.length) * 100)}% pruned)`;
       const hint = (mode === 'act' && raw.length > 5000 && out.length < 500 && out.length < raw.length * 0.05)
@@ -977,6 +990,7 @@ async function connectFirefox(opts) {
 
   const page = await createFirefoxPage(bidi, {
     pruneMode: opts.pruneMode,
+    links: opts.links,
     urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
     uploadDir: opts.uploadDir || null,
     incognito: !!opts.incognito,

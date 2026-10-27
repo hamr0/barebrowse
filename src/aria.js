@@ -5,6 +5,8 @@
  * and formats it as readable YAML-like text, similar to Playwright's ariaSnapshot.
  */
 
+import { urlsText } from './links.js';
+
 /**
  * Format a nested ARIA tree as readable text output.
  *
@@ -36,6 +38,9 @@ export function formatTree(node, depth = 0) {
   if (node.name) {
     line += ` "${node.name}"`;
   }
+
+  // Link URLs (opt-in links: true): right after the name, before props and ref
+  line += urlsText(node.urls);
 
   // Notable properties that agents care about
   const props = node.properties || {};

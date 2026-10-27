@@ -37,7 +37,7 @@ if (args.includes('--daemon-internal')) {
 } else if (cmd === 'goto' && args[1]) {
   await cmdProxy('goto', { url: args[1], timeout: parseFlag('--timeout') });
 } else if (cmd === 'snapshot') {
-  await cmdProxy('snapshot', { mode: parseFlag('--mode') });
+  await cmdProxy('snapshot', { mode: parseFlag('--mode'), links: hasFlag('--links') || undefined });
 } else if (cmd === 'readable') {
   await cmdProxy('readable');
 } else if (cmd === 'screenshot') {
@@ -203,9 +203,9 @@ async function cmdProxy(command, cmdArgs) {
 async function oneShot() {
   const { browse } = await import('./src/index.js');
   const url = args[1];
-  const mode = args[2] || 'headless';
+  const mode = args[2] && !args[2].startsWith('--') ? args[2] : 'headless';
   try {
-    const snapshot = await browse(url, { mode, incognito: hasFlag('--incognito') || undefined });
+    const snapshot = await browse(url, { mode, incognito: hasFlag('--incognito') || undefined, links: hasFlag('--links') || undefined });
     process.stdout.write(snapshot + '\n');
     process.exit(0);
   } catch (err) {
@@ -585,7 +585,7 @@ Navigation:
   barebrowse back                   Go back in history
   barebrowse forward                Go forward in history
   barebrowse reload [--no-cache]    Reload current page
-  barebrowse snapshot [--mode=M]    ARIA snapshot -> .barebrowse/page-*.yml
+  barebrowse snapshot [--mode=M] [--links]  ARIA snapshot -> .barebrowse/page-*.yml (--links: link URLs)
   barebrowse readable               Clean article text -> .barebrowse/article-*.txt
   barebrowse screenshot [--format]  Screenshot -> .barebrowse/screenshot-*.png
   barebrowse pdf [--landscape]      PDF export -> .barebrowse/page-*.pdf
@@ -620,7 +620,7 @@ Debugging:
   barebrowse switch-engine <chromium|firefox>  Swap the browser in place (page, tabs, refs are lost)
 
 One-shot:
-  barebrowse browse <url> [mode]    Browse + print snapshot to stdout
+  barebrowse browse <url> [mode] [--links]  Browse + print snapshot to stdout
 
 MCP:
   barebrowse mcp                    Start MCP server (JSON-RPC over stdio)

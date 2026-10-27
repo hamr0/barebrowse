@@ -63,10 +63,11 @@ export function createBrowseTools(opts = {}) {
         properties: {
           url: { type: 'string', description: 'URL to browse' },
           pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs); "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line. Main content only: use "act" for menus and page controls.' },
+          links: { type: 'boolean', description: 'Show each link\'s absolute URL after its name: link "name" <url> [ref=N]. Default off.' },
         },
         required: ['url'],
       },
-      execute: async ({ url, pruneMode }) => await browse(url, pruneMode ? { ...opts, pruneMode } : opts),
+      execute: async ({ url, pruneMode, links }) => await browse(url, pruneMode || links ? { ...opts, pruneMode, links } : opts),
     },
     {
       name: 'goto',
@@ -87,11 +88,12 @@ export function createBrowseTools(opts = {}) {
         type: 'object',
         properties: {
           pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: '"act" (default) for interactive elements only; "read" for paragraphs and long text (articles/docs); "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line. Main content only: use "act" for menus and page controls.' },
+          links: { type: 'boolean', description: 'Show each link\'s absolute URL after its name: link "name" <url> [ref=N]. Default off.' },
         },
       },
-      execute: async (/** @type {{ pruneMode?: string }} */ { pruneMode } = {}) => {
+      execute: async (/** @type {{ pruneMode?: string, links?: boolean }} */ { pruneMode, links } = {}) => {
         const page = await getPage();
-        return await page.snapshot(pruneMode ? { mode: pruneMode } : undefined);
+        return await page.snapshot(pruneMode || links ? { mode: pruneMode, links } : undefined);
       },
     },
     {

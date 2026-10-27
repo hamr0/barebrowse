@@ -33,6 +33,8 @@
  * click/type resolve through the same refMap).
  */
 
+import { urlsText } from './links.js';
+
 const SKIP = new Set(['InlineTextBox', 'LineBreak', 'ListMarker', 'image', 'img']);
 const CELLS = new Set(['cell', 'gridcell', 'columnheader', 'rowheader']);
 const TABLES = new Set(['table', 'grid', 'treegrid']);
@@ -47,13 +49,23 @@ const MIN_RUN = 3;
 /** First line of every data-mode snapshot: tells an agent with no docs how to read it. */
 export const LEGEND = '# data mode: one line per record. Tables: row "<label>": <column>: <value> · …  Groups: <label>: a, b, c.  A title line followed by detail lines is one block, up to the next title line. Main content only; use mode "act" for menus and page controls.';
 
+/** Appended to the legend only when links are on. */
+export const LINKS_NOTE = ' Links: "name" <url>.';
+
 // A name made only of private-use code points (icon-font glyphs, unreadable to an
 // agent) is no name. Glyphs mixed into real text are left as they are.
 const norm = (s) => (/^[\p{Co}\s]*$/u.test(s || '') ? '' : s.replace(/\s+/g, ' ').trim());
+const allUrls = (n) => [...(n.urls || []), ...(n.children || []).flatMap(allUrls)];
 const hasInteractive = (n) => INTERACTIVE.has(n.role) || (n.children || []).some(hasInteractive);
 const isLeaf = (n) => n.text === undefined && !n.children.length && n.name;
 const showRef = (n) => !!n.ref && INTERACTIVE.has(n.role);
-const withRef = (n) => (showRef(n) ? `${n.name} [ref=${n.ref}]` : n.name);
+// ` <url>` for a node's links not yet in `seen` (a URL shows once per line); marks them seen.
+function urlPart(n, seen) {
+  const us = (n.urls || []).filter((u) => !seen.has(u));
+  us.forEach((u) => seen.add(u));
+  return urlsText(us);
+}
+const withRef = (n, seen = new Set()) => (showRef(n) ? `${n.name}${urlPart(n, seen)} [ref=${n.ref}]` : n.name);
 // Leaves carrying state (checked, level, value...) never merge into a run.
 const plain = (n) => !(n.props.checked !== undefined || n.props.expanded !== undefined || n.props.selected || n.props.level || n.props.required || (n.props.value !== undefined && n.props.value !== ''));
 // Run key: leaves with the same key are "the same kind of item". `g` = the
@@ -64,24 +76,25 @@ const kindOf = (n) => (isLeaf(n) && n.role !== 'StaticText' && n.role !== 'headi
   : null;
 
 // Flat text of a cleaned node; with refs, interactive nodes get their [ref=N].
-function inline(n, refs) {
+function inline(n, refs, seen = new Set()) {
   if (n.text !== undefined) return n.text;
-  const sub = n.children.length ? n.children.map((c) => inline(c, refs)).filter(Boolean).join(' ') : n.name;
+  const sub = n.children.length ? n.children.map((c) => inline(c, refs, seen)).filter(Boolean).join(' ') : n.name;
   const v = (n.name && !n.children.length) || INTERACTIVE.has(n.role) && n.name && refs ? n.name : sub;
   const out = n.children.length && n.name && n.role !== 'StaticText' && !sub ? n.name : v;
-  return refs && n.ref && INTERACTIVE.has(n.role) ? `${out} [ref=${n.ref}]` : out;
+  return refs && n.ref && INTERACTIVE.has(n.role) ? `${out}${urlPart(n, seen)} [ref=${n.ref}]` : out;
 }
 
 /** A data-mode result without its legend line, for size stats ('' stays ''). */
-export const stripLegend = (s) => (s.startsWith(LEGEND) ? s.slice(LEGEND.length + 1) : s);
+export const stripLegend = (s) => (s.startsWith(LEGEND) ? s.slice(s.indexOf('\n') + 1) : s);
 
 /**
  * Render a raw ARIA tree in data mode.
  *
  * @param {object} root - Root node from buildTree() (CDP vocabulary)
+ * @param {{ links?: boolean }} [opts] - links: the tree's link nodes carry `urls` (annotateLinks); adds the legend note
  * @returns {string} LEGEND line, then one line per record, YAML-ish like formatTree(); '' when there are no records
  */
-export function dataSnapshot(root) {
+export function dataSnapshot(root, opts = {}) {
   if (!root) return '';
   let gid = 0;
   const rawKids = (n) => n.children.flatMap((c) => (c.ignored ? rawKids(c) : [c]));
@@ -120,7 +133,7 @@ export function dataSnapshot(root) {
     if (!nm && kids.length === 0 && (n.role === 'link' || n.role === 'button')) return [];   // N6
     if (!nm && kids.length === 0 && !INTERACTIVE.has(n.role) && !CELLS.has(n.role) && n.role !== 'row') return [];
     if (n.role === 'listitem' && !nm && kids.length === 1) return kids;
-    return [{ role: n.role, name: nm, children: kids, props, ref: n.nodeId, sig }];
+    return [{ role: n.role, name: nm, children: kids, props, ref: n.nodeId, sig, urls: n.urls }];
   }
 
   // ---------- Transforms, bottom-up with the ancestor chain for labels ----------
@@ -134,7 +147,7 @@ export function dataSnapshot(root) {
     const out = [];
     for (const k of kids) {
       const p = out[out.length - 1];
-      if (p && isLeaf(p) && isLeaf(k) && p.role === k.role && p.name === k.name) continue;
+      if (p && isLeaf(p) && isLeaf(k) && p.role === k.role && p.name === k.name && (p.urls || [])[0] === (k.urls || [])[0]) continue;
       out.push(k);
     }
     return out;
@@ -207,8 +220,9 @@ export function dataSnapshot(root) {
         if (lf === undefined) { out.push(...items); i = j + 1; continue; }
         if (lf && lf.consume) out.splice(out.length - lf.consume, lf.consume);   // lead-in leaves now live in the label
         const dis = items[0].props.disabled ? ' (disabled)' : '';
-        const body = items.map(withRef).join(', ');
-        out.push({ role: '_line', name: '', children: [], props: {}, text: lf ? `${lf.label}${dis}: ${body}` : body });
+        const seen = new Set();
+        const body = items.map((it) => withRef(it, seen)).join(', ');
+        out.push({ role: '_line', name: '', children: [], props: {}, lineUrls: [...seen], text: lf ? `${lf.label}${dis}: ${body}` : body });
         i = j + 1;
       } else { out.push(kids[i]); i++; }
     }
@@ -241,13 +255,15 @@ export function dataSnapshot(root) {
       // T2
       const cs = cellsOf(r);
       const labelCells = cs.filter((c) => c.role === 'rowheader' || c.role === 'columnheader');
+      const seen = new Set();      // a URL shows once per row
       const lcx = labelCells.map(xcell);
       const label = lcx.map((c) => inline(c, false)).filter(Boolean).join(' / ');
+      const labelUrls = urlsText([...new Set(lcx.flatMap(allUrls))].filter((u) => !seen.has(u) && seen.add(u)));
       const labelRef = lcx.map(firstRef).find(Boolean);
       const vals = [];
       cs.forEach((c, idx) => {
         if (labelCells.includes(c)) return;
-        const v = inline(xcell(c), true);
+        const v = inline(xcell(c), true, seen);
         if (v) vals.push({ h: useHdr ? useHdr[idx] : '', v });
       });
       // T4: modal-value compression for wide rows
@@ -262,7 +278,7 @@ export function dataSnapshot(root) {
       }
       if (!vals.length && !label) continue;      // header-only / empty rows
       const body = vals.map((x) => (x.h ? `${x.h}: ` : '') + x.v).join(' · ');
-      out.push({ role: '_line', children: [], props: {}, text: `row${label ? ` "${label}"` : ''}${labelRef ? ` [ref=${labelRef}]` : ''}${tail}${body ? ': ' + body : ''}` });
+      out.push({ role: '_line', children: [], props: {}, lineUrls: [...seen], text: `row${label ? ` "${label}"` : ''}${labelUrls}${labelRef ? ` [ref=${labelRef}]` : ''}${tail}${body ? ': ' + body : ''}` });
     }
     return { ...t, children: out };
   }
@@ -276,12 +292,20 @@ export function dataSnapshot(root) {
   const res = xform({ role: 'root', name: '', children: tops, props: {} }, []);
 
   const lines = [];
-  function emit(c, d) {
+  // `scope`: URLs already shown in the enclosing list item (a URL shows once per
+  // item); undefined outside list items, where each line stands alone.
+  function emit(c, d, scope) {
     const ind = '  '.repeat(d);
-    if (c.text !== undefined) { lines.push(`${ind}- ${c.text}`); return; }
+    if (c.text !== undefined) {
+      let t = c.text;
+      for (const u of c.lineUrls || []) { if (scope?.has(u)) t = t.replace(` <${u}>`, ''); else scope?.add(u); }
+      lines.push(`${ind}- ${t}`);
+      return;
+    }
     if (isLeaf(c) && (c.role === 'StaticText' || c.role === 'generic')) { lines.push(`${ind}- ${c.name}`); return; }
     let l = `${ind}- ${c.role}`;
     if (c.name) l += ` "${c.name}"`;
+    l += urlPart(c, scope || new Set());
     const p = c.props, pp = [];
     if (p.checked !== undefined) pp.push(`checked=${p.checked}`);
     if (p.disabled) pp.push('disabled');
@@ -293,8 +317,9 @@ export function dataSnapshot(root) {
     if (pp.length) l += ` [${pp.join(', ')}]`;
     if (showRef(c)) l += ` [ref=${c.ref}]`;
     lines.push(l);
-    for (const k of c.children) emit(k, d + 1);
+    const inner = c.role === 'listitem' ? new Set() : scope;
+    for (const k of c.children) emit(k, d + 1, inner);
   }
   for (const c of res.children) emit(c, 0);
-  return lines.length ? [LEGEND, ...lines].join('\n') : '';
+  return lines.length ? [LEGEND + (opts.links ? LINKS_NOTE : ''), ...lines].join('\n') : '';
 }

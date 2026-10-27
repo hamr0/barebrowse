@@ -318,9 +318,9 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       return isHttpError(status) ? { ok: true, status } : { ok: true };
     },
 
-    async snapshot({ mode }) {
+    async snapshot({ mode, links }) {
       const pruneMode = mode || defaultPruneMode;
-      const text = await page.snapshot({ mode: pruneMode });
+      const text = await page.snapshot({ mode: pruneMode, links });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `page-${ts}.yml`);
       writeFilePrivate(file, text);

@@ -62,6 +62,7 @@ const SKIP_ROLES = new Set([
  * @param {object} [options]
  * @param {'act'|'browse'|'navigate'|'full'|'read'} [options.mode='act'] - Pruning mode ('read' is an alias for 'browse')
  * @param {string} [options.context=''] - Search context for relevance filtering
+ * @param {boolean} [options.links=false] - Links carry `urls` (see links.js): nodes that drop their children keep the URLs of links beneath them
  * @returns {object|null} Pruned tree
  */
 export function prune(tree, options = {}) {
@@ -80,7 +81,7 @@ export function prune(tree, options = {}) {
   nodes = extractRegions(nodes, allowedRegions);
 
   // Step 2: Prune nodes
-  const ctx = { mode, parentRole: null, keywords };
+  const ctx = { mode, parentRole: null, keywords, links: !!options.links };
   nodes = nodes.map((n) => pruneNode(n, ctx)).filter(Boolean);
 
   // Step 3: Collapse structural wrappers
@@ -204,7 +205,7 @@ function pruneNode(node, ctx) {
     return { ...node, children: pruneChildren(node.children, ctx) };
   }
   if (node.role === 'group' && node.name) {
-    if (!isBrowse && /kleuren|colors?|couleurs?|farben/i.test(node.name)) {
+    if (!isBrowse && !ctx.links && /kleuren|colors?|couleurs?|farben/i.test(node.name)) {
       return collapseColors(node);
     }
     return { ...node, children: pruneChildren(node.children, ctx) };
@@ -217,7 +218,7 @@ function pruneNode(node, ctx) {
         return null;
       }
     }
-    return { ...node, children: [] };
+    return { ...node, children: [], ...carryUrls(node, ctx) };
   }
 
   // StaticText — CDP equivalent of mcprune's "text" nodes
@@ -446,6 +447,13 @@ function flatten(nodes) {
     if (n.children) result.push(...flatten(n.children));
   }
   return result;
+}
+
+// Links on: a node that drops its children keeps the URLs of the links beneath it.
+function carryUrls(node, ctx) {
+  if (!ctx.links) return {};
+  const urls = [...new Set(flatten([node]).flatMap((n) => n.urls || []))];
+  return urls.length ? { urls } : {};
 }
 
 function condenseCard(node) {

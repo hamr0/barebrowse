@@ -269,6 +269,7 @@ export const TOOLS = [
         mode: { type: 'string', enum: ['headless', 'headed', 'hybrid'], description: 'Browser mode (default: headless)' },
         pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If the page is content-heavy and act-mode returns mostly empty, retry with "read". "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line. Main content only: use "act" for menus and page controls.' },
         incognito: { type: 'boolean', description: 'Clean, unauthenticated session: skip cookie injection so the page loads logged-out (default: false).' },
+        links: { type: 'boolean', description: 'Show each link\'s absolute URL after its name: link "name" <url> [ref=N]. Default off.' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
       required: ['url'],
@@ -292,6 +293,7 @@ export const TOOLS = [
       type: 'object',
       properties: {
         pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If a previous snapshot looked empty on a content-heavy page, retry with "read". "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line. Main content only: use "act" for menus and page controls.' },
+        links: { type: 'boolean', description: 'Show each link\'s absolute URL after its name: link "name" <url> [ref=N]. Default off.' },
         maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
       },
     },
@@ -545,7 +547,7 @@ async function handleToolCall(name, args) {
     case 'browse': {
       let timer;
       const text = await Promise.race([
-        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode, incognito: args.incognito }),
+        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode, incognito: args.incognito, links: args.links }),
         new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('browse timed out after 60s')), 60000); }),
       ]);
       clearTimeout(timer);
@@ -572,7 +574,7 @@ async function handleToolCall(name, args) {
     }, TIMEOUTS.goto);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
-      const text = await page.snapshot(args.pruneMode ? { mode: args.pruneMode } : undefined);
+      const text = await page.snapshot(args.pruneMode || args.links ? { mode: args.pruneMode, links: args.links } : undefined);
       const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
       if (text.length > limit) {
         const file = saveSnapshot(text);
