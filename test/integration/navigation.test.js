@@ -21,6 +21,7 @@ async function serve() {
     if (q.url === '/missing') { res.writeHead(404, { 'Content-Type': 'text/html' }); return res.end(HTML('Not here')); }
     if (q.url === '/old') { res.writeHead(302, { Location: '/ok' }); return res.end(); }
     if (q.url === '/old404') { res.writeHead(301, { Location: '/missing' }); return res.end(); }
+    if (q.url === '/204') { res.writeHead(204); return res.end(); }
     if (q.url === '/dl') {
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename=a.bin' });
       return res.end('xxxx');
@@ -107,6 +108,16 @@ for (const engine of ['chromium', 'firefox']) {
         const out = await page.goto(srvr.url + '/dl');
         assert.ok(Date.now() - t < 10000, 'returned promptly');
         assert.equal(out.status, 200);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('204 is not NAV_FAILED and reports status 204 (both engines)', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/ok');
+        const out = await page.goto(srvr.url + '/204');
+        assert.deepEqual(out, { url: srvr.url + '/204', status: 204 });
       } finally { await page.close(); await srvr.close(); }
     });
   });

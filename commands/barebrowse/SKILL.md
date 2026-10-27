@@ -54,6 +54,7 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 | `barebrowse snapshot` | ARIA snapshot → `.barebrowse/page-<timestamp>.yml` |
 | `barebrowse snapshot --mode=read` | Read mode: keeps all text (for content extraction) |
 | `barebrowse snapshot --mode=data` | Data mode: one line per record (table rows with headers, repeated items grouped). For data pages, not articles. Main content only; use `act` for menus and page controls. |
+| `barebrowse snapshot --links` | Add each link's absolute URL after its name: `link "title" <https://…> [ref=N]` (combine with `--mode`; also on `browse <url> --links`). `javascript:` and same-page `#` links get none. |
 | `barebrowse readable` | Clean article text → `.barebrowse/article-<timestamp>.txt`. For reading/summarising articles (news, blogs, docs); falls back to snapshot on non-articles. |
 | `barebrowse screenshot` | Screenshot → `.barebrowse/screenshot-<timestamp>.png` |
 | `barebrowse pdf [--landscape]` | PDF export → `.barebrowse/page-<timestamp>.pdf` |
