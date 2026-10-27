@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.26.0] - 2026-10-27
+
+### Added
+
+- **Opt-in link URLs in snapshots.** `links: true` adds each link's absolute URL
+  after its name, in every mode: `link "name" <absolute-url> [ref=N]`. Headings
+  that wrap a link keep its URL, and in data mode so do group items and table
+  cells. `javascript:` links and same-page `#fragment` links are skipped, and
+  spaces and `<>` in a URL are percent-encoded. It is available as
+  `snapshot({ links: true })`, in `browse()` and `connect()`, as the `links`
+  argument of the MCP `browse` and `snapshot` tools, as `--links` on
+  `barebrowse snapshot` and `barebrowse browse`, and in the bareagent tools.
+  Off by default, and the output is unchanged when it is off. The data-mode
+  legend gains a links note only when links are on.
+- **`goto()` now reports where it landed.** It resolves `{ url, status }`: the
+  final URL after redirects and the main document's HTTP status, on both
+  engines. `page.lastNavigation` holds the same value and is reset to `null`
+  after `goBack()`, `goForward()`, `reload()` and a tab switch. After a non-2xx
+  `goto()`, the next `snapshot()` and the `browse()` output start with
+  `[HTTP n — the page may be an error page]`. An HTTP 4xx or 5xx is reported,
+  never thrown, including an error response with an empty body. The MCP and
+  CLI `goto` print `ok (HTTP n)` for a non-2xx page.
+- **Network failures reject with a typed error.** An unreachable host (DNS
+  failure, connection refused, TLS error and the like) rejects with
+  `err.code === 'NAV_FAILED'` and the browser's raw message in `err.reason`.
+  Behaviour change: on Chromium, `goto()` and `browse()` to an unreachable host
+  used to resolve with the browser's own error page; they now reject. Firefox
+  already rejected, with an untyped error; it is now the same typed error.
+
+### Fixed
+
+- **A download no longer makes `goto()` wait 30s and time out on Chromium.**
+  Navigating to a URL that turns into a download, or to a 204 response, returns
+  at once. A 204 reports status 204 on both engines.
+- **`barebrowse install --skill` works from an npm install.** The skill file
+  was missing from the published package, so the command failed outside a
+  checkout.
+
 ## [0.25.0] - 2026-10-26
 
 ### Added
