@@ -166,6 +166,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     const exp = el.getAttribute('aria-expanded');
     if (exp !== null) p.expanded = exp === 'true';
     if (role === 'heading') p.level = Number(el.getAttribute('aria-level')) || Number(el.tagName[1]) || 2;
+    if (role === 'link' && el.href) p.url = el.href; // browser-serialized absolute URL (CDP's `url` property)
     if (el.getAttribute('aria-selected') === 'true') p.selected = true;
     if (el.required || el.getAttribute('aria-required') === 'true') p.required = true;
     if ((role === 'textbox' || role === 'searchbox' || role === 'combobox' || role === 'spinbutton') && el.value) {

@@ -18,6 +18,7 @@
 import { formatTree } from './aria.js';
 import { prune as pruneTree } from './prune.js';
 import { dataSnapshot, stripLegend } from './data.js';
+import { annotateLinks } from './links.js';
 import { axSnapshotExpression, REF_ATTR } from './ax-snapshot.js';
 import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
 import { scopedCookiesForUrl } from './auth.js';
@@ -42,6 +43,7 @@ const BIDI_KEYS = {
  * @param {object} bidi - BiDi client from createBiDi()
  * @param {object} [opts]
  * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Default prune mode.
+ * @param {boolean} [opts.links=false] - Default for snapshot({ links }): show link URLs.
  * @param {{allowLocalUrls?: boolean, blockPrivateNetwork?: boolean}} [opts.urlGuard] - Navigation safety policy, applied on every goto().
  * @param {string} [opts.uploadDir] - When set, upload() rejects files outside this dir.
  * @param {boolean} [opts.incognito=false] - Clean session: injectCookies() is a no-op.
@@ -398,12 +400,14 @@ export async function createFirefoxPage(bidi, opts = {}) {
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
       const raw = formatTree(root);
       const warn = httpWarning(lastNavigation?.status);
-      if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
+      const links = !!((pruneOpts || undefined)?.links ?? opts.links);
+      const tree = links ? annotateLinks(root, pageUrl) : root;
+      if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
 
       const mode = pruneOpts?.mode || defaultPruneMode;
       let out;
-      if (mode === 'data') out = dataSnapshot(root);
-      else { const pruned = pruneTree(root, { mode }); out = pruned ? formatTree(pruned) : ''; }
+      if (mode === 'data') out = dataSnapshot(tree, { links });
+      else { const pruned = pruneTree(tree, { mode, links }); out = pruned ? formatTree(pruned) : ''; }
       const sized = mode === 'data' ? stripLegend(out) : out; // the legend is not content
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars`
         + ` (${raw.length ? Math.round((1 - sized.length / raw.length) * 100) : 0}% pruned)`;
