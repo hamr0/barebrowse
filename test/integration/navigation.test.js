@@ -20,6 +20,8 @@ async function serve() {
   let flips = 0;
   const srv = createServer((q, res) => {
     if (q.url === '/missing') { res.writeHead(404, { 'Content-Type': 'text/html' }); return res.end(HTML('Not here')); }
+    if (q.url === '/404empty') { res.writeHead(404); return res.end(); }
+    if (q.url === '/500empty') { res.writeHead(500); return res.end(); }
     if (q.url === '/old') { res.writeHead(302, { Location: '/ok' }); return res.end(); }
     if (q.url === '/old404') { res.writeHead(301, { Location: '/missing' }); return res.end(); }
     if (q.url === '/flip') { // 404 first, then 200 (a page that got fixed)
@@ -78,6 +80,19 @@ for (const engine of ['chromium', 'firefox']) {
       try {
         assert.deepEqual(await page.goto(srvr.url + '/old'), { url: srvr.url + '/ok', status: 200 });
         assert.deepEqual(await page.goto(srvr.url + '/old404'), { url: srvr.url + '/missing', status: 404 });
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('empty-body 404/500: resolved and reported, never thrown (N11)', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        for (const code of [404, 500]) {
+          const out = await page.goto(srvr.url + `/${code}empty`);
+          assert.deepEqual(out, { url: srvr.url + `/${code}empty`, status: code });
+          const snap = await page.snapshot();
+          assert.ok(snap.split('\n').slice(0, 4).includes(`[HTTP ${code} — the page may be an error page]`), snap.slice(0, 300));
+        }
       } finally { await page.close(); await srvr.close(); }
     });
 
@@ -167,6 +182,14 @@ describe('navigation outcome — browse() (chromium)', () => {
       assert.ok(bad.split('\n').slice(0, 4).includes(WARN404), bad.slice(0, 300));
       const ok = await browse(srvr.url + '/ok', { allowLocalUrls: true, incognito: true });
       assert.ok(!ok.includes('[HTTP'));
+    } finally { await srvr.close(); }
+  });
+
+  it('empty-body 500 resolves with the warning line (N11)', async () => {
+    const srvr = await serve();
+    try {
+      const out = await browse(srvr.url + '/500empty', { allowLocalUrls: true, incognito: true });
+      assert.ok(out.split('\n').slice(0, 4).includes('[HTTP 500 — the page may be an error page]'), out.slice(0, 300));
     } finally { await srvr.close(); }
   });
 
