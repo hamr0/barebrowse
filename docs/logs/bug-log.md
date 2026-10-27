@@ -452,3 +452,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `goBack`, `goForward`, `reload` and `switchTab` reset `lastNavigation` to `null` on both engines (`src/index.js`, `src/firefox-page.js`). Status stays a `goto()`/`browse()` feature; nothing new is read for traversals.
 **Cost:** none.
 **Regression test:** `test/integration/navigation.test.js` (both engines: goBack/goForward and reload); red before the fix. `switchTab` is not covered by a test (needs a second tab).
+
+## [2026-10-27] Data mode stripped the URL from a link that shared one with a neighbour (N10)
+
+**Symptom:** with `links: true` in data mode, `<li><a href=/p1><img alt=pic></a> <a href=/p1>Title one</a> <a href=/p2>Title two</a></li>` printed `link "Title one" [ref=36]` with no URL, and a group printed `three <…/p3> [ref=40], three again [ref=41]`. A consumer reading "every link line carries its URL" got links it could not resolve.
+**Root cause:** `urlPart`/`inline`/`withRef` threaded a `seen` set through a group, table row and (via `emit`'s `scope` + `lineUrls`) a whole list item, dropping any URL already shown on the line or item.
+**Fix:** removed the cross-line/cross-item dedupe in `src/data.js` (`seen`, `scope`, `lineUrls`): a node prints its own `urls` (already unique per node by prune.js), so every link line, group item and row cell carries its URL. Duplicates collapse only inside a single node's own url list.
+**Cost:** a URL repeats where two links share it (the old dedupe was the saving).
+**Regression test:** `test/integration/links.test.js`, new "a link sharing a URL with a neighbour still carries its own URL" (both engines; card list + group); red before. The old "duplicate url listed once" assertion in "on, data: table cell, collapsed group, …" was replaced by it (it asserted the removed behavior).

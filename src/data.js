@@ -59,13 +59,10 @@ const allUrls = (n) => [...(n.urls || []), ...(n.children || []).flatMap(allUrls
 const hasInteractive = (n) => INTERACTIVE.has(n.role) || (n.children || []).some(hasInteractive);
 const isLeaf = (n) => n.text === undefined && !n.children.length && n.name;
 const showRef = (n) => !!n.ref && INTERACTIVE.has(n.role);
-// ` <url>` for a node's links not yet in `seen` (a URL shows once per line); marks them seen.
-function urlPart(n, seen) {
-  const us = (n.urls || []).filter((u) => !seen.has(u));
-  us.forEach((u) => seen.add(u));
-  return urlsText(us);
-}
-const withRef = (n, seen = new Set()) => (showRef(n) ? `${n.name}${urlPart(n, seen)} [ref=${n.ref}]` : n.name);
+// ` <url>` for a node's own links (already unique per node). A link line always
+// carries its own URL: nothing is deduped across lines, items or cells.
+const urlPart = (n) => urlsText(n.urls);
+const withRef = (n) => (showRef(n) ? `${n.name}${urlPart(n)} [ref=${n.ref}]` : n.name);
 // Leaves carrying state (checked, level, value...) never merge into a run.
 const plain = (n) => !(n.props.checked !== undefined || n.props.expanded !== undefined || n.props.selected || n.props.level || n.props.required || (n.props.value !== undefined && n.props.value !== ''));
 // Run key: leaves with the same key are "the same kind of item". `g` = the
@@ -76,12 +73,12 @@ const kindOf = (n) => (isLeaf(n) && n.role !== 'StaticText' && n.role !== 'headi
   : null;
 
 // Flat text of a cleaned node; with refs, interactive nodes get their [ref=N].
-function inline(n, refs, seen = new Set()) {
+function inline(n, refs) {
   if (n.text !== undefined) return n.text;
-  const sub = n.children.length ? n.children.map((c) => inline(c, refs, seen)).filter(Boolean).join(' ') : n.name;
+  const sub = n.children.length ? n.children.map((c) => inline(c, refs)).filter(Boolean).join(' ') : n.name;
   const v = (n.name && !n.children.length) || INTERACTIVE.has(n.role) && n.name && refs ? n.name : sub;
   const out = n.children.length && n.name && n.role !== 'StaticText' && !sub ? n.name : v;
-  return refs && n.ref && INTERACTIVE.has(n.role) ? `${out}${urlPart(n, seen)} [ref=${n.ref}]` : out;
+  return refs && n.ref && INTERACTIVE.has(n.role) ? `${out}${urlPart(n)} [ref=${n.ref}]` : out;
 }
 
 /** A data-mode result without its legend line, for size stats ('' stays ''). */
@@ -220,9 +217,8 @@ export function dataSnapshot(root, opts = {}) {
         if (lf === undefined) { out.push(...items); i = j + 1; continue; }
         if (lf && lf.consume) out.splice(out.length - lf.consume, lf.consume);   // lead-in leaves now live in the label
         const dis = items[0].props.disabled ? ' (disabled)' : '';
-        const seen = new Set();
-        const body = items.map((it) => withRef(it, seen)).join(', ');
-        out.push({ role: '_line', name: '', children: [], props: {}, lineUrls: [...seen], text: lf ? `${lf.label}${dis}: ${body}` : body });
+        const body = items.map(withRef).join(', ');
+        out.push({ role: '_line', name: '', children: [], props: {}, text: lf ? `${lf.label}${dis}: ${body}` : body });
         i = j + 1;
       } else { out.push(kids[i]); i++; }
     }
@@ -255,15 +251,14 @@ export function dataSnapshot(root, opts = {}) {
       // T2
       const cs = cellsOf(r);
       const labelCells = cs.filter((c) => c.role === 'rowheader' || c.role === 'columnheader');
-      const seen = new Set();      // a URL shows once per row
       const lcx = labelCells.map(xcell);
       const label = lcx.map((c) => inline(c, false)).filter(Boolean).join(' / ');
-      const labelUrls = urlsText([...new Set(lcx.flatMap(allUrls))].filter((u) => !seen.has(u) && seen.add(u)));
+      const labelUrls = urlsText([...new Set(lcx.flatMap(allUrls))]);
       const labelRef = lcx.map(firstRef).find(Boolean);
       const vals = [];
       cs.forEach((c, idx) => {
         if (labelCells.includes(c)) return;
-        const v = inline(xcell(c), true, seen);
+        const v = inline(xcell(c), true);
         if (v) vals.push({ h: useHdr ? useHdr[idx] : '', v });
       });
       // T4: modal-value compression for wide rows
@@ -278,7 +273,7 @@ export function dataSnapshot(root, opts = {}) {
       }
       if (!vals.length && !label) continue;      // header-only / empty rows
       const body = vals.map((x) => (x.h ? `${x.h}: ` : '') + x.v).join(' · ');
-      out.push({ role: '_line', children: [], props: {}, lineUrls: [...seen], text: `row${label ? ` "${label}"` : ''}${labelUrls}${labelRef ? ` [ref=${labelRef}]` : ''}${tail}${body ? ': ' + body : ''}` });
+      out.push({ role: '_line', children: [], props: {}, text: `row${label ? ` "${label}"` : ''}${labelUrls}${labelRef ? ` [ref=${labelRef}]` : ''}${tail}${body ? ': ' + body : ''}` });
     }
     return { ...t, children: out };
   }
@@ -292,20 +287,16 @@ export function dataSnapshot(root, opts = {}) {
   const res = xform({ role: 'root', name: '', children: tops, props: {} }, []);
 
   const lines = [];
-  // `scope`: URLs already shown in the enclosing list item (a URL shows once per
-  // item); undefined outside list items, where each line stands alone.
-  function emit(c, d, scope) {
+  function emit(c, d) {
     const ind = '  '.repeat(d);
     if (c.text !== undefined) {
-      let t = c.text;
-      for (const u of c.lineUrls || []) { if (scope?.has(u)) t = t.replace(` <${u}>`, ''); else scope?.add(u); }
-      lines.push(`${ind}- ${t}`);
+      lines.push(`${ind}- ${c.text}`);
       return;
     }
     if (isLeaf(c) && (c.role === 'StaticText' || c.role === 'generic')) { lines.push(`${ind}- ${c.name}`); return; }
     let l = `${ind}- ${c.role}`;
     if (c.name) l += ` "${c.name}"`;
-    l += urlPart(c, scope || new Set());
+    l += urlPart(c);
     const p = c.props, pp = [];
     if (p.checked !== undefined) pp.push(`checked=${p.checked}`);
     if (p.disabled) pp.push('disabled');
@@ -317,8 +308,7 @@ export function dataSnapshot(root, opts = {}) {
     if (pp.length) l += ` [${pp.join(', ')}]`;
     if (showRef(c)) l += ` [ref=${c.ref}]`;
     lines.push(l);
-    const inner = c.role === 'listitem' ? new Set() : scope;
-    for (const k of c.children) emit(k, d + 1, inner);
+    for (const k of c.children) emit(k, d + 1);
   }
   for (const c of res.children) emit(c, 0);
   return lines.length ? [LEGEND + (opts.links ? LINKS_NOTE : ''), ...lines].join('\n') : '';
