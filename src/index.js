@@ -578,6 +578,7 @@ export async function connect(opts = {}) {
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
       refMap = new Map(); // refs from the previous page are now invalid
       consentRecheck = null;
+      lastNavigation = null; // no outcome is known for the history entry we landed on
     },
 
     async goForward() {
@@ -588,6 +589,7 @@ export async function connect(opts = {}) {
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
       refMap = new Map();
       consentRecheck = null;
+      lastNavigation = null;
     },
 
     async reload(reloadOpts = {}) {
@@ -599,6 +601,7 @@ export async function connect(opts = {}) {
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
       refMap = new Map(); // refs from the pre-reload page are invalid
       consentRecheck = null;
+      lastNavigation = null; // the reload's status is not read; don't keep the old one
     },
 
     /** @param {string} url @param {CookieOptions} [cookieOpts] */
@@ -730,6 +733,7 @@ export async function connect(opts = {}) {
       const oldSessionId = page.sessionId;
       page = await attachToExistingTarget(cdp, target.targetId, pageOpts);
       refMap = new Map(); // refs from the previous tab are no longer valid
+      lastNavigation = null; // the outcome belonged to the tab we left
       setupDialogHandler(page.session);
       try { await cdp.send('Target.detachFromTarget', { sessionId: oldSessionId }); } catch {}
     },

@@ -144,7 +144,9 @@ await page.close(); // closes only the tab barebrowse opened — your browser ke
 
 `goto()` resolves to `{ url, status }` — the final URL after redirects and the
 main document's HTTP status (`0` when there is none, e.g. a `data:` URL).
-`page.lastNavigation` returns the same object (`null` before any goto). A
+`page.lastNavigation` returns the same object (`null` before any goto, and reset
+to `null` by `goBack`/`goForward`/`reload`/`switchTab` — status is reported for
+`goto()` only, so those never leave a stale warning). A
 non-2xx page still loads, and its snapshot (and `browse()` output) carries a
 `[HTTP 404 — the page may be an error page]` line. If the browser cannot
 reach a document at all (DNS failure, connection refused, TLS error) `goto()`

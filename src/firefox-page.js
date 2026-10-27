@@ -562,6 +562,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
         30000, 'reload');
       refContexts = new Map();
       consentRecheck = null;
+      lastNavigation = null; // the reload's status is not read; don't keep the old one
       await new Promise((r) => setTimeout(r, 300));
     },
 
@@ -598,6 +599,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (index < 0 || index >= tree.length) throw new Error(`Tab index ${index} out of range (0-${tree.length - 1})`);
       topContext = tree[index].context;
       refContexts = new Map(); // refs from the previous tab are invalid
+      lastNavigation = null; // the outcome belonged to the tab we left
       await bidi.send('browsingContext.activate', { context: topContext }).catch(() => {});
     },
 
@@ -715,6 +717,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       30000, 'history navigation');
     refContexts = new Map();
     consentRecheck = null;
+    lastNavigation = null; // no outcome is known for the history entry we landed on
     await new Promise((r) => setTimeout(r, 500));
   }
 

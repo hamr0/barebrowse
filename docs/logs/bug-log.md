@@ -444,3 +444,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `navigate()` checks `errorText` right after `Page.navigate`, cancels its load waiter, and throws a typed `NAV_FAILED` error (`code`, raw `reason`). `net::ERR_ABORTED` is exempt: POC on real Chromium showed it comes with `isDownload:true` for a download and with no flag for a 204; neither fires a load event, so goto returns at once instead of timing out. Firefox's `browsingContext.navigate` rejection is rewrapped into the same error (`NS_BINDING_ABORTED`, its 204/abort, is exempt the same way). Both engines now resolve `goto()` to `{ url, status }` from the main-document response (Chromium `Network.responseReceived` type Document, matched on the navigation's loaderId; Firefox the last `network.responseCompleted` for the navigation id) and add an `[HTTP n …]` line to snapshots after a non-2xx goto.
 **Cost:** one extra event listener per navigation on each engine.
 **Regression test:** `test/integration/navigation.test.js` (both engines: 200, 404, redirects, NAV_FAILED, download; `browse()`), `test/unit/navigation.test.js`; red before the fix.
+
+## [2026-10-27] Stale `[HTTP n]` warning and `lastNavigation` after back/forward/reload (N9)
+
+**Symptom:** goto(`/404`) → goto(`/ok`) → goto(`/404`) → `goBack()`: the snapshot of the healthy `/ok` page started with `[HTTP 404 …]`. A `reload()` of a 404 that now returned 200 kept the warning. Both engines.
+**Root cause:** `lastNavigation` (which the warning is built from) was written only by `goto()`; history traversal and reload changed the page without touching it.
+**Fix:** `goBack`, `goForward`, `reload` and `switchTab` reset `lastNavigation` to `null` on both engines (`src/index.js`, `src/firefox-page.js`). Status stays a `goto()`/`browse()` feature; nothing new is read for traversals.
+**Cost:** none.
+**Regression test:** `test/integration/navigation.test.js` (both engines: goBack/goForward and reload); red before the fix. `switchTab` is not covered by a test (needs a second tab).
