@@ -260,7 +260,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function setupSubscriptions() {
     await setupDialogs();
     await setupDownloads();
-    await bidi.subscribe(['browsingContext.load', 'network.responseCompleted']);
+    await bidi.subscribe(['browsingContext.load', 'network.responseCompleted', 'network.responseStarted']);
   }
 
   /**
@@ -269,13 +269,18 @@ export async function createFirefoxPage(bidi, opts = {}) {
    * context (one fires per redirect hop; the final hop is where we landed).
    * A network failure is rewrapped as a typed NAV_FAILED error. NS_BINDING_ABORTED
    * (a 204, or a download replacing nothing) is not a failure, as with CDP's
-   * ERR_ABORTED: status 0, no HTTP response for a document.
+   * ERR_ABORTED: no responseCompleted fires for it, so the status comes from
+   * the last network.responseStarted (a 204 reports 204, as on Chromium).
    * @returns {Promise<import('./navigation.js').NavigationOutcome>}
    */
   async function navigateTo(url, timeout) {
     const events = [];
+    const started = [];
     const off = bidi.on('network.responseCompleted', (e) => {
       if (e.navigation && e.context === topContext) events.push(e);
+    });
+    const offStarted = bidi.on('network.responseStarted', (e) => {
+      if (e.navigation && e.context === topContext) started.push(e);
     });
     try {
       const res = await withTimeout(
@@ -286,10 +291,14 @@ export async function createFirefoxPage(bidi, opts = {}) {
     } catch (err) {
       const m = /^BiDi error: unknown error — (?:Error: )?(.+)$/.exec(err.message);
       if (!m) throw err;
-      if (m[1] === 'NS_BINDING_ABORTED') return { url, status: 0 };
+      if (m[1] === 'NS_BINDING_ABORTED') {
+        const last = started.pop();
+        return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
+      }
       throw navFailed(url, m[1]);
     } finally {
       off();
+      offStarted();
     }
   }
 
