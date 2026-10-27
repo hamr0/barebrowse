@@ -138,6 +138,23 @@ const snap = await page.snapshot();
 await page.close(); // closes only the tab barebrowse opened — your browser keeps running
 ```
 
+### Did the navigation work?
+
+`goto()` resolves to `{ url, status }` — the final URL after redirects and the
+main document's HTTP status (`0` when there is none, e.g. a `data:` URL).
+`page.lastNavigation` returns the same object (`null` before any goto). A
+non-2xx page still loads, and its snapshot (and `browse()` output) carries a
+`[HTTP 404 — the page may be an error page]` line. If the browser cannot
+reach a document at all (DNS failure, connection refused, TLS error) `goto()`
+and `browse()` reject with an Error whose `code` is `'NAV_FAILED'` and `reason`
+the browser's raw string (`net::ERR_NAME_NOT_RESOLVED`, `NS_ERROR_UNKNOWN_HOST`).
+A download or a 204 is not a failure. Through MCP and the CLI, `goto` prints
+`ok` for 2xx and `ok (HTTP 404)` otherwise.
+
+```js
+const { url, status } = await page.goto('https://example.com/gone');
+```
+
 ### Firefox (WebDriver BiDi)
 
 CDP is deprecated in Firefox, so barebrowse drives it over the W3C WebDriver

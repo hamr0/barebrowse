@@ -436,3 +436,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `package.json` `files` allowlist omitted `commands/`; `cli.js` reads `commands/barebrowse/SKILL.md` relative to the package dir. It worked from a git checkout, so nothing local caught it.
 **Fix:** added `"commands/"` to `files` (ships `commands/barebrowse.md` and `commands/barebrowse/SKILL.md`, the only tracked files there).
 **Regression test:** `test/unit/package-files.test.js`: `npm pack --dry-run --json` must list both files (red before the fix; unit, so CI runs it).
+
+## [2026-10-27] Chromium `goto()` ignored `Page.navigate`'s `errorText`: unreachable hosts "succeeded" (N8)
+
+**Symptom:** `goto('http://nonexistent.invalid/')` on Chromium resolved normally and the snapshot was Chrome's error page; Firefox rejected with a raw `BiDi error`. A 404 was also indistinguishable from a 200 on both engines, and a download URL made Chromium wait the full 30s for a load event that never comes.
+**Root cause:** `navigate()` awaited `Page.loadEventFired` and discarded the `Page.navigate` result, whose `errorText` (`net::ERR_NAME_NOT_RESOLVED`) is the only failure signal; nothing read the main document's response either.
+**Fix:** `navigate()` checks `errorText` right after `Page.navigate`, cancels its load waiter, and throws a typed `NAV_FAILED` error (`code`, raw `reason`). `net::ERR_ABORTED` is exempt: POC on real Chromium showed it comes with `isDownload:true` for a download and with no flag for a 204; neither fires a load event, so goto returns at once instead of timing out. Firefox's `browsingContext.navigate` rejection is rewrapped into the same error (`NS_BINDING_ABORTED`, its 204/abort, is exempt the same way). Both engines now resolve `goto()` to `{ url, status }` from the main-document response (Chromium `Network.responseReceived` type Document, matched on the navigation's loaderId; Firefox the last `network.responseCompleted` for the navigation id) and add an `[HTTP n …]` line to snapshots after a non-2xx goto.
+**Cost:** one extra event listener per navigation on each engine.
+**Regression test:** `test/integration/navigation.test.js` (both engines: 200, 404, redirects, NAV_FAILED, download; `browse()`), `test/unit/navigation.test.js`; red before the fix.

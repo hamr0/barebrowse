@@ -28,6 +28,7 @@ import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
 import { readable as extractReadable } from './readable.js';
+import { navFailed, httpWarning } from './navigation.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
 import { chmodSync } from 'node:fs';
@@ -106,7 +107,7 @@ export async function browse(url, opts = {}) {
     }
 
     // Step 4: Navigate and wait for load
-    await navigate(page, url, timeout);
+    let outcome = await navigate(page, url, timeout);
 
     // Step 4.5: Auto-dismiss cookie consent dialogs
     if (opts.consent !== false) {
@@ -130,7 +131,7 @@ export async function browse(url, opts = {}) {
         if (!noAuth) {
           try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
         }
-        await navigate(page, url, timeout);
+        outcome = await navigate(page, url, timeout);
         if (opts.consent !== false) await dismissConsent(page.session);
         ({ tree } = await ariaTree(page));
       } catch {
@@ -154,7 +155,7 @@ export async function browse(url, opts = {}) {
     const hint = (actMode && raw.length > 5000 && snapshot.length < 500 && snapshot.length < raw.length * 0.05)
       ? `hint: act mode dropped most of the page — retry with pruneMode='read' for paragraphs and long text\n`
       : '';
-    snapshot = stats + '\n' + hint + snapshot;
+    snapshot = stats + '\n' + hint + httpWarning(outcome.status) + snapshot;
 
     // Step 7: Clean up
     await cdp.send('Target.closeTarget', { targetId: page.targetId });
@@ -202,6 +203,14 @@ export async function browse(url, opts = {}) {
  * @property {boolean} downloads - `page.downloads` is populated
  * @property {boolean} stealth - Headless anti-detection is currently active (live — reflects present headed/headless state, not just launch mode)
  * @property {boolean} cookieInjection - Cookie extraction/injection is active (off in incognito)
+ */
+
+/**
+ * What `goto()` resolves to: the final URL (after redirects) and the main
+ * document's HTTP status (0 when there is no HTTP response, e.g. a data: URL).
+ * Network failures reject with an Error whose `code` is 'NAV_FAILED' and
+ * `reason` the browser's raw error string.
+ * @typedef {import('./navigation.js').NavigationOutcome} NavigationOutcome
  */
 
 /**
@@ -367,6 +376,9 @@ export async function connect(opts = {}) {
   let page = await createPage(cdp, !currentlyHeaded, pageOpts);
   let refMap = new Map();
   let botBlocked = false;
+  // Outcome of the latest goto() ({url, status}); null before any goto.
+  /** @type {NavigationOutcome|null} */
+  let lastNavigation = null;
   // Set when the consent pass after the latest goto() found nothing: the first
   // snapshot() re-checks once, since some CMPs (Google Funding Choices) render
   // their dialog 1-3s after load. Holds the document identity (tab + main-frame
@@ -489,6 +501,7 @@ export async function connect(opts = {}) {
       // the map.
       refMap = new Map();
       consentRecheck = null; // a throwing navigate() must not leave the old page's flag
+      lastNavigation = null;
       // Switch back to headless if we fell back to headed previously.
       // Not in attach mode — we never own the browser there, so there's
       // nothing to rewind.
@@ -505,7 +518,7 @@ export async function connect(opts = {}) {
         currentlyHeaded = false;
       }
 
-      await navigate(page, url, timeout);
+      lastNavigation = await navigate(page, url, timeout);
       if (opts.consent !== false) {
         const dismissed = await dismissConsent(page.session);
         if (!dismissed) consentRecheck = await navKey();
@@ -529,7 +542,7 @@ export async function connect(opts = {}) {
           page = await createPage(cdp, false, pageOpts);
           setupDialogHandler(page.session);
           await suppressPermissions(cdp);
-          await navigate(page, url, timeout);
+          lastNavigation = await navigate(page, url, timeout);
           consentRecheck = null;
           if (opts.consent !== false && !(await dismissConsent(page.session))) {
             consentRecheck = await navKey();
@@ -543,6 +556,7 @@ export async function connect(opts = {}) {
           // Headed launch failed (no display?) — keep headless result, botBlocked stays true
         }
       }
+      return /** @type {import('./navigation.js').NavigationOutcome} */ (lastNavigation); // set by the navigate above
     },
 
     async goBack() {
@@ -599,7 +613,8 @@ export async function connect(opts = {}) {
       const raw = formatTree(result.tree);
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
-      const warn = botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '';
+      const warn = (botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '')
+        + httpWarning(lastNavigation?.status);
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + raw;
       const mode = pruneOpts?.mode || opts.pruneMode || 'act';
       const out = mode === 'data' ? dataSnapshot(result.tree) : formatTree(pruneTree(result.tree, { mode }));
@@ -746,6 +761,8 @@ export async function connect(opts = {}) {
     },
 
     get botBlocked() { return botBlocked; },
+    /** Outcome of the latest goto(): `{url, status}`, or null before any goto. */
+    get lastNavigation() { return lastNavigation; },
 
     /** @type {'chromium'} Engine driving this session (see also `capabilities`) */
     engine: 'chromium',
@@ -820,12 +837,13 @@ export async function connect(opts = {}) {
       return {
         async goto(url, timeout = 30000) {
           assertNavigable(url, urlGuard);
-          await navigate(tab, url, timeout);
+          const outcome = await navigate(tab, url, timeout);
           if (opts.consent !== false) {
             await dismissConsent(tab.session);
           }
           const { tree, nodeCount } = await ariaTree(tab);
           tabBotBlocked = isChallengePage(tree, nodeCount);
+          return outcome;
         },
         get botBlocked() { return tabBotBlocked; },
         /** @param {string} url @param {CookieOptions} [cookieOpts] */
@@ -1126,14 +1144,41 @@ export function _resetBlocklistWarning() {
 }
 
 /**
- * Navigate to a URL and wait for the page to load.
+ * Navigate to a URL and wait for the page to load. Resolves to the outcome of
+ * the main-document navigation (final URL after redirects, HTTP status);
+ * rejects with a NAV_FAILED error when the browser could not reach a document.
+ * @returns {Promise<NavigationOutcome>}
  */
 async function navigate(page, url, timeout = 30000) {
-  const loadPromise = page.session.once('Page.loadEventFired', timeout);
-  await page.session.send('Page.navigate', { url });
-  await loadPromise;
-  // Brief settle time for dynamic content
-  await new Promise((r) => setTimeout(r, 500));
+  const { session } = page;
+  // Main-document responses (every redirect hop fires one; the last wins).
+  const docs = [];
+  const offDoc = session.on('Network.responseReceived', (p) => { if (p.type === 'Document') docs.push(p); });
+  // Load waiter, hand-rolled (not session.once) so it can be cancelled when
+  // Page.navigate fails or aborts and no load event will ever come.
+  let cancel = () => {};
+  const loaded = /** @type {Promise<void>} */ (new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { off(); reject(new Error('Timeout waiting for CDP event: Page.loadEventFired')); }, timeout);
+    const off = session.on('Page.loadEventFired', () => { cancel(); resolve(undefined); });
+    cancel = () => { clearTimeout(timer); off(); };
+  }));
+  loaded.catch(() => {}); // rejection is only read if we await it below
+  try {
+    const nav = await session.send('Page.navigate', { url });
+    // ERR_ABORTED is not a failure: a download (isDownload) or a 204 replaces
+    // no document and fires no load event, so don't wait for one.
+    const aborted = nav.errorText === 'net::ERR_ABORTED';
+    if (nav.errorText && !aborted) throw navFailed(url, nav.errorText);
+    if (!aborted) await loaded;
+    // Brief settle time for dynamic content
+    await new Promise((r) => setTimeout(r, 500));
+    // loaderId is shared by every redirect hop of one navigation.
+    const last = docs.filter((d) => d.loaderId === nav.loaderId).pop();
+    return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
+  } finally {
+    cancel();
+    offDoc();
+  }
 }
 
 /**
