@@ -94,4 +94,19 @@ describe('sweepStaleProfiles', () => {
       assert.ok(!existsSync(gone), 'own-host dead pid removed');
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
+
+  it('treats an unsignalable (EPERM) pid as alive, for both the owner pid and a lock pid', { skip: process.getuid?.() === 0 && 'root can signal pid 1 (no EPERM)' }, () => {
+    const root = mkdtempSync(join(tmpdir(), 'bb-sweep-'));
+    try {
+      const dead = spawnSync(process.execPath, ['-e', '']).pid;
+      const owner = join(root, 'barebrowse-1-1'); // pid 1 belongs to root: kill(1, 0) -> EPERM
+      mkdirSync(owner);
+      const lockDir = join(root, `barebrowse-${dead}-1`); // dead owner, lock names pid 1
+      mkdirSync(lockDir);
+      symlinkSync(`${hostname()}-1`, join(lockDir, 'SingletonLock'));
+      sweepStaleProfiles(root);
+      assert.ok(existsSync(owner), 'EPERM owner pid kept');
+      assert.ok(existsSync(lockDir), 'EPERM lock pid kept');
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
 });
