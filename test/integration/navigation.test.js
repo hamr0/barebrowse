@@ -17,10 +17,15 @@ import { findFirefox } from '../../src/firefox.js';
 const HTML = (body) => `<!doctype html><html><body><main><h1>${body}</h1></main></body></html>`;
 
 async function serve() {
+  let flips = 0;
   const srv = createServer((q, res) => {
     if (q.url === '/missing') { res.writeHead(404, { 'Content-Type': 'text/html' }); return res.end(HTML('Not here')); }
     if (q.url === '/old') { res.writeHead(302, { Location: '/ok' }); return res.end(); }
     if (q.url === '/old404') { res.writeHead(301, { Location: '/missing' }); return res.end(); }
+    if (q.url === '/flip') { // 404 first, then 200 (a page that got fixed)
+      res.writeHead(flips++ === 0 ? 404 : 200, { 'Content-Type': 'text/html' });
+      return res.end(HTML('Flip'));
+    }
     if (q.url === '/204') { res.writeHead(204); return res.end(); }
     if (q.url === '/dl') {
       res.writeHead(200, { 'Content-Type': 'application/octet-stream', 'Content-Disposition': 'attachment; filename=a.bin' });
@@ -83,6 +88,37 @@ for (const engine of ['chromium', 'firefox']) {
         await page.goto(srvr.url + '/missing');
         await page.goto(srvr.url + '/ok');
         assert.ok(!(await page.snapshot()).includes('[HTTP'));
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('back/forward do not leave a stale outcome or HTTP warning (N9)', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/missing');
+        await page.goto(srvr.url + '/ok');
+        await page.goto(srvr.url + '/missing');
+        await page.goBack(); // lands on the healthy /ok page
+        assert.equal(page.lastNavigation, null, 'goBack clears the outcome');
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('Fine') && !snap.includes('[HTTP'), 'no stale warning after goBack:\n' + snap.slice(0, 300));
+        await page.goForward(); // the 404 page again: no status is reported, so no warning either
+        assert.equal(page.lastNavigation, null, 'goForward clears the outcome');
+        await page.goto(srvr.url + '/missing');
+        assert.equal(page.lastNavigation.status, 404);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('reload of a page that stopped failing drops the old HTTP warning (N9)', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        assert.equal((await page.goto(srvr.url + '/flip')).status, 404);
+        assert.ok((await page.snapshot()).includes(WARN404));
+        await page.reload(); // server now answers 200
+        assert.equal(page.lastNavigation, null);
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('Flip') && !snap.includes('[HTTP'), 'no stale warning after reload:\n' + snap.slice(0, 300));
       } finally { await page.close(); await srvr.close(); }
     });
 
