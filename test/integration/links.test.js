@@ -34,10 +34,20 @@ const PAGE = `<!doctype html><html><body><main>
 <div><a href="/search?q=a b<c>d#x y<z>">Odd chars</a></div>
 </main></body></html>`;
 
+// A link line always carries its own URL, even when a neighbour shares it (N10).
+const CARDS = `<!doctype html><html><body><main>
+<h1>Cards</h1>
+<ul>
+  <li><a href="/p1"><img alt="pic" src="data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw=="></a> <a href="/p1">Title one</a> <a href="/p2">Title two</a></li>
+  <li><a href="/p5">Other one</a> <a href="/p6">Other two</a></li>
+</ul>
+<section><a href="/p3">three</a> <a href="/p3">three again</a> <a href="/p4">four</a></section>
+</main></body></html>`;
+
 async function serve() {
   const srv = createServer((q, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(PAGE);
+    res.end(q.url === '/cards' ? CARDS : PAGE);
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
@@ -99,16 +109,39 @@ for (const engine of ['chromium', 'firefox']) {
       });
     }
 
-    it('on, data: table cell, collapsed group, duplicate-once, legend note', async () => {
+    it('on, data: table cell, collapsed group, legend note', async () => {
       const raw = await page.snapshot({ mode: 'data', links: true });
       const out = body(raw);
       const base = srvr.url;
       assert.ok(raw.split('\n').slice(2)[0].endsWith(' Links: "name" <url>.'), 'legend note when on');
       assert.match(out, new RegExp(`Repo: alpha <${base}/repos/alpha> \\[ref=\\d+\\] · Owner: ann|row .*alpha <${base}/repos/alpha> \\[ref=\\d+\\]`), 'table link cell:\n' + out);
       assert.match(out, new RegExp(`bug <${base}/labels/bug> \\[ref=\\d+\\], docs <${base}/labels/docs> \\[ref=\\d+\\], ui <${base}/labels/ui> \\[ref=\\d+\\]`), 'group items:\n' + out);
-      // "3 comments" repeats /issues/42 right after the title link: the URL shows once there.
-      const item42 = out.split('\n').filter((l) => l.includes('/issues/42>'));
-      assert.equal(item42.length, 1, 'duplicate url listed once:\n' + out);
+    });
+
+    // Replaces the old "duplicate url listed once" assertion: "3 comments" repeats
+    // the title link's /issues/42, and both link lines now carry it.
+    it('on, data: a link sharing a URL with a neighbour still carries its own URL (N10)', async () => {
+      const out = await snap('data', true);
+      const base = srvr.url;
+      const lines42 = out.split('\n').filter((l) => l.includes('/issues/42>'));
+      assert.ok(lines42.length >= 2, 'both /issues/42 links show it:\n' + out);
+      await page.goto(srvr.url + '/cards');
+      try {
+        const cards = await snap('data', true);
+        for (const line of cards.split('\n').filter((l) => /- link "/.test(l))) {
+          assert.match(line, / <https?:\/\/[^<>\s]+> \[ref=\d+\]$/, `link line lacks its URL: ${line}`);
+        }
+        // every ref in the page (links, group items, row cells) is preceded by a URL
+        const refs = [...cards.matchAll(/\[ref=\d+\]/g)];
+        assert.ok(refs.length >= 7, 'refs found:\n' + cards);
+        for (const m of refs) {
+          const before = cards.slice(0, m.index).trimEnd();
+          assert.ok(before.endsWith('>') || /\[level=\d\]$/.test(before), `ref without url near: ${cards.slice(Math.max(0, m.index - 60), m.index + 12)}`);
+        }
+        // the image link ("pic") only exists in Chromium's AX tree; "Title one" must carry /p1 either way
+        assert.ok(cards.split('\n').some((l) => l.includes('"Title one" <' + base + '/p1>')), 'Title one carries p1:\n' + cards);
+        assert.ok((cards.match(new RegExp(`<${base}/p3>`, 'g')) || []).length === 2, 'p3 on both group items:\n' + cards);
+      } finally { await page.goto(srvr.url + '/'); }
     });
 
     it('odd href: spaces and angle brackets never reach the output raw', async () => {
