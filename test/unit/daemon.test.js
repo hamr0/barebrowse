@@ -16,6 +16,12 @@ import { buildDaemonArgs, attachBiDiCapture, deserializeBiDi } from '../../src/d
 const CLI = '/x/cli.js';
 
 describe('buildDaemonArgs', () => {
+  it('forwards --allow-hosts as one comma list, and nothing when unset (a dropped forward would silently drop the site lock)', () => {
+    const args = buildDaemonArgs({ allowHosts: ['a.com', '*.b.org'] }, '/out', undefined, CLI);
+    assert.equal(args[args.indexOf('--allow-hosts') + 1], 'a.com,*.b.org');
+    assert.ok(!buildDaemonArgs({}, '/out', undefined, CLI).includes('--allow-hosts'));
+  });
+
   it('forwards --incognito when opts.incognito is set', () => {
     const args = buildDaemonArgs({ incognito: true }, '/out', undefined, CLI);
     assert.ok(args.includes('--incognito'), 'incognito must reach the daemon child');

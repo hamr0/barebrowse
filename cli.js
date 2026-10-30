@@ -9,6 +9,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync, copyFileSync } from
 import { join, resolve } from 'node:path';
 import { homedir, platform } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { parseAllowHosts } from './src/site-lock.js';
 
 const args = process.argv.slice(2);
 const cmd = args[0];
@@ -127,6 +128,7 @@ async function cmdOpen() {
     blockUrls: parseFlagAll('--block-urls'),
     blockPrivateNetwork: hasFlag('--block-private-network') || undefined,
     uploadDir: parseFlag('--upload-dir') ? resolve(parseFlag('--upload-dir')) : undefined,
+    allowHosts: parseAllowHostsFlag(),
   };
 
   try {
@@ -205,7 +207,7 @@ async function oneShot() {
   const url = args[1];
   const mode = args[2] && !args[2].startsWith('--') ? args[2] : 'headless';
   try {
-    const snapshot = await browse(url, { mode, incognito: hasFlag('--incognito') || undefined, links: hasFlag('--links') || undefined });
+    const snapshot = await browse(url, { mode, incognito: hasFlag('--incognito') || undefined, links: hasFlag('--links') || undefined, allowHosts: parseAllowHostsFlag() });
     process.stdout.write(snapshot + '\n');
     process.exit(0);
   } catch (err) {
@@ -234,6 +236,7 @@ async function runDaemonInternal() {
     blockUrls: parseFlagAll('--block-urls'),
     blockPrivateNetwork: hasFlag('--block-private-network') || undefined,
     uploadDir: parseFlag('--upload-dir'),
+    allowHosts: parseAllowHostsFlag(),
   };
   const outputDir = parseFlag('--output-dir') || resolve('.barebrowse');
   const url = parseFlag('--url');
@@ -250,6 +253,18 @@ function parseFlag(name) {
     if (args[i] === name && args[i + 1] && !args[i + 1].startsWith('--')) return args[i + 1];
   }
   return undefined;
+}
+
+// --allow-hosts=a.com,*.b.org → validated array (site lock), or undefined when
+// absent. A bad entry exits here, before any browser or daemon is started.
+function parseAllowHostsFlag() {
+  const raw = parseFlag('--allow-hosts');
+  if (raw === undefined) return undefined;
+  try { return parseAllowHosts(raw.split(',')); }
+  catch (err) {
+    process.stderr.write(`Error: --allow-hosts: ${err.message}\n`);
+    process.exit(1);
+  }
 }
 
 function hasFlag(name) {
@@ -579,6 +594,9 @@ Session:
                                     cloud-metadata hosts. Off by default so localhost browsing works.
     --upload-dir=DIR                Sandbox uploads: reject files outside DIR (symlinks resolved).
                                     Default: no restriction. (file:/chrome: schemes are always blocked.)
+    --allow-hosts=a.com,*.b.org     Site lock: top-level navigation (goto, redirects, links, popups) only to these
+                                    hosts; others fail with NAV_BLOCKED. *.host = subdomains only. Subresources and
+                                    iframes are not locked. Also accepted by browse. Not allowed with --port.
 
 Navigation:
   barebrowse goto <url>             Navigate to URL
@@ -620,7 +638,7 @@ Debugging:
   barebrowse switch-engine <chromium|firefox>  Swap the browser in place (page, tabs, refs are lost)
 
 One-shot:
-  barebrowse browse <url> [mode] [--links]  Browse + print snapshot to stdout
+  barebrowse browse <url> [mode] [--links] [--allow-hosts=...]  Browse + print snapshot to stdout
 
 MCP:
   barebrowse mcp                    Start MCP server (JSON-RPC over stdio)
