@@ -97,3 +97,47 @@ export function createSiteLock(list) {
     },
   };
 }
+
+/** @typedef {ReturnType<typeof createSiteLock>} SiteLock */
+
+/**
+ * Chromium: lock every page target of this browser. A BROWSER-level
+ * Fetch.enable (root client, no sessionId) pauses document requests of every
+ * target, popups included, so one handler covers tabs we create later and
+ * windows the page opens itself. A request is top-level when its frameId is a
+ * page target id (OOPIF iframes are 'iframe' targets, subframes share their
+ * parent's id space). 'Aborted' (not BlockedByClient) fails the request but
+ * keeps the old page instead of swapping in a chrome-error:// page.
+ * Call once per CDP connection, before the first navigation.
+ * @param {object} cdp - root CDP client
+ * @param {SiteLock} lock
+ */
+export async function applySiteLockCDP(cdp, lock) {
+  const pageTargets = new Set();
+  const subframes = new Set(); // ids a refresh proved are not page targets
+  cdp.on('Target.targetCreated', ({ targetInfo }) => {
+    if (targetInfo.type === 'page') pageTargets.add(targetInfo.targetId);
+  });
+  cdp.on('Target.targetDestroyed', ({ targetId }) => pageTargets.delete(targetId));
+  await cdp.send('Target.setDiscoverTargets', { discover: true });
+
+  cdp.on('Fetch.requestPaused', async (p, sessionId) => {
+    // A popup's create event can lag its first request: ask the browser
+    // before treating an unknown frame as a subframe (and if that fails,
+    // fail closed: treat it as top-level).
+    if (!pageTargets.has(p.frameId) && !subframes.has(p.frameId)) {
+      try {
+        const { targetInfos } = await cdp.send('Target.getTargets');
+        for (const t of targetInfos) if (t.type === 'page') pageTargets.add(t.targetId);
+        if (!pageTargets.has(p.frameId)) subframes.add(p.frameId);
+      } catch { pageTargets.add(p.frameId); }
+    }
+    const ok = !pageTargets.has(p.frameId) || lock.allowed(p.request.url);
+    if (!ok) lock.record(p.request.url, p.frameId);
+    try {
+      if (ok) await cdp.send('Fetch.continueRequest', { requestId: p.requestId }, sessionId);
+      else await cdp.send('Fetch.failRequest', { requestId: p.requestId, errorReason: 'Aborted' }, sessionId);
+    } catch { /* target closed between the pause and our reply */ }
+  });
+  await cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] });
+}
