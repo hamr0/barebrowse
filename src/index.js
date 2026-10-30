@@ -29,7 +29,8 @@ import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
 import { readable as extractReadable } from './readable.js';
-import { navFailed, httpWarning } from './navigation.js';
+import { navFailed, navBlocked, httpWarning } from './navigation.js';
+import { createSiteLock, applySiteLockCDP } from './site-lock.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
 import { chmodSync } from 'node:fs';
@@ -63,6 +64,9 @@ import { chmodSync } from 'node:fs';
  * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs.
  * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Pruning mode.
  * @param {boolean} [opts.links=false] - Show link URLs: `link "name" <url> [ref=N]`.
+ * @param {string[]} [opts.allowHosts] - Site lock: top-level navigations (the URL, its
+ *   redirects) to hosts outside this list reject with NAV_BLOCKED. Entries are `host`
+ *   or `*.host` (strict subdomains). Subresources and iframes are not locked.
  * @returns {Promise<string>} ARIA snapshot text
  */
 export async function browse(url, opts = {}) {
@@ -74,6 +78,8 @@ export async function browse(url, opts = {}) {
   // Reject local-resource schemes (and optionally private hosts) before we
   // spend a browser launch on a URL we won't navigate to.
   assertNavigable(url, { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork });
+  const lock = opts.allowHosts ? createSiteLock(opts.allowHosts) : null;
+  lock?.assertAllowed(url);
 
   let browser = null;
   let cdp = null;
@@ -91,6 +97,7 @@ export async function browse(url, opts = {}) {
       browser = await launch(launchOpts);
       cdp = await createCDP(browser.wsUrl);
     }
+    if (lock) await applySiteLockCDP(cdp, lock);
 
     // Step 2: Create a new page target and attach
     const pageOpts = { viewport: opts.viewport, blockAds: opts.blockAds, blockUrls: opts.blockUrls };
@@ -109,7 +116,7 @@ export async function browse(url, opts = {}) {
     }
 
     // Step 4: Navigate and wait for load
-    let outcome = await navigate(page, url, timeout);
+    let outcome = await navigate(page, url, timeout, lock);
 
     // Step 4.5: Auto-dismiss cookie consent dialogs
     if (opts.consent !== false) {
@@ -128,12 +135,13 @@ export async function browse(url, opts = {}) {
       try {
         browser = await launch({ ...launchOpts, headed: true });
         cdp = await createCDP(browser.wsUrl);
+        if (lock) await applySiteLockCDP(cdp, lock);
         page = await createPage(cdp, false, pageOpts);
         await suppressPermissions(cdp);
         if (!noAuth) {
           try { await authenticate(page.session, url, { browser: opts.browser }); } catch {}
         }
-        outcome = await navigate(page, url, timeout);
+        outcome = await navigate(page, url, timeout, lock);
         if (opts.consent !== false) await dismissConsent(page.session);
         ({ tree } = await ariaTree(page));
       } catch {
@@ -281,6 +289,11 @@ export async function browse(url, opts = {}) {
  *   ever enters the session even if a caller injects unconditionally.
  * @param {'act'|'browse'|'navigate'|'full'|'read'|'data'} [opts.pruneMode='act'] - Pruning mode.
  * @param {boolean} [opts.links=false] - Default for `snapshot({ links })`: show link URLs.
+ * @param {string[]} [opts.allowHosts] - Site lock: top-level navigations (goto, redirects,
+ *   clicked links, JS jumps, popups) to hosts outside this list are refused and the page
+ *   stays put. Entries are `host` or `*.host` (strict subdomains). goto() rejects with
+ *   NAV_BLOCKED; in-page blocks add a `[blocked navigation to <host>]` line to the next
+ *   snapshot. Subresources, iframes and WebSocket are not locked. Not allowed with `port`.
  * @param {'chromium'|'firefox'} [opts.engine='chromium'] - Browser engine.
  *   'firefox' drives over WebDriver BiDi (a separate transport / page object);
  *   'chromium' (default) uses CDP.
@@ -339,6 +352,12 @@ export async function connect(opts = {}) {
 
   const mode = opts.mode || 'headless';
   const attachMode = !!opts.port;
+  // Validate before launching anything. Attach mode is refused: the lock is a
+  // browser-level intercept that would reach the user's own tabs.
+  if (opts.allowHosts && attachMode) {
+    throw new Error('allowHosts is not supported in attach mode (port): the site lock is browser-wide and would affect your own tabs');
+  }
+  const lock = opts.allowHosts ? createSiteLock(opts.allowHosts) : null;
   // Incognito: run a clean, unauthenticated session. Skips storageState loading
   // and neuters injectCookies() so no auth ever enters the session — even when
   // a caller (MCP goto, daemon) calls injectCookies() unconditionally. The
@@ -370,6 +389,7 @@ export async function connect(opts = {}) {
     browser = await launch(launchOpts);
     cdp = await createCDP(browser.wsUrl);
   }
+  if (lock) await applySiteLockCDP(cdp, lock);
 
   // In attach mode we don't know (and shouldn't assume) the user's headed/
   // headless state — treat it as headed so stealth patches are skipped
@@ -506,6 +526,7 @@ export async function connect(opts = {}) {
   return {
     async goto(url, timeout = 30000) {
       assertNavigable(url, urlGuard);
+      lock?.assertAllowed(url);
       // Refs from the previous page are about to become invalid — clear
       // before navigating so a stale click(ref) errors clearly instead of
       // silently resolving to whatever backendNodeId happens to still be in
@@ -523,13 +544,14 @@ export async function connect(opts = {}) {
 
         browser = await launch(launchOpts);
         cdp = await createCDP(browser.wsUrl);
+        if (lock) await applySiteLockCDP(cdp, lock);
         page = await createPage(cdp, true, pageOpts);
         setupDialogHandler(page.session);
         await suppressPermissions(cdp);
         currentlyHeaded = false;
       }
 
-      lastNavigation = await navigate(page, url, timeout);
+      lastNavigation = await navigate(page, url, timeout, lock);
       if (opts.consent !== false) {
         const dismissed = await dismissConsent(page.session);
         if (!dismissed) consentRecheck = await navKey();
@@ -550,10 +572,11 @@ export async function connect(opts = {}) {
         try {
           browser = await launch({ ...launchOpts, headed: true });
           cdp = await createCDP(browser.wsUrl);
+          if (lock) await applySiteLockCDP(cdp, lock);
           page = await createPage(cdp, false, pageOpts);
           setupDialogHandler(page.session);
           await suppressPermissions(cdp);
-          lastNavigation = await navigate(page, url, timeout);
+          lastNavigation = await navigate(page, url, timeout, lock);
           consentRecheck = null;
           if (opts.consent !== false && !(await dismissConsent(page.session))) {
             consentRecheck = await navKey();
@@ -628,7 +651,7 @@ export async function connect(opts = {}) {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
       const warn = (botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '')
-        + httpWarning(lastNavigation?.status);
+        + httpWarning(lastNavigation?.status) + (lock?.takeNotes() ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(result.tree, pageUrl) : result.tree;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
@@ -854,7 +877,8 @@ export async function connect(opts = {}) {
       return {
         async goto(url, timeout = 30000) {
           assertNavigable(url, urlGuard);
-          const outcome = await navigate(tab, url, timeout);
+          lock?.assertAllowed(url);
+          const outcome = await navigate(tab, url, timeout, lock);
           if (opts.consent !== false) {
             await dismissConsent(tab.session);
           }
@@ -1164,10 +1188,15 @@ export function _resetBlocklistWarning() {
 /**
  * Navigate to a URL and wait for the page to load. Resolves to the outcome of
  * the main-document navigation (final URL after redirects, HTTP status);
- * rejects with a NAV_FAILED error when the browser could not reach a document.
+ * rejects with a NAV_FAILED error when the browser could not reach a document,
+ * or NAV_BLOCKED when the site lock refused the URL or a redirect hop.
+ * @param {*} page
+ * @param {string} url
+ * @param {number} [timeout]
+ * @param {import('./site-lock.js').SiteLock|null} [lock]
  * @returns {Promise<NavigationOutcome>}
  */
-async function navigate(page, url, timeout = 30000) {
+async function navigate(page, url, timeout = 30000, lock = null) {
   const { session } = page;
   // Main-document responses (every redirect hop fires one; the last wins).
   const docs = [];
@@ -1182,7 +1211,12 @@ async function navigate(page, url, timeout = 30000) {
   }));
   loaded.catch(() => {}); // rejection is only read if we await it below
   try {
+    lock?.startGoto();
     const nav = await session.send('Page.navigate', { url });
+    // A lock-refused document (the URL or a redirect hop) also surfaces as
+    // ERR_ABORTED, so this must come before the aborted branch below.
+    const blocked = lock?.takeGotoBlock(page.targetId);
+    if (blocked) throw navBlocked(blocked.url, blocked.host);
     // ERR_ABORTED is not a failure: a download (isDownload) or a 204 replaces
     // no document and fires no load event, so don't wait for one.
     const aborted = nav.errorText === 'net::ERR_ABORTED';
