@@ -24,6 +24,18 @@ export function navFailed(url, reason) {
 }
 
 /**
+ * Typed error for a top-level navigation the site lock (`allowHosts`) refused:
+ * the target, or a redirect hop of it, is off the allowed list. `code` is
+ * 'NAV_BLOCKED'; `host` is the refused hostname. The page stays where it was.
+ * @param {string} url - The refused URL (the redirect target, if it was a hop).
+ * @param {string} host
+ * @returns {Error & {code: 'NAV_BLOCKED', host: string}}
+ */
+export function navBlocked(url, host) {
+  return Object.assign(new Error(`Navigation to ${url} blocked: ${host} is not in allowHosts`), { code: /** @type {const} */ ('NAV_BLOCKED'), host });
+}
+
+/**
  * True for a final HTTP status that is not 2xx (0 = unknown is not an error).
  * @param {number|undefined} status
  */
