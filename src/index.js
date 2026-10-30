@@ -964,10 +964,11 @@ async function suppressPermissions(cdp) {
  * v0.16.0. Still Firefox-limited: `reload({ignoreCache})` (upstream BiDi gap).
  * The navigation guard (`allowLocalUrls`/`blockPrivateNetwork`), `uploadDir`
  * sandbox, `incognito`, `proxy`, `viewport`, and `pruneMode` all apply.
- * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito, downloadPath, blockAds, blockUrls })
+ * @param {object} opts - connect() options ({ mode, proxy, binary, viewport, pruneMode, urlGuard, uploadDir, incognito, downloadPath, blockAds, blockUrls, allowHosts })
  */
 async function connectFirefox(opts) {
   const hybrid = opts.mode === 'hybrid';
+  const lock = opts.allowHosts ? createSiteLock(opts.allowHosts) : null; // validates before any launch
   const blockOpts = {
     blockAds: opts.blockAds !== undefined ? opts.blockAds : true,
     blockUrls: opts.blockUrls,
@@ -996,7 +997,7 @@ async function connectFirefox(opts) {
     });
     const bidi = await createBiDi(browser.wsUrl);
     if (!headed) await applyFirefoxStealth(bidi);
-    await applyFirefoxBlocklist(bidi, blockOpts);
+    await applyFirefoxBlocklist(bidi, blockOpts, lock);
     const { contexts } = await bidi.send('browsingContext.getTree', {});
     return { browser, bidi, topContext: contexts[0].context };
   }
@@ -1021,6 +1022,7 @@ async function connectFirefox(opts) {
     links: opts.links,
     urlGuard: { allowLocalUrls: opts.allowLocalUrls, blockPrivateNetwork: opts.blockPrivateNetwork },
     uploadDir: opts.uploadDir || null,
+    siteLock: lock,
     incognito: !!opts.incognito,
     consent: opts.consent,
     hybrid,

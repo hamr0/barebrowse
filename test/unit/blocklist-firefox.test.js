@@ -13,6 +13,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { makeBlockMatcher, resolveBlocklistPatterns, DEFAULT_BLOCKLIST } from '../../src/blocklist.js';
 import { applyFirefoxBlocklist } from '../../src/blocklist-firefox.js';
+import { createSiteLock } from '../../src/site-lock.js';
 
 describe('makeBlockMatcher — CDP glob → URL predicate', () => {
   it('matches subdomain wildcards like the CDP list', () => {
@@ -178,5 +179,55 @@ describe('applyFirefoxBlocklist — intercept + per-request decision', () => {
     await tick();
     assert.equal(bidi.sent.find((c) => c.params?.request === 'ga')?.method, 'network.continueRequest');
     assert.equal(bidi.sent.find((c) => c.params?.request === 'c1')?.method, 'network.failRequest');
+  });
+});
+
+describe('applyFirefoxBlocklist + site lock — one decision per request', () => {
+  const tree = [{ context: 'top1', children: [{ context: 'frame1', children: [] }] }];
+  const lockedBidi = () => {
+    const bidi = fakeBiDi();
+    const send = bidi.send.bind(bidi);
+    bidi.send = async (method, params) => {
+      const r = await send(method, params);
+      return method === 'browsingContext.getTree' ? { contexts: tree } : r;
+    };
+    return bidi;
+  };
+  const ev = (id, url, context, navigation) => ({ isBlocked: true, context, navigation, request: { request: id, url } });
+
+  it('installs the intercept for the lock alone (no blocklist patterns)', async () => {
+    const bidi = lockedBidi();
+    await applyFirefoxBlocklist(bidi, { blockAds: false }, createSiteLock(['a.test']));
+    assert.ok(bidi.sent.some((c) => c.method === 'network.addIntercept'));
+  });
+
+  it('fails an off-site top-level load, continues on-site, subresources and iframe loads; exactly one reply each', async () => {
+    const bidi = lockedBidi();
+    const lock = createSiteLock(['a.test']);
+    await applyFirefoxBlocklist(bidi, { blockAds: true }, lock);
+    bidi.emit('network.beforeRequestSent', ev('off', 'https://b.test/', 'top1', 'n1'));
+    bidi.emit('network.beforeRequestSent', ev('on', 'https://a.test/', 'top1', 'n2'));
+    bidi.emit('network.beforeRequestSent', ev('img', 'https://b.test/i.png', 'top1', null));
+    bidi.emit('network.beforeRequestSent', ev('frame', 'https://b.test/f', 'frame1', 'n3'));
+    bidi.emit('network.beforeRequestSent', ev('ad', 'https://www.google-analytics.com/collect', 'top1', null));
+    await tick(); await tick();
+    const replies = bidi.sent.filter((c) => /^network\.(fail|continue)Request$/.test(c.method));
+    const by = (id) => replies.filter((c) => c.params.request === id).map((c) => c.method);
+    assert.deepEqual(by('off'), ['network.failRequest']);
+    assert.deepEqual(by('on'), ['network.continueRequest']);
+    assert.deepEqual(by('img'), ['network.continueRequest']);
+    assert.deepEqual(by('frame'), ['network.continueRequest']);
+    assert.deepEqual(by('ad'), ['network.failRequest']);
+    assert.deepEqual(lock.takeGotoBlock('top1'), { url: 'https://b.test/', host: 'b.test' });
+  });
+
+  it('an unknown context is refreshed from getTree; one still unknown is treated as top-level', async () => {
+    const bidi = lockedBidi();
+    await applyFirefoxBlocklist(bidi, { blockAds: false }, createSiteLock(['a.test']));
+    const before = bidi.sent.filter((c) => c.method === 'browsingContext.getTree').length;
+    bidi.emit('network.beforeRequestSent', ev('popup', 'https://b.test/', 'ghost', 'n9'));
+    await tick(); await tick();
+    assert.ok(bidi.sent.filter((c) => c.method === 'browsingContext.getTree').length > before, 'refreshed');
+    assert.deepEqual(bidi.sent.filter((c) => c.params?.request === 'popup').map((c) => c.method), ['network.failRequest']);
   });
 });

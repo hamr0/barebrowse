@@ -13,9 +13,15 @@
  * request pauses for one continue/fail round-trip to Node. On a typical page
  * (tens–low-hundreds of requests over a local socket) that's negligible, and
  * it's the only route that preserves glob parity without a second list.
+ *
+ * The site lock (`allowHosts`, site-lock.js) plugs into this same handler: a
+ * second catch-all handler would race this one on the same paused request, so
+ * there is exactly one continue/fail decision per request, and the intercept
+ * exists whenever either the blocklist or the lock is active.
  */
 
 import { resolveBlocklistPatterns, makeBlockMatcher } from './blocklist.js';
+import { createFirefoxLockCheck } from './site-lock.js';
 
 /**
  * Install ad/tracker blocking on a BiDi session. Idempotent per session is the
@@ -26,13 +32,15 @@ import { resolveBlocklistPatterns, makeBlockMatcher } from './blocklist.js';
  * @param {boolean} [pageOpts.blockAds] - false disables the default list.
  * @param {string[]} [pageOpts.blockUrls] - extra CDP-format globs; extend the
  *   default unless blockAds is false, in which case they're the whole list.
+ * @param {import('./site-lock.js').SiteLock|null} [lock] - Site lock to enforce in the same handler.
  * @returns {Promise<void>}
  */
-export async function applyFirefoxBlocklist(bidi, pageOpts = {}) {
+export async function applyFirefoxBlocklist(bidi, pageOpts = {}, lock = null) {
   const patterns = resolveBlocklistPatterns(pageOpts);
-  if (!patterns.length) return;
+  if (!patterns.length && !lock) return;
 
-  const isBlocked = makeBlockMatcher(patterns);
+  const isBlocked = patterns.length ? makeBlockMatcher(patterns) : () => false;
+  const lockBlocks = lock ? await createFirefoxLockCheck(bidi, lock) : null;
 
   await bidi.send('network.addIntercept', {
     phases: ['beforeRequestSent'],
@@ -47,7 +55,7 @@ export async function applyFirefoxBlocklist(bidi, pageOpts = {}) {
     const id = e.request?.request;
     if (!id) return;
     try {
-      if (isBlocked(e.request.url)) {
+      if (isBlocked(e.request.url) || (lockBlocks && await lockBlocks(e))) {
         await bidi.send('network.failRequest', { request: id });
       } else {
         await bidi.send('network.continueRequest', { request: id });

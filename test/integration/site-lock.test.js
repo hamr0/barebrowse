@@ -144,16 +144,14 @@ for (const engine of ['chromium', 'firefox']) {
       } finally { await page.close(); await s.close(); }
     });
 
-    it('browse(): off-site URL and off-site redirect reject with NAV_BLOCKED', async () => {
+    it('browse(): off-site URL and off-site redirect reject with NAV_BLOCKED', { skip: engine !== 'chromium' && 'browse() is Chromium-only' }, async () => {
       const s = await serve();
       try {
-        const opts = { engine, allowLocalUrls: true, incognito: true, allowHosts: ['localhost'] };
-        if (engine === 'chromium') {
-          await assert.rejects(browse(s.off + '/target?b1', opts), { code: 'NAV_BLOCKED' });
-          await assert.rejects(browse(s.url + '/redir', opts), { code: 'NAV_BLOCKED' });
-          assert.equal(s.offDocHits().length, 0);
-          assert.match(await browse(s.url + '/ok', opts), /Fine/);
-        }
+        const opts = { allowLocalUrls: true, incognito: true, allowHosts: ['localhost'] };
+        await assert.rejects(browse(s.off + '/target?b1', opts), { code: 'NAV_BLOCKED' });
+        await assert.rejects(browse(s.url + '/redir', opts), { code: 'NAV_BLOCKED' });
+        assert.equal(s.offDocHits().length, 0);
+        assert.match(await browse(s.url + '/ok', opts), /Fine/);
       } finally { await s.close(); }
     });
   });
