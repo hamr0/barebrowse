@@ -211,7 +211,17 @@ barebrowse hands an autonomous — and therefore prompt-injectable — agent an 
 - **CLI daemon authenticated** with a per-session token (loopback alone isn't an authorization boundary); snapshots and saved state are written owner-only (`0600`).
 - **Opt-in hardening** for stricter deployments: `blockPrivateNetwork` (SSRF guard for loopback/RFC-1918/cloud-metadata) and `uploadDir` (confine `upload()` to one directory). Both available on the library, MCP, bareagent, and CLI (`--block-private-network`, `--upload-dir`).
 
+- **Site lock** (`allowHosts`): confine top-level navigation to a list of hosts. See below.
+
 See `barebrowse.context.md` and the PRD's "Security Model & Safe Defaults" for the full rationale.
+
+### Site lock and MCP access tiers
+
+`allowHosts: ['example.com', '*.docs.example.org']` on `connect()` and `browse()` (CLI `--allow-hosts=a.com,*.b.org` on `open` and `browse`; MCP `BAREBROWSE_ALLOW=a.com,*.b.org`) locks the top frame to those hosts, on both engines. An entry is `host` (exactly that host) or `*.host` (its subdomains, not `host` itself); a scheme, port or path in an entry is an error. A `goto()` to another host, or one that redirects there, rejects with `err.code === 'NAV_BLOCKED'` (`err.host`) and the page stays where it was. A clicked link, a JS jump or a `window.open` popup to another host never loads; the next `snapshot()` carries `[blocked navigation to <host>]`. New tabs are locked too. `connect({ port, allowHosts })` (attach mode) throws: the lock is browser-wide and would reach your own tabs.
+
+Not locked, by design: subresources (images, scripts, CSS, XHR/fetch), iframes and WebSocket. The lock stops an agent being steered to another site, not a page from loading its own assets. The MCP `eval` tool (tier `rwx`) can still `fetch()` anywhere.
+
+MCP only: `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier. `r` reads (`browse`, `goto`, `back`, `forward`, `reload`, `scroll`, `snapshot`, `readable`, `screenshot`, `pdf`, `wait_for`, `tabs`, `capabilities`, `assess`); `rw` adds `click`, `type`, `press`, `select`, `drag`, `hover`, `switch_engine`; `rwx` adds `upload` and `eval`. A hidden tool answers `Unknown tool`. Every tool also carries MCP `annotations` (`readOnlyHint`, `destructiveHint`, `openWorldHint`, `idempotentHint`). An invalid `BAREBROWSE_TIER` or `BAREBROWSE_ALLOW` stops the server at start; it never falls back to `rwx` or to no lock. `capabilities` and the server instructions report the tier and the allowed hosts.
 
 ## What the agent sees
 

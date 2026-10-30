@@ -171,6 +171,8 @@ After connection, every CDP command is the same. Three modes = ~20 extra lines i
 
 Cookie injection is scoped by a precise RFC-6265 domain match (not a substring `LIKE`), so browsing one site can't pull look-alike or unrelated-eTLD cookies into the session. Both engines share one `scopedCookiesForUrl` (CDP `authenticate` and Firefox/BiDi `injectCookies`) so they cannot drift — the Firefox path scopes to the target host exactly like CDP rather than loading the whole jar. Every safety control is expressed identically across the library, MCP, bareagent, and CLI surfaces — no entry point is a less-securable path.
 
+**Site lock (`allowHosts`, v0.27.0).** Top-frame only, both engines: Chromium uses a browser-level `Fetch.enable` on Document requests (covers popups and new tabs; blocked requests fail with `Aborted` so the old page stays), Firefox a catch-all BiDi intercept inside the single ad-block decision handler (two handlers on one paused request would race). Known limits, accepted: subresources (img/script/css/XHR/fetch), iframes and WebSocket are not locked; MCP `eval` can still `fetch()` off-site; the match is on the URL hostname, so it does not follow a DNS name to its IP; attach mode is refused. A goto blocked by the lock rejects `NAV_BLOCKED` (checked before Chromium's `ERR_ABORTED` is treated as a download/204); an in-page block shows as a `[blocked navigation to <host>]` line on the next snapshot. MCP adds `BAREBROWSE_TIER` (r/rw/rwx) and tool annotations; invalid config refuses to start.
+
 **Known limitation:** the private-network guard matches the URL hostname; a public DNS name that resolves to a private IP (DNS rebinding) is not caught — that needs connection-time IP inspection.
 
 ### Pruning (Absorbed from mcprune)
