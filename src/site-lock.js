@@ -141,3 +141,40 @@ export async function applySiteLockCDP(cdp, lock) {
   });
   await cdp.send('Fetch.enable', { patterns: [{ resourceType: 'Document', requestStage: 'Request' }] });
 }
+
+/**
+ * Firefox/BiDi: build the "is this paused request a locked top-level load?"
+ * check that blocklist-firefox.js's single intercept handler calls (two
+ * catch-all handlers on one paused request would race — one continues before
+ * the other fails). A request is a top-level document load when it carries a
+ * navigation id and its context has no parent. Context ids are tracked from
+ * contextCreated and refreshed from getTree when an unknown one shows up, so a
+ * popup whose create event lags its first request can't slip through; one that
+ * is still unknown after the refresh is treated as top-level (fail closed).
+ * Redirect hops arrive as their own beforeRequestSent, so each is checked.
+ * @param {object} bidi - BiDi client
+ * @param {SiteLock} lock
+ * @returns {Promise<(e: object) => Promise<boolean>>} true = fail this request
+ */
+export async function createFirefoxLockCheck(bidi, lock) {
+  const tops = new Set();
+  const known = new Set();
+  async function refresh() {
+    const { contexts } = await bidi.send('browsingContext.getTree', {});
+    (function walk(nodes, top) {
+      for (const n of nodes) { known.add(n.context); if (top) tops.add(n.context); walk(n.children || [], false); }
+    })(contexts, true);
+  }
+  bidi.on('browsingContext.contextCreated', (c) => { known.add(c.context); if (!c.parent) tops.add(c.context); });
+  bidi.on('browsingContext.contextDestroyed', (c) => { known.delete(c.context); tops.delete(c.context); });
+  await bidi.subscribe(['browsingContext.contextCreated', 'browsingContext.contextDestroyed']);
+  await refresh();
+  return async (e) => {
+    if (e.navigation == null) return false; // subresource
+    if (!known.has(e.context)) { try { await refresh(); } catch { tops.add(e.context); } }
+    if (known.has(e.context) && !tops.has(e.context)) return false; // iframe
+    if (lock.allowed(e.request.url)) return false;
+    lock.record(e.request.url, e.context);
+    return true;
+  };
+}

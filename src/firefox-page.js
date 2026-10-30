@@ -28,7 +28,7 @@ import { waitForNetworkIdleBiDi } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage, countNodes } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
-import { navFailed, httpWarning } from './navigation.js';
+import { navFailed, navBlocked, httpWarning } from './navigation.js';
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -46,6 +46,7 @@ const BIDI_KEYS = {
  * @param {boolean} [opts.links=false] - Default for snapshot({ links }): show link URLs.
  * @param {{allowLocalUrls?: boolean, blockPrivateNetwork?: boolean}} [opts.urlGuard] - Navigation safety policy, applied on every goto().
  * @param {string} [opts.uploadDir] - When set, upload() rejects files outside this dir.
+ * @param {?import('./site-lock.js').SiteLock} [opts.siteLock] - Site lock (allowHosts) state; the request-level enforcement is installed by applyFirefoxBlocklist, this side maps it to NAV_BLOCKED and snapshot notes.
  * @param {boolean} [opts.incognito=false] - Clean session: injectCookies() is a no-op.
  * @param {boolean} [opts.consent=true] - Auto-dismiss cookie consent dialogs after goto().
  * @param {boolean} [opts.hybrid=false] - Relaunch headed on a bot-challenge page and retry.
@@ -56,6 +57,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   const defaultPruneMode = opts.pruneMode || 'act';
   const urlGuard = opts.urlGuard || {};
   const uploadDir = opts.uploadDir || null;
+  const lock = opts.siteLock || null;
   const incognito = !!opts.incognito;
   const consent = opts.consent !== false;
   // True when the consent pass after the latest goto() found nothing: the first
@@ -282,6 +284,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     const offStarted = bidi.on('network.responseStarted', (e) => {
       if (e.navigation && e.context === topContext) started.push(e);
     });
+    lock?.startGoto();
     try {
       const res = await withTimeout(
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
@@ -289,6 +292,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
       const last = events.filter((e) => e.navigation === res.navigation).pop();
       return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
     } catch (err) {
+      // A lock-refused document (the URL or a redirect hop) surfaces as
+      // NS_ERROR_ABORT; report it as NAV_BLOCKED, not NAV_FAILED.
+      const blocked = lock?.takeGotoBlock(topContext);
+      if (blocked) throw navBlocked(blocked.url, blocked.host);
       const m = /^BiDi error: unknown error — (?:Error: )?(.+)$/.exec(err.message);
       if (!m) throw err;
       if (m[1] === 'NS_BINDING_ABORTED') {
@@ -359,6 +366,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       // Same navigation guard the CDP path enforces — block file:/chrome:/
       // view-source: and (optionally) private-network hosts before navigating.
       assertNavigable(url, urlGuard);
+      lock?.assertAllowed(url);
       refContexts = new Map(); // refs from the previous page are now stale
       consentRecheck = null; // a throwing navigate() must not leave the old page's flag
       lastNavigation = null;
@@ -408,7 +416,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
       const raw = formatTree(root);
-      const warn = httpWarning(lastNavigation?.status);
+      const warn = httpWarning(lastNavigation?.status) + (lock?.takeNotes() ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(root, pageUrl) : root;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
