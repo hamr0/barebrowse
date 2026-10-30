@@ -15,6 +15,7 @@ import { formatReadable } from './src/readable.js';
 import { cleanOld } from './src/output-clean.js';
 import { scopedCookiesForUrl } from './src/auth.js';
 import { isHttpError } from './src/navigation.js';
+import { parseAllowHosts } from './src/site-lock.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
@@ -217,6 +218,53 @@ function engineInfo() {
   };
 }
 
+// --- Access tier + site lock (env, fixed at server start) ---
+//
+// BAREBROWSE_TIER = r | rw | rwx (default rwx = everything). r: read the web
+// (navigate, observe); rw: + interact (click/type/...); rwx: + upload and eval.
+// Every tool has an explicit tier; a tool missing from the map is rwx, so a
+// new tool is hidden from restricted tiers until someone classifies it.
+const TIER_RANK = { r: 0, rw: 1, rwx: 2 };
+export const TOOL_TIER = {
+  browse: 'r', goto: 'r', back: 'r', forward: 'r', reload: 'r', scroll: 'r',
+  snapshot: 'r', readable: 'r', screenshot: 'r', pdf: 'r', wait_for: 'r', tabs: 'r',
+  capabilities: 'r', assess: 'r',
+  click: 'rw', type: 'rw', press: 'rw', select: 'rw', drag: 'rw', hover: 'rw', switch_engine: 'rw',
+  upload: 'rwx', eval: 'rwx',
+};
+
+/** @param {string} name */
+export function toolTier(name) { return TOOL_TIER[name] ?? 'rwx'; }
+
+/** Parse BAREBROWSE_TIER. Unset/empty = rwx; anything else must be exact, or it throws (never widen on a typo). */
+export function parseTier(v) {
+  if (v === undefined || v === '') return 'rwx';
+  if (!Object.hasOwn(TIER_RANK, v)) throw new Error(`BAREBROWSE_TIER must be r, rw or rwx (got ${JSON.stringify(v)})`);
+  return v;
+}
+
+/** Parse BAREBROWSE_ALLOW (comma list of hosts). Unset/blank = no lock (null); a bad entry throws. */
+export function parseAllowEnv(v) {
+  if (v === undefined || !v.trim()) return null;
+  try { return parseAllowHosts(v.split(',')); }
+  catch (e) { throw new Error(`BAREBROWSE_ALLOW: ${e.message}`); }
+}
+
+/** Read + validate the tier/site-lock env. Throws on bad config. */
+function readAccess() {
+  return { tier: parseTier(process.env.BAREBROWSE_TIER), allowHosts: parseAllowEnv(process.env.BAREBROWSE_ALLOW) };
+}
+
+/** MCP tool hints derived from the tier: r = read-only; rw/rwx change state (hover and switch_engine non-destructively). */
+function annotationsFor(name) {
+  if (toolTier(name) === 'r') {
+    const a = { readOnlyHint: true, openWorldHint: name !== 'capabilities' };
+    if (['snapshot', 'readable', 'screenshot', 'pdf', 'tabs', 'capabilities', 'wait_for'].includes(name)) a.idempotentHint = true;
+    return a;
+  }
+  return { readOnlyHint: false, destructiveHint: !['hover', 'switch_engine'].includes(name), openWorldHint: true };
+}
+
 async function getPage() {
   if (_page) return _page;
   if (_pageConnecting) return _pageConnecting;
@@ -230,9 +278,10 @@ async function getPage() {
   // across tool calls, so it's an env var (BAREBROWSE_INCOGNITO=1), not a
   // per-request flag. Skips all auth injection for a clean, logged-out session.
   const incognito = process.env.BAREBROWSE_INCOGNITO === '1';
+  const { allowHosts } = readAccess();
   const connectOpts = _engine === 'firefox'
-    ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito }
-    : { mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito };
+    ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito, allowHosts }
+    : { mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito, allowHosts };
   _pageConnecting = connect(connectOpts);
   try {
     _page = await _pageConnecting;
@@ -517,12 +566,17 @@ if (assessFn) {
   });
 }
 
+for (const t of TOOLS) t.annotations = annotationsFor(t.name);
+
 async function handleToolCall(name, args) {
   switch (name) {
     case 'capabilities': {
       // Introspection only — must NOT launch a browser. Report the configured
       // engine from env; if a page is already connected, attach its live flags.
       const info = engineInfo();
+      const access = readAccess();
+      info.tier = access.tier;
+      info.allowHosts = access.allowHosts;
       if (_page) {
         info.connected = true;
         info.capabilities = _page.capabilities;
@@ -547,7 +601,7 @@ async function handleToolCall(name, args) {
     case 'browse': {
       let timer;
       const text = await Promise.race([
-        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode, incognito: args.incognito, links: args.links }),
+        browse(args.url, { mode: args.mode, pruneMode: args.pruneMode, incognito: args.incognito, links: args.links, allowHosts: readAccess().allowHosts ?? undefined }),
         new Promise((_, rej) => { timer = setTimeout(() => rej(new Error('browse timed out after 60s')), 60000); }),
       ]);
       clearTimeout(timer);
@@ -771,6 +825,10 @@ async function handleMessage(msg) {
 
   if (method === 'initialize') {
     const e = engineInfo();
+    const { tier, allowHosts } = readAccess();
+    const access = (tier === 'r' ? ' Access tier: read-only (no clicking, typing or uploading).'
+      : tier === 'rw' ? ' Access tier: read/write (no upload or eval).' : '')
+      + (allowHosts ? ` Navigation is restricted to: ${allowHosts.join(', ')}.` : '');
     return jsonrpcResponse(id, {
       protocolVersion: '2024-11-05',
       capabilities: { tools: {} },
@@ -780,7 +838,7 @@ async function handleMessage(msg) {
       instructions:
         `barebrowse drives a real browser. Active engine: ${e.activeEngine} (mode: ${e.mode}). `
         + `Both chromium and firefox are supported; ${e.switchEngine} `
-        + `Call the "capabilities" tool for the live engine + feature set.`,
+        + `Call the "capabilities" tool for the live engine + feature set.${access}`,
     });
   }
 
@@ -793,7 +851,8 @@ async function handleMessage(msg) {
     // active engine (and that both are supported) is visible without a call.
     const e = engineInfo();
     const note = ` [Active engine: ${e.activeEngine}; chromium + firefox both supported — ${e.switchEngine}]`;
-    const tools = TOOLS.map((t) =>
+    const { tier } = readAccess();
+    const tools = TOOLS.filter((t) => TIER_RANK[toolTier(t.name)] <= TIER_RANK[tier]).map((t) =>
       t.name === 'browse' ? { ...t, description: t.description + note } : t);
     return jsonrpcResponse(id, { tools });
   }
@@ -803,6 +862,8 @@ async function handleMessage(msg) {
     _inflight++;
     clearTimeout(_idleTimer);
     try {
+      // A tool above the tier answers exactly like one that doesn't exist.
+      if (TIER_RANK[toolTier(name)] > TIER_RANK[readAccess().tier]) throw new Error(`Unknown tool: ${name}`);
       const result = await handleToolCall(name, args || {});
       return jsonrpcResponse(id, {
         content: [{ type: 'text', text: typeof result === 'string' ? result : JSON.stringify(result) }],
@@ -833,6 +894,11 @@ async function handleMessage(msg) {
 // runStdio() explicitly. Tests import TIMEOUTS/TOOLS without calling it.
 
 export function runStdio() {
+  // Fail closed: a bad tier or allow list must stop the server, never fall back to rwx / no lock.
+  try { readAccess(); } catch (e) {
+    process.stderr.write(`barebrowse mcp: ${e.message}\n`);
+    process.exit(1);
+  }
   cleanOld(OUTPUT_DIR);
   // One-line startup banner to stderr (stderr because stdout is the JSON-RPC
   // channel — must not contain non-JSON-RPC bytes). Captured by Claude Code's
