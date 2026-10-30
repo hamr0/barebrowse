@@ -66,6 +66,7 @@ export function buildDaemonArgs(opts, absDir, initialUrl, cliPath) {
   }
   if (opts.blockPrivateNetwork) args.push('--block-private-network');
   if (opts.uploadDir) args.push('--upload-dir', opts.uploadDir);
+  if (opts.allowHosts) args.push('--allow-hosts', opts.allowHosts.join(','));
   return args;
 }
 
@@ -235,6 +236,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
     blockUrls: opts.blockUrls,
     blockPrivateNetwork: opts.blockPrivateNetwork,
     uploadDir: opts.uploadDir,
+    allowHosts: opts.allowHosts,
     // incognito neuters injectCookies() session-wide; cookies:false (below)
     // is the legacy per-open equivalent. Either yields a logged-out session.
     incognito: opts.incognito || opts.cookies === false,
