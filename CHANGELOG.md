@@ -1,5 +1,25 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Site lock (`allowHosts`).** `connect({ allowHosts: ['a.com', '*.b.org'] })`
+  and `browse(url, { allowHosts })` confine top-level navigation to a host list
+  on both engines: `goto()`, redirect hops, clicked links, JS jumps, popups and
+  new tabs. A blocked `goto()` rejects with `err.code === 'NAV_BLOCKED'` and
+  `err.host`; the page stays where it was. A blocked in-page jump shows as
+  `[blocked navigation to <host>]` on the next `snapshot()`. Not locked:
+  subresources, iframes, WebSocket. Attach mode (`port`) throws. CLI:
+  `--allow-hosts=a.com,*.b.org` on `open` and `browse`.
+- **MCP tool annotations and access tiers.** Every tool has `readOnlyHint`,
+  `destructiveHint`, `openWorldHint` (and `idempotentHint` where it applies).
+  `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier, and a
+  hidden tool answers `Unknown tool`. `BAREBROWSE_ALLOW=a.com,*.b.org` sets the
+  site lock. An invalid value of either stops the server at start. The
+  `capabilities` tool and the server instructions report `tier` and
+  `allowHosts`.
+
 ## [0.26.0] - 2026-10-27
 
 ### Added
