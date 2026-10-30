@@ -651,7 +651,7 @@ export async function connect(opts = {}) {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
       const warn = (botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '')
-        + httpWarning(lastNavigation?.status) + (lock?.takeNotes() ?? '');
+        + httpWarning(lastNavigation?.status) + (lock?.takeNotes(page.targetId) ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(result.tree, pageUrl) : result.tree;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
@@ -1213,7 +1213,7 @@ async function navigate(page, url, timeout = 30000, lock = null) {
   }));
   loaded.catch(() => {}); // rejection is only read if we await it below
   try {
-    lock?.startGoto();
+    lock?.startGoto(page.targetId);
     const nav = await session.send('Page.navigate', { url });
     // A lock-refused document (the URL or a redirect hop) also surfaces as
     // ERR_ABORTED, so this must come before the aborted branch below.

@@ -111,6 +111,21 @@ for (const engine of ['chromium', 'firefox']) {
       } finally { await page.close(); await s.close(); }
     });
 
+    it('a clicked off-site link then goto: the new page\'s snapshot carries no stale note', async () => {
+      const s = await serve();
+      const page = await lock(engine);
+      try {
+        await page.goto(s.url + '/home');
+        const snap = await page.snapshot();
+        await page.click(refOf(snap, /link "offlink".*\[ref=(\d+)\]/));
+        await wait(1000);
+        await page.goto(s.url + '/ok'); // no snapshot in between
+        const after = await page.snapshot();
+        assert.match(after, /Fine/);
+        assert.ok(!after.includes('[blocked navigation'), `stale note:\n${after}`);
+      } finally { await page.close(); await s.close(); }
+    });
+
     it('window.open popup to an off-site host never reaches the server', async () => {
       const s = await serve();
       const page = await lock(engine);
