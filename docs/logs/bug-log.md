@@ -468,3 +468,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `ERR_HTTP_RESPONSE_CODE_FAILURE` is not a failure in `navigate()`. POC on real Chromium (404/500/403/401/410/503): the Document `responseReceived` carries the status and the same `loaderId` as `Page.navigate`'s result, and `Page.loadEventFired` fires (Chromium renders its error page), so the load wait stays and the existing loaderId match yields the status. No other HTTP-status `errorText` exists in the POC: 204 and 304 give `ERR_ABORTED` (already exempt).
 **Cost:** none.
 **Regression test:** `test/integration/navigation.test.js` (`/404empty`, `/500empty` on both engines; `browse()` on `/500empty`); red on Chromium before the fix.
+
+## [2026-10-30] Site-lock "[blocked navigation]" notes were shared by every tab and survived a goto (N12)
+
+**Symptom:** with `allowHosts`, clicking an off-list link on page A and then `goto()` of allowed page C (no snapshot between) made C's first snapshot open with `[blocked navigation to 127.0.0.1]`. A block in a `createTab` tab or a popup likewise surfaced in the main page's next snapshot. Both engines. Never shipped: found pre-release on `feat/mcp-tiers-site-lock`.
+**Root cause:** `createSiteLock` kept the notes in one `Set` of hosts; `startGoto()` reset only `gotoBlocks`, and `takeNotes()` drained the whole set whichever tab asked.
+**Fix:** notes are keyed by ctx (Chromium page targetId, Firefox top context id), `startGoto(ctx)` clears that ctx's pending notes, `takeNotes(ctx)` returns only that ctx's (`src/site-lock.js`, callers in `src/index.js`, `src/firefox-page.js`). A popup's block is noted on the popup's own context, shown if the agent switches to it; no opener tracking.
+**Cost:** none.
+**Regression test:** `test/unit/site-lock.test.js` (notes per ctx; startGoto clears only its ctx) and `test/integration/site-lock.test.js` (both engines: click off-site link, goto allowed page, no note in its snapshot); red before the fix. The createTab/popup leak is covered by the unit test only.

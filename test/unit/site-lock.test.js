@@ -72,8 +72,19 @@ describe('createSiteLock', () => {
     lock.startGoto();
     lock.record('https://d.com/', 'p');
     lock.takeGotoBlock('p');
-    assert.equal(lock.takeNotes(), '[blocked navigation to b.com]\n[blocked navigation to c.com]\n');
-    assert.equal(lock.takeNotes(), '');
+    assert.equal(lock.takeNotes('x'), '[blocked navigation to b.com]\n[blocked navigation to c.com]\n');
+    assert.equal(lock.takeNotes('x'), '');
+  });
+
+  it('notes are per context: startGoto(ctx) clears only that ctx, takeNotes(ctx) returns only that ctx', () => {
+    const lock = createSiteLock(['a.com']);
+    lock.record('https://b.com/', 'A');
+    lock.record('https://c.com/', 'B');
+    assert.equal(lock.takeNotes('A'), '[blocked navigation to b.com]\n');
+    lock.record('https://b.com/', 'A');
+    lock.startGoto('A'); // a new goto on A drops A's stale note...
+    assert.equal(lock.takeNotes('A'), '');
+    assert.equal(lock.takeNotes('B'), '[blocked navigation to c.com]\n'); // ...not B's
   });
 
   it('assertAllowed throws NAV_BLOCKED for an off-site URL only', () => {

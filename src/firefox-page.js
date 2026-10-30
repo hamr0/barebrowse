@@ -284,7 +284,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     const offStarted = bidi.on('network.responseStarted', (e) => {
       if (e.navigation && e.context === topContext) started.push(e);
     });
-    lock?.startGoto();
+    lock?.startGoto(topContext);
     try {
       const res = await withTimeout(
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
@@ -416,7 +416,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
       const raw = formatTree(root);
-      const warn = httpWarning(lastNavigation?.status) + (lock?.takeNotes() ?? '');
+      const warn = httpWarning(lastNavigation?.status) + (lock?.takeNotes(topContext) ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(root, pageUrl) : root;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);

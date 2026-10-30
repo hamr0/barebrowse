@@ -63,7 +63,10 @@ export function createSiteLock(list) {
   const hostOf = (url) => { try { return new URL(url).hostname; } catch { return url; } };
   /** @type {{url: string, host: string, ctx: string}[]} */
   let gotoBlocks = [];
-  const noted = new Set();
+  // Snapshot notes belong to the tab/context where the block happened, so one
+  // tab's (or a popup's, shown if the agent switches to it) never leak into another's.
+  /** @type {Map<string, Set<string>>} */
+  const noted = new Map();
   return {
     allowed,
     /** @param {string} url @throws NAV_BLOCKED when url is off the list */
@@ -74,10 +77,11 @@ export function createSiteLock(list) {
     record(url, ctx) {
       const host = hostOf(url);
       gotoBlocks.push({ url, host, ctx });
-      noted.add(host);
+      const hosts = noted.get(ctx) ?? new Set();
+      noted.set(ctx, hosts.add(host));
     },
-    /** Call right before a goto navigates. */
-    startGoto() { gotoBlocks = []; },
+    /** Call right before a goto navigates; drops that tab's pending notes too. */
+    startGoto(ctx) { gotoBlocks = []; noted.delete(ctx); },
     /**
      * The block that hit this goto's own tab (a popup's block is not the
      * goto's), consumed; it is reported as NAV_BLOCKED, so no snapshot note.
@@ -86,13 +90,13 @@ export function createSiteLock(list) {
       const b = gotoBlocks.find((x) => x.ctx === ctx);
       if (!b) return null;
       gotoBlocks = gotoBlocks.filter((x) => x !== b);
-      noted.delete(b.host);
+      noted.get(ctx)?.delete(b.host);
       return { url: b.url, host: b.host };
     },
-    /** Snapshot lines for in-page blocked jumps since the last call. */
-    takeNotes() {
-      const out = [...noted].map((h) => `[blocked navigation to ${h}]\n`).join('');
-      noted.clear();
+    /** Snapshot lines for this tab's in-page blocked jumps since the last call. */
+    takeNotes(ctx) {
+      const out = [...(noted.get(ctx) ?? [])].map((h) => `[blocked navigation to ${h}]\n`).join('');
+      noted.delete(ctx);
       return out;
     },
   };
