@@ -120,6 +120,49 @@ auto map. CLI: `snapshot --within=<ref|role|role "name"> --map --full`.
    exactly one box on those pages? How often do unnamed boxes make role-only
    matching ambiguous?
 
+### POC results (2026-11-15, 10 pages × both engines)
+
+Pages: Amazon search, Wikipedia list, GitHub issues, Google Flights, Rotten
+Tomatoes, BBC News, MDN `<table>`, Hacker News, an Amazon product page,
+Stack Overflow (bot-blocked on both engines; excluded).
+
+1. **Firefox:** same boxes as Chromium within a few per page (Amazon 20 vs 18,
+   MDN 28 vs 36, product 20 vs 26, others equal). A ref resolved again in a
+   fresh tree on 16/16 runs — CDP by `backendDOMNodeId`, BiDi by marking the
+   element carrying the old `data-bb-ref` and reading its new ref. Found
+   alongside: on Firefox, Google Flights stopped on Google's
+   consent.google.com interstitial (Chromium got through) — a separate consent
+   bug, not zoom.
+2. **Threshold:** keep `maxChars` 30k. Full act sizes: under 30k → RT 22k,
+   BBC 19k, HN 21–27k, GitHub 28k (little or nothing to zoom: RT has no list
+   box, BBC's lists are ~1k, HN is one table); over 30k → Amazon 45–57k,
+   Flights 35k, product 39–50k, MDN 125–158k, Wikipedia 146–193k (all have a
+   clear box to zoom into).
+3. **`within` by name:** named boxes were unique on every page except the
+   Amazon product page (4/7 and 5/8: repeated carousel names) — ambiguity →
+   map, as designed. Role alone was almost never unique (`list` ×48 on Amazon;
+   only HN's single `table`). Key result lists are often unnamed (Amazon,
+   Flights).
+4. **"Largest box" is the wrong pick:** on Wikipedia the largest box is
+   `region "References"`, not the table; on Flights it is "Other flights",
+   which drops "Top flights". Confirms: the agent picks, not a size rule.
+
+**fwdloop side-by-side** (Chromium, fwd's exact read, MAD→FCO, 3 dates): every
+flight result in both lists carried all 5 quoted facts ("From <n> US
+dollars", "Nonstop", "Leaves Adolfo Suárez Madrid-Barajas Airport",
+"arrives at Leonardo da Vinci International Airport", "Departure time:")
+inside its own list; none of them outside the lists. Full act 29.6–33.4k;
+both lists 22.1–25.3k (~24% less); common parent `tabpanel` 24.2–27.8k (~17%
+less). Found alongside: `goto()` returned the consent.google.com URL (status
+200) although the snapshot is the flights page.
+
+**Plan changes from the POCs:**
+- Add `tabpanel` to the map's box roles (Flights' results live in one).
+- Label an unnamed box in the map with the heading right before it, e.g.
+  `list (after heading "Other flights") [ref=N]`, so the agent can tell
+  look-alike lists apart. Structural (sibling heading), no text guessing;
+  `within` by name keeps matching the accessible name only.
+
 ## Tests
 
 - Unit: map line format; box selection; `within` by ref / role / role+name;
