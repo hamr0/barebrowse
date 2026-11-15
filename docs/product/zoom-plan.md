@@ -61,6 +61,9 @@ Findings:
   full text (sha256) and quotes facts from it; reads goto's `status`; greps for
   `[BOT CHALLENGE DETECTED]`. Wants Plan A. A structural `within` may be useful
   later, but using it changes what a signed job reads → **hamr's ruling**.
+  Its ticket reader no longer uses barebrowse (since fwdloop M13 it reads
+  tickets through the GitHub MCP); barebrowse MCP reaches fwdloop only when a
+  user adds it to a job, and the job's model then calls its tools as-is.
 
 ## Decision: Plan A
 
