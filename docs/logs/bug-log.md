@@ -476,3 +476,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** notes are keyed by ctx (Chromium page targetId, Firefox top context id), `startGoto(ctx)` clears that ctx's pending notes, `takeNotes(ctx)` returns only that ctx's (`src/site-lock.js`, callers in `src/index.js`, `src/firefox-page.js`). A popup's block is noted on the popup's own context, shown if the agent switches to it; no opener tracking.
 **Cost:** none.
 **Regression test:** `test/unit/site-lock.test.js` (notes per ctx; startGoto clears only its ctx) and `test/integration/site-lock.test.js` (both engines: click off-site link, goto allowed page, no note in its snapshot); red before the fix. The createTab/popup leak is covered by the unit test only.
+
+## [2026-11-15] Firefox pointer actions failed on elements below the fold (N13)
+
+**Symptom:** on Firefox, `click()`/`hover()`/`drag()` on an element outside the viewport threw `BiDi error: move target out of bounds — Move target (782, 813) is out of bounds of viewport dimensions (1366, 682)`. Visible effect: Google's consent.google.com interstitial was never dismissed on Firefox (the right "Accept all" button was picked, its click threw and was swallowed, so `goto()` stayed on "Before you continue to Google"). Chromium was fine. Shipped in every Firefox version so far.
+**Root cause:** `src/firefox-page.js` sent `input.performActions` with a `pointerMove` whose origin is the element but never scrolled it into view; BiDi does not auto-scroll (Chromium's click path scrolls first, `DOM.scrollIntoViewIfNeeded` in `src/interact.js`).
+**Fix:** a shared `scrollIntoView()` in `connectFirefox`'s page (`script.callFunction`: `this.scrollIntoView({block:'center',inline:'center'})`) runs before every element-origin pointer action: click (so consent too), hover and drag. Drag now sends two `performActions` calls (press at the source, then move/release at the target) so each is scrolled into view before its move.
+**Cost:** one extra BiDi round trip per click/hover, two per drag.
+**Regression test:** `test/integration/offscreen-click.test.js` (both engines: click/hover/drag on buttons 3000px+ below the fold; a consent dialog whose "Accept all" is below the fold); red on Firefox before the fix.
