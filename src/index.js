@@ -18,6 +18,7 @@ import { authenticate } from './auth.js';
 import { prune as pruneTree } from './prune.js';
 import { dataSnapshot, stripLegend } from './data.js';
 import { annotateLinks } from './links.js';
+import { parseWithin, zoomSnapshot } from './zoom.js';
 import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
@@ -234,7 +235,14 @@ export async function browse(url, opts = {}) {
  * pruning and return the raw ARIA tree.
  * `links: true` adds each link's absolute URL after its name (default off,
  * or the `connect({ links })` default).
- * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read'|'data', links?: boolean }} SnapshotOptions
+ * `map: true` returns an outline of the page's big boxes (ref + size) instead of
+ * content. `within` zooms the snapshot to one box, or several (an array, output
+ * in page order): a ref from the map, a role (`'table'`), role + accessible name
+ * (`'list "Issues"'`) or an unnamed box by the heading before it
+ * (`'list after "Other flights"'`). Any `mode` and `links` apply inside a zoom,
+ * where the box is the whole page. Two or more matches return the map with the
+ * matches marked; none, or a ref that is gone, throws. `within` wins over `map`.
+ * @typedef {{ mode?: 'act'|'browse'|'navigate'|'full'|'read'|'data', links?: boolean, map?: boolean, within?: string|number|Array<string|number> }} SnapshotOptions
  */
 
 /**
@@ -645,6 +653,7 @@ export async function connect(opts = {}) {
           try { await dismissConsent(page.session); } catch { /* best-effort */ }
         }
       }
+      const prevRefMap = refMap;
       const result = await ariaTree(page);
       refMap = result.refMap;
       const raw = formatTree(result.tree);
@@ -656,6 +665,20 @@ export async function connect(opts = {}) {
       const tree = links ? annotateLinks(result.tree, pageUrl) : result.tree;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
       const mode = pruneOpts?.mode || opts.pruneMode || 'act';
+      if (pruneOpts?.map || pruneOpts?.within != null) {
+        // A ref names a node of the previous snapshot: find it again by its backend node.
+        const selectors = pruneOpts.within != null ? parseWithin(pruneOpts.within) : undefined;
+        const refNodes = new Map();
+        for (const s of selectors || []) {
+          if (!s.ref) continue;
+          const old = prevRefMap.get(s.ref);
+          if (!old) throw new Error(`within: ref ${s.ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
+          const now = [...result.refMap].find(([, e]) => e.session === old.session && e.backendNodeId === old.backendNodeId);
+          if (!now) throw new Error(`within: the element behind ref ${s.ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
+          refNodes.set(s.ref, now[0]);
+        }
+        return zoomSnapshot(tree, { head: `url: ${pageUrl}\n` + warn, map: true, selectors, refNodes, mode, links });
+      }
       const out = mode === 'data' ? dataSnapshot(tree, { links }) : formatTree(pruneTree(tree, { mode, links }));
       const sized = stripLegend(out); // the legend is not content
       const stats = `url: ${pageUrl}\n${raw.length.toLocaleString()} chars → ${sized.length.toLocaleString()} chars (${Math.round((1 - sized.length / raw.length) * 100)}% pruned)`;

@@ -20,6 +20,7 @@ import { prune as pruneTree } from './prune.js';
 import { dataSnapshot, stripLegend } from './data.js';
 import { annotateLinks } from './links.js';
 import { axSnapshotExpression, REF_ATTR } from './ax-snapshot.js';
+import { parseWithin, zoomSnapshot } from './zoom.js';
 import { EXTRACT_EXPRESSION, finalizeReadable } from './readable.js';
 import { scopedCookiesForUrl } from './auth.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
@@ -176,6 +177,30 @@ export async function createFirefoxPage(bidi, opts = {}) {
       functionDeclaration: `function(){ this.scrollIntoView({ block: 'center', inline: 'center' }); }`,
       this: { sharedId }, target: { context }, awaitPromise: false,
     });
+  }
+
+  /** Mark the elements behind `within` ref selectors (in their frame) before a rebuild renumbers the refs. */
+  async function markRefs(selectors) {
+    const marks = new Map(); // old ref → context
+    for (const { ref } of selectors) {
+      if (!ref) continue;
+      const context = refContexts.get(ref);
+      if (!context) throw new Error(`within: ref ${ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
+      const ok = await bidi.evaluate(context, `(() => { const e = document.querySelector('[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false).catch(() => false);
+      if (!ok) throw new Error(`within: the element behind ref ${ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
+      marks.set(ref, context);
+    }
+    return marks;
+  }
+
+  /** Read (and clear) the marks after a rebuild: old ref → its new ref, or null when the element is gone. */
+  async function readMarks(marks) {
+    const refNodes = new Map();
+    for (const [ref, context] of marks) {
+      const now = await bidi.evaluate(context, `(() => { const e = document.querySelector('[data-bb-zoom="${ref}"]'); if (!e) return null; e.removeAttribute('data-bb-zoom'); return e.getAttribute('${REF_ATTR}'); })()`, false).catch(() => null);
+      refNodes.set(ref, now);
+    }
+    return refNodes;
   }
 
   async function pointerClick(ref) {
@@ -414,13 +439,24 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     /** @param {import('./index.js').SnapshotOptions|false} [pruneOpts] */
     async snapshot(pruneOpts = {}) {
-      let root = await buildTree();
-      if (root && consentRecheck) {
-        const key = consentRecheck;
-        consentRecheck = null; // once per navigation
-        try {
-          if (key === await docKey() && await dismissConsentFirefox(root, (ref) => pointerClick(ref))) root = await buildTree();
-        } catch { /* best-effort */ }
+      // A `within` ref names an element of the previous snapshot. Refs renumber
+      // on every build, so mark the elements now and read their new refs after it.
+      const within = (pruneOpts || undefined)?.within;
+      const selectors = within != null ? parseWithin(within) : undefined;
+      const marks = await markRefs(selectors || []);
+      let root, refNodes;
+      try {
+        root = await buildTree();
+        if (root && consentRecheck) {
+          const key = consentRecheck;
+          consentRecheck = null; // once per navigation
+          try {
+            if (key === await docKey() && await dismissConsentFirefox(root, (ref) => pointerClick(ref))) root = await buildTree();
+          } catch { /* best-effort */ }
+        }
+      } finally { refNodes = await readMarks(marks); }
+      for (const [ref, now] of refNodes) {
+        if (now == null) throw new Error(`within: the element behind ref ${ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
       }
       if (!root) return '';
 
@@ -432,6 +468,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);
 
       const mode = pruneOpts?.mode || defaultPruneMode;
+      if (pruneOpts?.map || selectors) {
+        return zoomSnapshot(tree, { head: `url: ${pageUrl}\n` + warn, map: true, selectors, refNodes, mode, links });
+      }
       let out;
       if (mode === 'data') out = dataSnapshot(tree, { links });
       else { const pruned = pruneTree(tree, { mode, links }); out = pruned ? formatTree(pruned) : ''; }

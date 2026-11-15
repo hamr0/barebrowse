@@ -62,6 +62,7 @@ const SKIP_ROLES = new Set([
  * @param {object} [options]
  * @param {'act'|'browse'|'navigate'|'full'|'read'} [options.mode='act'] - Pruning mode ('read' is an alias for 'browse')
  * @param {string} [options.context=''] - Search context for relevance filtering
+ * @param {boolean} [options.whole=false] - `tree` is a zoom box (snapshot `within`): it is the whole page, so the landmark step (1) is skipped
  * @param {boolean} [options.links=false] - Links carry `urls` (see links.js): nodes that drop their children keep the URLs of links beneath them
  * @returns {object|null} Pruned tree
  */
@@ -77,8 +78,8 @@ export function prune(tree, options = {}) {
   // Wrap as array for pipeline
   let nodes = tree ? [tree] : [];
 
-  // Step 1: Extract landmark regions
-  nodes = extractRegions(nodes, allowedRegions);
+  // Step 1: Extract landmark regions (a zoom box is the whole page: keep it)
+  if (!options.whole) nodes = extractRegions(nodes, allowedRegions);
 
   // Step 2: Prune nodes
   const ctx = { mode, parentRole: null, keywords, links: !!options.links };
