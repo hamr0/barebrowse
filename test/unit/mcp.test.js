@@ -444,3 +444,22 @@ describe('cookieReport (capabilities cookies field)', () => {
       { url: 'https://a.test/', injected: 0, incognito: true });
   });
 });
+
+describe('snapshot tool: map + zoom params', () => {
+  const snap = TOOLS.find((t) => t.name === 'snapshot');
+  it('declares map, within (string | number | array) and full, with the map -> zoom ladder in the description', () => {
+    const p = snap.inputSchema.properties;
+    assert.equal(p.map.type, 'boolean');
+    assert.equal(p.full.type, 'boolean');
+    assert.deepEqual(p.within.anyOf.map((a) => a.type), ['string', 'number', 'array']);
+    assert.match(snap.description, /map:true/);
+    assert.match(snap.description, /within=/);
+    assert.match(snap.description, /full:true/);
+  });
+  it('stays a read tier tool and idempotent', async () => {
+    const { TOOL_TIER } = await import('../../mcp-server.js');
+    assert.equal(TOOL_TIER.snapshot, 'r');
+    assert.equal(snap.annotations.idempotentHint, true);
+    assert.equal(snap.annotations.readOnlyHint, true);
+  });
+});

@@ -337,13 +337,19 @@ export const TOOLS = [
   },
   {
     name: 'snapshot',
-    description: 'Get the current ARIA snapshot of the session page. Returns a YAML-like tree with [ref=N] markers on interactive elements.',
+    description: 'Get the current ARIA snapshot of the session page. Returns a YAML-like tree with [ref=N] markers on interactive elements. Big pages: start with map:true (an outline of the page\'s boxes: header, main, lists, tables… each with a ref and a size), then call again with within=<ref or name> to read just the box you need, in any pruneMode. A page over maxChars returns that map for you instead of the content (the full snapshot is also saved to a file); pass full:true to get the file path alone.',
     inputSchema: {
       type: 'object',
       properties: {
         pruneMode: { type: 'string', enum: ['act', 'read', 'data'], description: 'Pruning mode. "act" (default) keeps interactive elements and short labels — best for clicking/filling. "read" keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If a previous snapshot looked empty on a content-heavy page, retry with "read". "data": one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a legend line; read it as: table rows `row "<label>": <column>: <value> · …`, groups `<label>: a, b, c`, and a title line followed by detail lines is one block up to the next title line. Main content only: use "act" for menus and page controls.' },
         links: { type: 'boolean', description: 'Show each link\'s absolute URL after its name: link "name" <url> [ref=N]. Default off.' },
-        maxChars: { type: 'number', description: 'Max chars to return inline. Larger snapshots are saved to .barebrowse/ and a file path is returned instead. Default: 30000.' },
+        map: { type: 'boolean', description: 'Return an outline of the page\'s big boxes instead of content: `- list "Issues" [ref=40] (14.9k chars)`, nested, one line each. Unnamed boxes show the heading before them: `list after "Other flights"`. Size is the box\'s text in "data" mode. Costs 1-2% of the page; use it to pick a box for within.' },
+        within: {
+          anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'number' }] } }],
+          description: 'Zoom: return only this box, as if it were the whole page (works with every pruneMode and links). A ref from the map (e.g. 40; refs change on every snapshot, so use one from the latest map), a role (table), a role and its exact name (list "Issues"), or an unnamed box by the heading right before it (list after "Other flights"). An array returns several boxes, in page order. If two or more boxes match you get the map back with the matches marked; if none match, an error. A ref whose element is gone is an error: take a fresh map.',
+        },
+        full: { type: 'boolean', description: 'Skip the automatic map: a snapshot over maxChars is saved to a file and only the path is returned (the old behavior). Ignored when within or map is set.' },
+        maxChars: { type: 'number', description: 'Max chars to return inline. A larger snapshot is saved to .barebrowse/ in full and the map of the page is returned instead (or just the file path with full:true). Default: 30000.' },
       },
     },
   },
@@ -628,11 +634,18 @@ async function handleToolCall(name, args) {
     }, TIMEOUTS.goto);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
-      const text = await page.snapshot(args.pruneMode || args.links ? { mode: args.pruneMode, links: args.links } : undefined);
+      const zoomed = args.map || args.within != null;
+      const text = await page.snapshot(args.pruneMode || args.links || zoomed
+        ? { mode: args.pruneMode, links: args.links, map: args.map, within: args.within } : undefined);
       const limit = args.maxChars ?? MAX_CHARS_DEFAULT;
       if (text.length > limit) {
         const file = saveSnapshot(text);
-        return `Snapshot (${text.length} chars) saved to ${file}`;
+        const saved = `Snapshot (${text.length} chars) saved to ${file}`;
+        if (zoomed || args.full) return saved;
+        // Over the cap and the agent chose nothing: hand back the map (a few % of the page) to zoom from.
+        const map = await page.snapshot({ links: args.links, map: true });
+        if (map.length > limit) return saved;
+        return `${saved}. Over maxChars (${limit}), so here is the map of the page; call snapshot with within=<ref or name> to read one box (an array takes several), or full:true for the path alone.\n${map}`;
       }
       return text;
     }, TIMEOUTS.snapshot);
