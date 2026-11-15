@@ -38,6 +38,15 @@ async function serve() {
 let hasFirefox = false;
 try { findFirefox(); hasFirefox = true; } catch { /* skip below */ }
 
+// Input events reach the page asynchronously on a loaded box: poll instead of reading once.
+async function sees(page, text) {
+  for (let i = 0; i < 20; i++) {
+    if ((await page.snapshot()).includes(text)) return true;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  return false;
+}
+
 const refOf = (snap, name) => snap.match(new RegExp(`button "${name}" \\[ref=(\\d+)\\]`))[1];
 
 for (const engine of ['chromium', 'firefox']) {
@@ -49,15 +58,15 @@ for (const engine of ['chromium', 'firefox']) {
         await page.goto(srvr.url + '/tall');
         let snap = await page.snapshot();
         await page.click(refOf(snap, 'Far button'));
-        assert.ok((await page.snapshot()).includes('clicked'), 'click must land');
+        assert.ok(await sees(page, 'clicked'), 'click must land');
         await page.goto(srvr.url + '/tall');
         snap = await page.snapshot();
         await page.hover(refOf(snap, 'Far button'));
-        assert.ok((await page.snapshot()).includes('hovered'), 'hover must land');
+        assert.ok(await sees(page, 'hovered'), 'hover must land');
         await page.goto(srvr.url + '/tall');
         snap = await page.snapshot();
         await page.drag(refOf(snap, 'Far button'), refOf(snap, 'Farther button'));
-        assert.ok((await page.snapshot()).includes('dropped'), 'drag must reach the second element');
+        assert.ok(await sees(page, 'dropped'), 'drag must reach the second element');
       } finally { await page.close(); await srvr.close(); }
     });
 
