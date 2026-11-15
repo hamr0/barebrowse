@@ -1,7 +1,8 @@
 # Zoom Plan — Map + Zoom for `snapshot()` (target v0.28.0)
 
-Status: **planned, not built.** Three POCs below run first and may change this
-plan. Owner decisions recorded 2026-11-15.
+Status: **built** on `feat/snapshot-zoom` (unreleased; CHANGELOG [Unreleased]).
+The POCs below ran first and changed the plan (see their results). Owner
+decisions recorded 2026-11-15.
 
 ## Problem
 

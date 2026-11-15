@@ -71,7 +71,7 @@ const snapshot = await browse('https://example.com', {
 | `goBack()` | -- | void | Navigate back in browser history |
 | `goForward()` | -- | void | Navigate forward in browser history |
 | `reload(opts?)` | { ignoreCache?: boolean, timeout?: number } | void | Reload the current page. Clears refMap (refs from pre-reload reject). |
-| `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read'\|'data', links?: boolean } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. `links: true` adds `<absolute-url>` after each link name (see below). |
+| `snapshot(pruneOpts?)` | false or { mode: 'act'\|'read'\|'data', links?: boolean, map?: boolean, within?: string\|number\|Array } | string | ARIA tree with `[ref=N]` markers. Pass `false` for raw. `links: true` adds `<absolute-url>` after each link name (see below). `map: true` returns an outline of the page's big boxes (ref + size); `within` zooms to one box or several (see Map + zoom below). |
 | `readable()` | -- | object | Clean article text (Reader-View engine). `{ ok, title, byline, text, length, confidence: 'high'\|'low', readerable, hint? }` or `{ ok: false, hint }`. For *reading*, not interacting — see note below. |
 | `click(ref)` | ref: string | void | Scroll into view + mouse press+release at center |
 | `type(ref, text, opts?)` | ref: string, text: string, opts: { clear?, keyEvents? } | void | Focus + insert text. `clear: true` replaces existing. |
@@ -132,6 +132,27 @@ Key rules:
 - Always call `snapshot()` to get fresh refs before interacting
 - `click(ref)` / `type(ref, text)` / `hover(ref)` / `select(ref, value)` use these ref strings
 - Pruning removes noise (~47-95% token reduction) while keeping all interactive elements
+
+## Map + zoom — big pages
+
+Order for a big or cluttered page: map, then zoom, then mode. The library default is unchanged (no `map`/`within` = today's output, byte for byte).
+
+```js
+await page.snapshot({ map: true });                 // outline of the big boxes, no content
+await page.snapshot({ within: 40 });                // one box by ref from the map
+await page.snapshot({ within: 'table' });           // by role
+await page.snapshot({ within: 'list "Issues"' });   // role + exact accessible name
+await page.snapshot({ within: 'list after "Other flights"' }); // unnamed box: the heading right before it (survives a reload)
+await page.snapshot({ within: [430, 'table'], mode: 'data', links: true }); // several boxes, page order; any mode/links
+```
+
+- Map line: `- role "name" [ref=N] (14.9k chars)`, nested; unnamed boxes show `after "<heading>"`. Size = the box's text in data mode. Boxes: banner, navigation, main, complementary, contentinfo, region, form, search, list, table, grid, treegrid, feed, tablist, tabpanel, dialog; listed from 800 chars.
+- Inside a zoom the box is the whole page: no landmark pruning, no main-only scope in data mode; everything else prunes as usual.
+- Match is exact on role and accessible name (or the box's preceding sibling heading text). Two or more matches: the map comes back with `<- match` on them, nothing is picked. Zero: throws, naming what was asked.
+- A ref in `within` is a ref from your previous snapshot; it is found again by its element (refs renumber every snapshot). Gone element or a ref from before a navigation: throws. Refs printed in a zoom work with `click()` etc. `within` wins over `map`.
+- Firefox: act/read drop a table's cells (as in a full snapshot); zoom tables with `mode: 'data'`.
+- `browse()` and `createBrowseTools()` (bareagent) have no map/zoom.
+- MCP: `snapshot` takes `map`, `within`, `full`; over `maxChars` it returns the map inline and saves the full snapshot to a file (`full: true` = path only). CLI: `snapshot --map`, `--within=<box>` (repeatable; quote names), `--full`, `--max-chars=N`.
 
 ## readable() vs snapshot() — which to use
 
@@ -254,6 +275,8 @@ For coding agents (Claude Code, Copilot, Cursor) and quick interactive testing. 
 ```bash
 barebrowse open https://example.com    # Start daemon + navigate
 barebrowse snapshot                    # → .barebrowse/page-<timestamp>.yml
+barebrowse snapshot --map              # outline of the page's big boxes (ref + size)
+barebrowse snapshot --within='list "Issues"'  # one box only (ref, role, role "name", role after "heading"; repeat for several)
 barebrowse readable                    # → .barebrowse/article-<timestamp>.txt (clean article text)
 barebrowse click 8                     # Click element ref=8
 barebrowse type 12 hello world         # Type into element ref=12
@@ -303,7 +326,7 @@ barebrowse ships an MCP server for direct use with Claude Desktop, Cursor, or an
 
 Action tools return `'ok'` -- the agent calls `snapshot` explicitly to observe. This avoids double-token output since MCP tool calls are cheap to chain.
 
-`browse`, `snapshot`, and `readable` accept a `maxChars` param (default 30000). If the output exceeds the limit it's saved to `.barebrowse/` and a short message with the file path is returned instead (`page-<timestamp>.yml` for snapshots, `article-<timestamp>.txt` for `readable`). `screenshot` always saves to `.barebrowse/screenshot-<timestamp>.{png,jpeg,webp}` and returns the file path (raw base64 in a JSON-RPC response would blow `maxChars`). `tabs` returns the JSON array, or with `switchTo: N` it switches and returns `'ok'`. All files MCP writes are owner-only (`0600` in a `0700` dir) — they can hold authenticated page content, so they're not world-readable on a shared host.
+`browse`, `snapshot`, and `readable` accept a `maxChars` param (default 30000). If the output exceeds the limit it's saved to `.barebrowse/` and a short message with the file path is returned instead (`page-<timestamp>.yml` for snapshots, `article-<timestamp>.txt` for `readable`). The exception is `snapshot` with neither `within`, `map` nor `full`: it also returns the page map inline, to zoom from with `within` (see Map + zoom); `full: true` gives the path alone. `browse` is unchanged (one-shot: nothing to zoom afterwards). `screenshot` always saves to `.barebrowse/screenshot-<timestamp>.{png,jpeg,webp}` and returns the file path (raw base64 in a JSON-RPC response would blow `maxChars`). `tabs` returns the JSON array, or with `switchTo: N` it switches and returns `'ok'`. All files MCP writes are owner-only (`0600` in a `0700` dir) — they can hold authenticated page content, so they're not world-readable on a shared host.
 
 `browse` and `snapshot` also accept `pruneMode: 'act'|'read'|'data'`. `act` (the default) keeps interactive elements and short labels — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. `data` (opt-in) is one line per record — tables with headers (`row "Label": Header: value · …`), repeated items grouped (`Label: a, b, c`) — for data pages (timetables, listings, results), not articles; every data snapshot starts with ONE legend line (`# data mode: one line per record. Tables: row "<label>": <column>: <value> · …  Groups: <label>: a, b, c.  A title line followed by detail lines is one block, up to the next title line. Main content only; use mode "act" for menus and page controls.`) so you can read it without docs; it keeps `[ref=N]` on interactive nodes (clickable like act) and is *larger* than act on prose pages — use `read`/`readable()` there. Same surface on the bareagent adapter. If act mode collapses a content-heavy page (raw > 5 KB → pruned < 500 chars AND < 5% of raw), the result includes a `hint: act mode dropped most of the page — retry with pruneMode='read' …` line between the stats and the tree so the caller knows to re-snapshot in read mode instead of bailing to a separate HTTP fetch.
 

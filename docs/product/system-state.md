@@ -37,6 +37,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 |--------|--------|-------------|--------|
 | Navigate | `page.goto(url)` | Load a URL, wait for page load, dismiss consent; resolves `{ url, status }`, rejects `NAV_FAILED` when unreachable | Done |
 | Snapshot | `page.snapshot()` | Pruned ARIA tree (47-95% token reduction) | Done |
+| Map + zoom | `page.snapshot({ map: true })`, `page.snapshot({ within })` | Outline of the page's big boxes; one or several boxes as the whole page, in any mode. Library default unchanged; MCP/CLI return the map for a snapshot over `maxChars` | Done |
 | Click | `page.click(ref)` | Scroll into view, mouse press+release at element center | Done |
 | Type | `page.type(ref, text)` | Focus element, insert text (fast batch mode) | Done |
 | Type (clear) | `page.type(ref, text, { clear: true })` | Select-all + delete, then type (replaces pre-filled content) | Done |
@@ -313,7 +314,7 @@ Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` the
 }
 ```
 
-21 tools: browse (one-shot), goto, snapshot, readable, click, type, press, scroll, hover, select, back, forward, reload, drag, upload, pdf, screenshot, wait_for, tabs, capabilities, switch_engine (plus opt-in `eval` and `assess`). `switch_engine` swaps chromium/firefox in place (page, tabs and refs reset); CLI equivalent is `barebrowse switch-engine`. `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier (`r` reads, `rw` adds click/type/press/select/drag/hover/switch_engine, `rwx` adds upload/eval); `BAREBROWSE_ALLOW=a.com,*.b.org` sets the site lock; bad values refuse to start. Every tool carries MCP annotations (`readOnlyHint`/`destructiveHint`/`openWorldHint`/`idempotentHint`).
+21 tools: browse (one-shot), goto, snapshot (`map`, `within`, `full`; an over-`maxChars` snapshot returns the map), readable, click, type, press, scroll, hover, select, back, forward, reload, drag, upload, pdf, screenshot, wait_for, tabs, capabilities, switch_engine (plus opt-in `eval` and `assess`). `switch_engine` swaps chromium/firefox in place (page, tabs and refs reset); CLI equivalent is `barebrowse switch-engine`. `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier (`r` reads, `rw` adds click/type/press/select/drag/hover/switch_engine, `rwx` adds upload/eval); `BAREBROWSE_ALLOW=a.com,*.b.org` sets the site lock; bad values refuse to start. Every tool carries MCP annotations (`readOnlyHint`/`destructiveHint`/`openWorldHint`/`idempotentHint`).
 Action tools return `'ok'` -- agent calls `snapshot` explicitly (MCP tool calls are cheap to chain).
 `browse` and `snapshot` accept `maxChars` (default 30000) — large snapshots are saved to `.barebrowse/` and a file path is returned.
 Session runs in hybrid mode (headless + automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation.
