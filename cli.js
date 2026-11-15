@@ -38,7 +38,13 @@ if (args.includes('--daemon-internal')) {
 } else if (cmd === 'goto' && args[1]) {
   await cmdProxy('goto', { url: args[1], timeout: parseFlag('--timeout') });
 } else if (cmd === 'snapshot') {
-  await cmdProxy('snapshot', { mode: parseFlag('--mode'), links: hasFlag('--links') || undefined });
+  const within = parseFlagAll('--within');
+  await cmdProxy('snapshot', {
+    mode: parseFlag('--mode'), links: hasFlag('--links') || undefined,
+    within: within && (within.length === 1 ? within[0] : within),
+    map: hasFlag('--map') || undefined, full: hasFlag('--full') || undefined,
+    maxChars: parseFlag('--max-chars') && Number(parseFlag('--max-chars')),
+  });
 } else if (cmd === 'readable') {
   await cmdProxy('readable');
 } else if (cmd === 'screenshot') {
@@ -177,6 +183,8 @@ async function cmdProxy(command, cmdArgs) {
     // Print result
     if (result.file && result.count !== undefined) {
       process.stdout.write(`${result.file} (${result.count} entries)\n`);
+    } else if (result.file && result.map) {
+      process.stdout.write(`${result.file}\nOver --max-chars, so here is the map of the page; zoom with: snapshot --within=<ref or name> (repeat the flag for several boxes), or --full for the path alone.\n${result.map}\n`);
     } else if (result.file) {
       process.stdout.write(`${result.file}\n`);
     } else if (result.value !== undefined) {
@@ -604,6 +612,12 @@ Navigation:
   barebrowse forward                Go forward in history
   barebrowse reload [--no-cache]    Reload current page
   barebrowse snapshot [--mode=M] [--links]  ARIA snapshot -> .barebrowse/page-*.yml (--links: link URLs)
+    --map                           Outline of the page's big boxes (ref + size) instead of content
+    --within=<box>                  Zoom to one box, as if it were the page: a ref from the map, a role (table),
+                                    role "name" (--within='list "Issues"'), or role after "heading". Repeat the flag
+                                    for several boxes (page order). Works with --mode and --links.
+    --full                          Skip the auto map. A snapshot over --max-chars (default 30000) is saved
+                                    in full and the map is printed after the path, to zoom from.
   barebrowse readable               Clean article text -> .barebrowse/article-*.txt
   barebrowse screenshot [--format]  Screenshot -> .barebrowse/screenshot-*.png
   barebrowse pdf [--landscape]      PDF export -> .barebrowse/page-*.pdf
