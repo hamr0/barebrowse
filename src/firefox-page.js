@@ -170,8 +170,18 @@ export async function createFirefoxPage(bidi, opts = {}) {
     return { context, sharedId: res.result.sharedId };
   }
 
+  /** BiDi pointer moves do not scroll (Chromium's click does): bring the element on-screen first. */
+  async function scrollIntoView({ context, sharedId }) {
+    await bidi.send('script.callFunction', {
+      functionDeclaration: `function(){ this.scrollIntoView({ block: 'center', inline: 'center' }); }`,
+      this: { sharedId }, target: { context }, awaitPromise: false,
+    });
+  }
+
   async function pointerClick(ref) {
-    const { context, sharedId } = await resolveRef(ref);
+    const target = await resolveRef(ref);
+    await scrollIntoView(target);
+    const { context, sharedId } = target;
     await bidi.send('input.performActions', {
       context,
       actions: [{
@@ -466,7 +476,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     },
 
     async hover(ref) {
-      const { context, sharedId } = await resolveRef(ref);
+      const target = await resolveRef(ref);
+      await scrollIntoView(target);
+      const { context, sharedId } = target;
       await bidi.send('input.performActions', {
         context,
         actions: [{
@@ -537,18 +549,22 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (from.context !== to.context) {
         throw new Error('drag() between elements in different frames is not supported');
       }
-      await bidi.send('input.performActions', {
+      // Two calls so each target is scrolled into view before its move; the
+      // pressed-pointer state carries over between performActions calls.
+      const drag = (actions) => bidi.send('input.performActions', {
         context: from.context,
-        actions: [{
-          type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
-          actions: [
-            { type: 'pointerMove', x: 0, y: 0, origin: { type: 'element', element: { sharedId: from.sharedId } } },
-            { type: 'pointerDown', button: 0 },
-            { type: 'pointerMove', x: 0, y: 0, origin: { type: 'element', element: { sharedId: to.sharedId } } },
-            { type: 'pointerUp', button: 0 },
-          ],
-        }],
+        actions: [{ type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' }, actions }],
       });
+      await scrollIntoView(from);
+      await drag([
+        { type: 'pointerMove', x: 0, y: 0, origin: { type: 'element', element: { sharedId: from.sharedId } } },
+        { type: 'pointerDown', button: 0 },
+      ]);
+      await scrollIntoView(to);
+      await drag([
+        { type: 'pointerMove', x: 0, y: 0, origin: { type: 'element', element: { sharedId: to.sharedId } } },
+        { type: 'pointerUp', button: 0 },
+      ]);
     },
 
     async upload(ref, files) {
