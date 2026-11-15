@@ -1,5 +1,27 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **Map + zoom for `snapshot()`.** `snapshot({ map: true })` returns an outline of
+  the page's big boxes (landmarks, lists, tables, grids, feeds, tabpanels,
+  dialogs) with a ref and a size each; `snapshot({ within })` returns one box, or
+  several in page order, as if it were the whole page: a ref from the map, a
+  role, `role "name"`, or `role after "heading"` for an unnamed box. Works in
+  every mode and with `links`, on both engines. Two or more matches return the
+  map with the matches marked; none, or a ref whose element is gone, throws. The
+  library default is unchanged (byte for byte). MCP `snapshot` gets `map`,
+  `within` and `full`; a snapshot over `maxChars` now also returns the map
+  inline (the full snapshot is still saved to a file). CLI: `snapshot --map`,
+  `--within=<box>` (repeatable), `--full`, `--max-chars=N`.
+
+### Fixed
+
+- **Firefox: clicks on elements below the fold.** `click()`, `hover()` and
+  `drag()` threw `move target out of bounds`, so Google's consent interstitial
+  was never dismissed on Firefox. The target is scrolled into view first.
+
 ## [0.27.0] - 2026-10-30
 
 ### Added
