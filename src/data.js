@@ -88,7 +88,7 @@ export const stripLegend = (s) => (s.startsWith(LEGEND) ? s.slice(s.indexOf('\n'
  * Render a raw ARIA tree in data mode.
  *
  * @param {object} root - Root node from buildTree() (CDP vocabulary)
- * @param {{ links?: boolean }} [opts] - links: the tree's link nodes carry `urls` (annotateLinks); adds the legend note
+ * @param {{ links?: boolean, whole?: boolean }} [opts] - links: the tree's link nodes carry `urls` (annotateLinks); adds the legend note. whole: root is a zoom box (snapshot `within`), so no main-only scope
  * @returns {string} LEGEND line, then one line per record, YAML-ish like formatTree(); '' when there are no records
  */
 export function dataSnapshot(root, opts = {}) {
@@ -283,7 +283,7 @@ export function dataSnapshot(root, opts = {}) {
   if (tops.length === 1 && (tops[0].role === 'RootWebArea' || tops[0].role === 'WebArea')) tops = tops[0].children;
   const find = (ns, role) => { for (const n of ns) { if (n.role === role) return n; const f = find(n.children, role); if (f) return f; } return null; };
   const main = find(tops, 'main');
-  if (main && main.children.length) tops = [main];
+  if (!opts.whole && main && main.children.length) tops = [main];
   const res = xform({ role: 'root', name: '', children: tops, props: {} }, []);
 
   const lines = [];
