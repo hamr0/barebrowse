@@ -82,6 +82,8 @@ page.snapshot({ within: 563 })                     // one box by ref (from the m
 page.snapshot({ within: 'table' })                 // one box by role
 page.snapshot({ within: 'list "Issues"' })         // one box by role + accessible name
 page.snapshot({ within: 563, mode: 'data' })       // any mode works inside a zoom
+page.snapshot({ within: 'list after "Other flights"' }) // unnamed box, by its preceding heading
+page.snapshot({ within: [430, 438] })              // several boxes, in page order
 ```
 
 MCP `snapshot` gets `within` and `map` params, and `full: true` to skip the
@@ -159,9 +161,23 @@ less). Found alongside: `goto()` returned the consent.google.com URL (status
 **Plan changes from the POCs:**
 - Add `tabpanel` to the map's box roles (Flights' results live in one).
 - Label an unnamed box in the map with the heading right before it, e.g.
-  `list (after heading "Other flights") [ref=N]`, so the agent can tell
-  look-alike lists apart. Structural (sibling heading), no text guessing;
-  `within` by name keeps matching the accessible name only.
+  `list after "Other flights" [ref=N]`, so the agent can tell look-alike
+  lists apart. Structural (the preceding sibling heading), no text guessing.
+
+**Plan changes from fwdloop (owner-approved 2026-11-15):** one-box picks drop
+evidence on Flights (Top vs Other flights), and refs change on every load.
+- **Several boxes:** `within: [a, b, …]` returns each box in page order, in one
+  output; each entry is any `within` form (ref, role, role + name, heading).
+- **Selector that survives a reload:** `within: 'list after "Other flights"'`
+  matches a box whose preceding sibling heading has exactly that text. Same
+  rules as role + name: zero matches → error, two or more → map.
+- Rejected: `within: 'lists'` (every list — Amazon has 48, mostly filters)
+  and `parent-of: [a, b]` (several boxes already covers it, and is smaller:
+  both Flights lists ~24% under the full page vs ~17% for their parent).
+- fwdloop's intended use (theirs to build, owner decides): pick boxes on the
+  map at draft time; on each run prove every quoted fact is inside them; fall
+  back to the full read when the proof fails. fwdloop keeps the full read for
+  now.
 
 ## Tests
 
