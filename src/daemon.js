@@ -320,12 +320,18 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       return isHttpError(status) ? { ok: true, status } : { ok: true };
     },
 
-    async snapshot({ mode, links }) {
+    async snapshot({ mode, links, within, map, full, maxChars }) {
       const pruneMode = mode || defaultPruneMode;
-      const text = await page.snapshot({ mode: pruneMode, links });
+      const text = await page.snapshot({ mode: pruneMode, links, within, map });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
       const file = join(absDir, `page-${ts}.yml`);
       writeFilePrivate(file, text);
+      // Over the cap with no zoom asked for: the file stays complete, and the
+      // map (a few % of the page) comes back too, to zoom from. Same as MCP.
+      if (within == null && !map && !full && text.length > (maxChars ?? 30000)) {
+        const outline = await page.snapshot({ links, map: true });
+        if (outline.length <= (maxChars ?? 30000)) return { ok: true, file, map: outline };
+      }
       return { ok: true, file };
     },
 
