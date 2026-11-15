@@ -30,3 +30,11 @@ Settled decisions. Don't re-debate these -- see rationale column.
 ---
 
 *Add new decisions below this line. Include date, context, and rationale.*
+
+| # | Decision | Choice | Why | Alternative | Why not |
+|---|----------|--------|-----|-------------|---------|
+| 16 | MCP scoping (v0.27.0, 2026-10-30, asked by fwdloop) | barebrowse enforces it: `BAREBROWSE_TIER` r/rw/rwx hides tools, plus MCP annotations on every tool | A hint is advice the client may ignore; barebrowse is the gateway to any site, so it must enforce limits itself | Annotations only | Nothing stops a client that ignores them |
+| 17 | Site lock scope (v0.27.0) | Lock top-level page loads only (goto, redirects, clicks, JS jumps, popups), in-browser at the network layer; hosts only, `host` exact, `*.host` subdomains only; bad config refuses to start | Catches every way off the site without breaking pages; Cloudflare Browser Run guardrails (2026-11) use the same host-matching rules | Lock every request (images, scripts, XHR) like Cloudflare | Breaks most sites unless CDN lists are added; in tier r the agent can't type, so subresources add little |
+| 18 | Zoom default (planned v0.28.0, 2026-11-15) | Plan A: map/zoom only when asked in the library; MCP/CLI return the map when a snapshot exceeds `maxChars` | bareloop and fwdloop freeze the whole library snapshot as signed input; a map there breaks every check | Plan B: map by default everywhere | Breaks both consumers; see docs/product/zoom-plan.md |
+| 19 | Who picks the zoom box (2026-11-15) | The agent picks from the map; barebrowse never guesses | "Largest box" picked References over the table on Wikipedia and dropped Top flights on Google Flights | Auto-pick by size or rule | Wrong on 2 of the measured pages; page-fitting again (cinema R4) |
+| 20 | Several boxes + heading selector (2026-11-15, from fwdloop) | `within: [a, b]` and `within: 'list after "<heading>"'` | One-box picks drop evidence (Flights has two unnamed lists); refs change per load | `within: 'lists'`, `parent-of: [a, b]` | Every list = 48 on Amazon, mostly filters; several boxes is smaller than their parent |
