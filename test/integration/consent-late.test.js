@@ -26,10 +26,16 @@ const REDIR = '<!doctype html><html><body><main><h1>A</h1></main><script>setTime
 const B = LATE.replace('1500', '200');
 const PLAIN = '<!doctype html><html><body><main><h1 id="out">idle</h1><p>No popup here</p></main></body></html>';
 
+// A consent interstitial whose accept button is a form submit (Google's consent.google.com
+// shape): the click navigates, and the next page answers slowly.
+const GATE = '<!doctype html><html><body><main><h1>Gate</h1><div role="dialog" aria-label="Example asks for your consent"><p>We and our partners use cookies</p><form action="/landed"><button>Accept all</button></form></div></main></body></html>';
+const LANDED = '<!doctype html><html><body><main><h1>Landed</h1></main></body></html>';
+
 async function serve() {
   const srv = createServer((q, res) => {
     res.writeHead(200, { 'Content-Type': 'text/html' });
-    res.end(q.url.startsWith('/late') ? LATE : q.url.startsWith('/redir') ? REDIR : q.url.startsWith('/b') ? B : PLAIN);
+    if (q.url.startsWith('/landed')) { setTimeout(() => res.end(LANDED), 500); return; }
+    res.end(q.url.startsWith('/gate') ? GATE : q.url.startsWith('/late') ? LATE : q.url.startsWith('/redir') ? REDIR : q.url.startsWith('/b') ? B : PLAIN);
   });
   await new Promise((r) => srv.listen(0, '127.0.0.1', r));
   return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
@@ -78,6 +84,16 @@ for (const engine of ['chromium', 'firefox']) {
         const snap = await page.snapshot();
         assert.ok(snap.includes('consent clicked'), 'Consent button must have been clicked:\n' + snap);
         assert.ok(!/dialog/.test(snap), 'dialog must be gone from the snapshot:\n' + snap);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('an accept click that navigates is awaited: the snapshot shows the page behind the interstitial', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true });
+      try {
+        await page.goto(srvr.url + '/gate');
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('Landed'), 'must be past the consent form:\n' + snap);
       } finally { await page.close(); await srvr.close(); }
     });
 
@@ -136,8 +152,9 @@ describe('late consent dialog — attach mode (chromium)', () => {
   it('goto runs consent in attach mode, so the first snapshot re-checks too', async () => {
     const { launch, cleanupBrowser } = await import('../../src/chromium.js');
     const srvr = await serve();
-    const running = await launch({});
+    let running;
     try {
+      running = await launch({});
       const page = await connect({ port: running.port, allowLocalUrls: true });
       try {
         await page.goto(srvr.url + '/late');
@@ -145,6 +162,6 @@ describe('late consent dialog — attach mode (chromium)', () => {
         const snap = await page.snapshot();
         assert.ok(snap.includes('consent clicked'), 'Consent button must have been clicked:\n' + snap);
       } finally { await page.close(); }
-    } finally { await cleanupBrowser(running); await srvr.close(); }
+    } finally { if (running) await cleanupBrowser(running); await srvr.close(); }
   });
 });
