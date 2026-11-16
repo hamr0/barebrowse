@@ -556,3 +556,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** while a consent pass clicks, the engine collects the main-frame Document responses (Chromium: `Network.responseReceived`, type Document, main frameId; Firefox: `network.responseCompleted` with a navigation id in the top context) and, if one arrived, sets `lastNavigation` to the last one: its url and real status. Covers goto, the hybrid retry and the first-snapshot re-check. A consent click that navigates nothing changes nothing; no-consent pages report exactly as before.
 **Cost:** none.
 **Regression test:** `test/integration/consent-late.test.js`, "an accept click that navigates is awaited" now asserts goto's `{url, status}` and `page.lastNavigation` are the landed page; red on both engines before.
+
+## [2026-11-16] Chromium goBack()/goForward() took the full 30s timeout (N23)
+
+**Symptom:** `page.goBack()` and `page.goForward()` each resolved only after ~30.5s on Chromium (Wikipedia Node.js to Deno and back: 30507ms / 30532ms; local fixtures the same). Firefox was fine, and so was `reload()`.
+**Root cause:** the traversal waited for `Page.loadEventFired`. A history entry restored from the back/forward cache, or a same-document entry, fires no load event; Chromium sent only `Page.frameStoppedLoading` and `Page.frameNavigated` (or `navigatedWithinDocument`). The 30s wait then ran out and the error was swallowed.
+**Fix:** `traverse()` in `src/index.js` waits for the main frame's `Page.frameStoppedLoading` (it follows the load event on a normal load and fires on the bfcache and same-document paths), subscribed before `Page.navigateToHistoryEntry`. Same 30s ceiling, same no-history errors, refs and `lastNavigation` cleared as before (N9/N19). Firefox untouched.
+**Cost:** one extra `Page.getFrameTree` call per traversal.
+**Regression test:** `test/integration/navigation.test.js`, "goBack/goForward return when the traversal lands" (both under 5s; Chromium also a pushState entry); red on Chromium before (30.5s). Real pages: goBack 30507ms to 96ms, goForward 30532ms to 109ms.
+**Not fixed (found while testing):** `goto()` to a hash-only change of the current URL (`/ok#a` then `/ok#b`) waits for a load event that never comes and times out on Chromium.

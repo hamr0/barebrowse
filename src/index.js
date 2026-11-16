@@ -622,9 +622,7 @@ export async function connect(opts = {}) {
     async goBack() {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       if (currentIndex <= 0) throw new Error('No previous page in history');
-      const loadPromise = page.session.once('Page.loadEventFired', 30000);
-      await page.session.send('Page.navigateToHistoryEntry', { entryId: entries[currentIndex - 1].id });
-      try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
+      await traverse(page, entries[currentIndex - 1].id);
       refMap = new Map(); // refs from the previous page are now invalid
       consentRecheck = null;
       lastNavigation = null; // no outcome is known for the history entry we landed on
@@ -633,9 +631,7 @@ export async function connect(opts = {}) {
     async goForward() {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       if (currentIndex >= entries.length - 1) throw new Error('No next page in history');
-      const loadPromise = page.session.once('Page.loadEventFired', 30000);
-      await page.session.send('Page.navigateToHistoryEntry', { entryId: entries[currentIndex + 1].id });
-      try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
+      await traverse(page, entries[currentIndex + 1].id);
       refMap = new Map();
       consentRecheck = null;
       lastNavigation = null;
@@ -1226,6 +1222,33 @@ export async function applyBlocklist(session, pageOpts) {
 /** Test-only: reset the warn-once flag. Not part of the public API. */
 export function _resetBlocklistWarning() {
   blocklistWarned = false;
+}
+
+/**
+ * Go to a history entry and wait until the traversal has landed. A bfcache
+ * restore or a same-document entry never fires Page.loadEventFired, so wait
+ * for the main frame's Page.frameStoppedLoading instead: it follows the load
+ * event on a normal load and fires on both of those paths. Subscribed before
+ * the navigate call so it cannot be missed; times out at 30s like before.
+ * @param {*} page
+ * @param {string} entryId history entry id (from Page.getNavigationHistory)
+ */
+async function traverse(page, entryId) {
+  const { session } = page;
+  const { frameTree } = await session.send('Page.getFrameTree');
+  const mainId = frameTree.frame.id;
+  let off = () => {};
+  const landed = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { off(); reject(new Error('timeout')); }, 30000);
+    off = session.on('Page.frameStoppedLoading', (p) => {
+      if (p.frameId === mainId) { clearTimeout(timer); off(); resolve(undefined); }
+    });
+  });
+  landed.catch(() => {});
+  try {
+    await session.send('Page.navigateToHistoryEntry', { entryId });
+  } catch (e) { off(); throw e; }
+  try { await landed; } catch { await new Promise((r) => setTimeout(r, 500)); }
 }
 
 /**
