@@ -21,6 +21,16 @@ export const BOX_ROLES = new Set([
   'list', 'table', 'grid', 'treegrid', 'feed', 'tablist', 'tabpanel', 'dialog',
 ]);
 
+/** Card groups are never looked for inside these: link columns and menus there are not content. */
+const CHROME_ROLES = new Set(['banner', 'navigation', 'contentinfo']);
+/** Parents that are already a map box of their own kind: their items are a list or a table, not a card group. */
+const NATIVE_BOX = new Set(['list', 'feed', 'table', 'grid', 'treegrid']);
+/** Roles that are one cell of something else, never a card. */
+const NOT_CARD = new Set(['row', 'tab', 'option', 'menuitem', 'treeitem', 'StaticText', 'heading', 'link', 'button', 'cell', 'gridcell', 'columnheader', 'rowheader', 'separator']);
+const NOISE = new Set(['StaticText', 'InlineTextBox', 'LineBreak', 'ListMarker', 'none', 'presentation', 'generic', 'image', 'img']);
+/** A card: at least this much text and this many nodes; a group: at least this many alike cards, and half of the parent's substantial children. */
+const CARD = { text: 15, nodes: 4, run: 4, similar: 0.6 };
+
 /** A box is listed when its data-mode text is at least this many chars. */
 const MAP_MIN = 800;
 
@@ -67,20 +77,82 @@ function index(root) {
       walk(c);
     }
   })(root);
-  return { nodes, after };
+  let groups = null;
+  return { nodes, after, groups: (links) => (groups ??= cardGroups(root, links)) };
 }
 
-const label = (n, after) => `${n.role}${n.name ? ` "${norm(n.name)}"` : after ? ` after "${after}"` : ''}`;
+/**
+ * Card groups: a parent whose substantial children are mostly alike (same role, similar
+ * child-role sets): a grid of product, listing or video cards that no landmark or list role
+ * marks. Structure only. Not looked for inside banner/navigation/contentinfo, and not when
+ * the parent is a list, table or the like (already a map box of its own kind). A landmark
+ * parent (cards straight in `main`) is a group too; its ref is the landmark's. Returns parent node → { items, size }.
+ * @returns {Map<object, {items: object[], size: number}>}
+ */
+function cardGroups(root, links) {
+  const text = new Map();
+  const count = new Map();
+  (function tally(n) {
+    let t = n.role === 'StaticText' ? norm(n.name).length : 0;
+    let c = 1;
+    for (const k of n.children) { tally(k); t += text.get(k); c += count.get(k); }
+    text.set(n, t); count.set(n, c);
+  })(root);
+  // role set of a node's children and grandchildren, noise left out
+  const shape = (n) => {
+    const set = new Set();
+    for (const c of kids(n)) {
+      if (!NOISE.has(c.role)) set.add(c.role);
+      for (const g of kids(c)) if (!NOISE.has(g.role)) set.add('>' + g.role);
+    }
+    return set;
+  };
+  const jaccard = (a, b) => {
+    if (!a.size && !b.size) return 1;
+    let both = 0;
+    for (const x of a) if (b.has(x)) both++;
+    return both / (a.size + b.size - both);
+  };
+  const isCard = (n) => !NOT_CARD.has(n.role) && text.get(n) >= CARD.text && count.get(n) >= CARD.nodes;
+
+  const groups = new Map();
+  (function walk(n) {
+    if (!n.ignored && CHROME_ROLES.has(n.role)) return;
+    const ks = kids(n);
+    // Cluster the cards by role and shape; a group need not be contiguous (an ad between cards does not split it).
+    const clusters = [];
+    const cards = ks.filter(isCard);
+    for (const k of cards) {
+      const sh = shape(k);
+      const c = clusters.find((x) => x.role === k.role && jaccard(x.shape, sh) >= CARD.similar);
+      if (c) c.items.push(k); else clusters.push({ role: k.role, shape: sh, items: [k] });
+    }
+    const best = clusters.sort((a, b) => b.items.length - a.items.length)[0];
+    if (best && best.items.length >= CARD.run && best.items.length >= 0.5 * cards.length) {
+      if (!NATIVE_BOX.has(n.role)) {
+        const size = best.items.reduce((sum, it) => sum + stripLegend(dataSnapshot(it, { links, whole: true })).length, 0);
+        groups.set(n, { items: best.items, size });
+      }
+      return; // a group's cards are not searched for more groups
+    }
+    for (const c of ks) walk(c);
+  })(root);
+  return groups;
+}
+
+const label = (n, after, group) => (group ? `group ×${group.items.length}` : `${n.role}${n.name ? ` "${norm(n.name)}"` : after ? ` after "${after}"` : ''}`);
 const sizeText = (n) => (n < 1000 ? `${n}` : `${(n / 1000).toFixed(1)}k`);
 
 /**
  * The map: one line per box, nested by box depth.
  *   - role "name" [ref=N] (14.9k chars)
  *   - list after "Other flights" [ref=N] (3.1k chars)    ← unnamed: its preceding heading
+ *   - group ×18 (6.3k chars) [ref=N]                      ← a card group: its parent's ref, the cards' size
  * Size is the box's data-mode text. Boxes in `marked` are listed whatever their size.
  */
 function mapLines(root, ix, links, marked = new Set()) {
   const lines = [];
+  const groups = ix.groups(links);
   (function walk(n, depth) {
     let d = depth;
     if (!n.ignored && BOX_ROLES.has(n.role)) {
@@ -89,6 +161,11 @@ function mapLines(root, ix, links, marked = new Set()) {
         lines.push(`${'  '.repeat(depth)}- ${label(n, ix.after.get(n))} [ref=${n.nodeId}] (${sizeText(size)} chars)${marked.has(n) ? ' <- match' : ''}`);
         d = depth + 1;
       }
+    }
+    const g = !n.ignored && groups.get(n);
+    if (g && (g.size >= MAP_MIN || marked.has(n))) {
+      lines.push(`${'  '.repeat(d)}- ${label(n, null, g)} (${sizeText(g.size)} chars) [ref=${n.nodeId}]${marked.has(n) ? ' <- match' : ''}`);
+      d += 1;
     }
     for (const c of n.children) walk(c, d);
   })(root, 0);
@@ -121,6 +198,8 @@ export function zoomSnapshot(tree, { head, map, selectors, refNodes = new Map(),
       const id = refNodes.get(s.ref);
       return id ? ix.nodes.filter((n) => n.nodeId === id) : [];
     }
+    // a bare `group` names the card groups the map lists (the real group nodes only when there are none)
+    if (s.role === 'group' && s.name === undefined && s.after === undefined && ix.groups(links).size) return [...ix.groups(links).keys()];
     return ix.nodes.filter((n) => n.role === s.role
       && (s.name === undefined || norm(n.name) === s.name)
       && (s.after === undefined || ix.after.get(n) === s.after));
@@ -153,7 +232,7 @@ export function zoomSnapshot(tree, { head, map, selectors, refNodes = new Map(),
   const body = parts.map((p, i) => (i && mode === 'data' ? stripLegend(p.out) : p.out)).filter(Boolean).join('\n');
   const rawLen = parts.reduce((s, p) => s + p.raw.length, 0);
   const sized = parts.reduce((s, p) => s + stripLegend(p.out).length, 0);
-  const what = boxes.map((b) => `${label(b, ix.after.get(b))} [ref=${b.nodeId}]`).join(', ');
+  const what = boxes.map((b) => `${label(b, ix.after.get(b), !BOX_ROLES.has(b.role) && ix.groups(links).get(b))} [ref=${b.nodeId}]`).join(', ');
   return `${head}zoom ${what}: ${rawLen.toLocaleString()} chars → ${sized.toLocaleString()} chars (${rawLen ? Math.round((1 - sized / rawLen) * 100) : 0}% pruned)\n${body}`;
 }
 

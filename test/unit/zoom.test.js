@@ -165,3 +165,80 @@ describe('whole option', () => {
     assert.ok(!a.includes('Home') && !a.includes('Terms'));
   });
 });
+
+describe('card groups', () => {
+  const long = (i) => `Apartment number ${i} in a quiet street near the old town, rated very highly by guests`;
+  const card = (i) => node('group', '', [
+    node('heading', `Card ${i}`, [text(`Card ${i}`)], { level: 3 }),
+    text(long(i)),
+    node('link', `View ${i}`, [text(`View ${i}`)]),
+    node('button', 'Save', [text('Save')]),
+  ]);
+  const grid = (n = 12) => node('generic', '', Array.from({ length: n }, (_, i) => card(i)));
+  const page = (...mainKids) => node('RootWebArea', 'T', [
+    node('banner', '', [node('link', 'Home', [text('Home')])]),
+    node('main', '', mainKids),
+    node('contentinfo', '', [node('link', 'Terms', [text('Terms')])]),
+  ]);
+
+  it('lists a card grid nested under its box: count, size, the parent\'s ref', () => {
+    const g = grid();
+    const out = run(page(node('heading', 'Results', [text('Results')], { level: 1 }), g), { map: true });
+    assert.match(out, /^- main \[ref=\d+\] \([\d.]+k chars\)\n {2}- group ×12 \(\d+\.\dk chars\) \[ref=(\d+)\]$/m);
+    assert.equal(out.match(/group ×12 .*\[ref=(\d+)\]/)[1], g.nodeId);
+  });
+
+  it('within the group\'s ref zooms to the cards, labelled as a group', () => {
+    const g = grid();
+    const t = page(g);
+    const out = run(t, { selectors: parseWithin(g.nodeId), refNodes: new Map([[g.nodeId, g.nodeId]]) });
+    assert.match(out, /zoom group ×12 \[ref=\d+\]/);
+    assert.ok(out.includes('Card 0') && out.includes('Card 11'));
+  });
+
+  it('within "group": one grid zooms, two grids give the map with both marked', () => {
+    const one = page(grid());
+    assert.match(zoom(one, 'group'), /zoom group ×12/);
+    const two = page(grid(), grid(10));
+    const out = zoom(two, 'group');
+    assert.match(out, /within matched more than one box: group \(2\)/);
+    assert.equal(out.match(/\] <- match$/gm).length, 2);
+  });
+
+  it('skips link columns inside contentinfo/navigation/banner', () => {
+    const col = (n) => node('generic', '', Array.from({ length: 8 }, (_, i) => card(i + n)));
+    const t = node('RootWebArea', 'T', [
+      node('main', '', [bigList('Items', 'it')]),
+      node('contentinfo', '', [grid()]),
+      node('navigation', '', [col(0)]),
+      node('banner', '', [col(0)]),
+    ]);
+    assert.ok(!run(t, { map: true }).includes('group ×'));
+  });
+
+  it('does not repeat a box that is already in the map (a list of cards)', () => {
+    const list = node('list', 'Stays', Array.from({ length: 12 }, (_, i) => node('listitem', '', [
+      node('heading', `Card ${i}`, [text(`Card ${i}`)]), text(long(i)), node('link', `View ${i}`, [text(`View ${i}`)]), node('button', 'Save', [text('Save')]),
+    ])));
+    const out = run(page(list), { map: true });
+    assert.match(out, /- list "Stays"/);
+    assert.ok(!out.includes('group ×'));
+  });
+
+  it('ignores small and non-uniform siblings', () => {
+    const tiny = node('generic', '', Array.from({ length: 12 }, (_, i) => node('generic', '', [text(`n${i}`)])));
+    const mixed = node('generic', '', [
+      card(1), node('table', '', rows(2)), node('form', '', [node('textbox', 'Name'), node('button', 'Go', [text('Go')])]),
+      node('list', '', [item('one with some words in it')]), node('complementary', '', [text(long(9)), text(long(8))]),
+      node('figure', '', [text(long(7)), node('image', 'x'), node('link', 'l', [text('l')]), node('button', 'b', [text('b')])]),
+    ]);
+    assert.ok(!run(page(tiny, mixed), { map: true }).includes('group ×'));
+  });
+
+  it('a pile of small groups below the size threshold is not listed', () => {
+    const small = node('generic', '', Array.from({ length: 4 }, (_, i) => node('group', '', [
+      node('heading', `C${i}`, [text(`C${i}`)]), text('some text here long enough'), node('link', 'a', [text('a')]), node('button', 'b', [text('b')]),
+    ])));
+    assert.ok(!run(page(small), { map: true }).includes('group ×'));
+  });
+});

@@ -140,3 +140,38 @@ for (const engine of ['chromium', 'firefox']) {
     }));
   });
 }
+
+const CARDS = `<!doctype html><html><body>
+<header><nav><a href="/">Home</a></nav></header>
+<main><h1>Stays</h1><div>
+${Array.from({ length: 14 }, (_, i) => `<article><h3>Stay ${i}</h3><p>Apartment number ${i} in a quiet street near the old town, rated very highly by guests</p><a href="/s${i}">View stay ${i}</a><button>Save ${i}</button></article>`).join('\n')}
+</div></main>
+<footer><div>${Array.from({ length: 6 }, (_, i) => `<article><h3>Col ${i}</h3><p>Footer text for column number ${i} of links</p><a href="/c${i}">Link ${i}</a><button>Go ${i}</button></article>`).join('')}</div></footer>
+</body></html>`;
+
+for (const engine of ['chromium', 'firefox']) {
+  describe(`card groups — ${engine}`, { skip: engine === 'firefox' && !hasFirefox && 'no Firefox installed' }, () => {
+    it('the map lists the card grid (not the footer one), within its ref and within "group" zoom to the cards', async () => {
+      const srv = createServer((q, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(CARDS); });
+      await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(`http://127.0.0.1:${srv.address().port}/`);
+        const before = await page.snapshot();
+        const map = await page.snapshot({ map: true });
+        assert.match(map, /\n {2}- group ×14 \(\d+\.\dk chars\) \[ref=(\d+)\]/, map);
+        assert.equal(map.match(/group ×/g).length, 1, 'the footer grid is skipped:\n' + map);
+        const ref = map.match(/group ×14 [^\n]*\[ref=(\d+)\]/)[1];
+        const byRef = await page.snapshot({ within: Number(ref) });
+        // Chromium drops the wrapper div, so the cards' parent is main itself and its ref zooms main
+        assert.match(byRef, /zoom (group ×14|main) \[ref=/);
+        assert.ok(byRef.includes('View stay 0') && byRef.includes('View stay 13') && !byRef.includes('Link 0'), byRef.slice(0, 300));
+        const byRole = await page.snapshot({ within: 'group' });
+        assert.match(byRole, /zoom (group ×14|main)/);
+        assert.ok(byRole.includes('View stay 13') && !byRole.includes('Link 0'));
+        assert.equal(await page.snapshot(), before, 'the default snapshot is unchanged by the map calls');
+        assert.ok(!before.includes('group ×'), 'no group line outside the map');
+      } finally { await page.close(); srv.close(); }
+    });
+  });
+}
