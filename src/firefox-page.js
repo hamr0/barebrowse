@@ -370,6 +370,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
       try { if (!(await dismissConsentFirefox(root, consentClick))) consentRecheck = await docKey(); }
       catch { /* consent dismissal is best-effort */ }
     }
+    // The tree above was built for these internal passes, not shown to the caller: refs
+    // from before this navigation must stay dead (Chromium's goto never hands out refs
+    // either), or an old ref number resolves to a different element of the new page.
+    refContexts = new Map();
     return isChallengePage(root, countNodes(root));
   }
 
