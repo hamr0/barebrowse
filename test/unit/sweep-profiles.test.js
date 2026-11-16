@@ -95,7 +95,9 @@ describe('sweepStaleProfiles', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
-  it('treats an unsignalable (EPERM) pid as alive, for both the owner pid and a lock pid', { skip: process.getuid?.() === 0 && 'root can signal pid 1 (no EPERM)' }, () => {
+  // pid 1 only yields EPERM when it belongs to another uid; probe instead of guessing from getuid()
+  const pid1Signalable = (() => { try { process.kill(1, 0); return true; } catch { return false; } })();
+  it('treats an unsignalable (EPERM) pid as alive, for both the owner pid and a lock pid', { skip: pid1Signalable && 'pid 1 is signalable here (no EPERM)' }, () => {
     const root = mkdtempSync(join(tmpdir(), 'bb-sweep-'));
     try {
       const dead = spawnSync(process.execPath, ['-e', '']).pid;
