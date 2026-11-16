@@ -414,6 +414,9 @@ export async function connect(opts = {}) {
   };
   let page = await createPage(cdp, !currentlyHeaded, pageOpts);
   let refMap = new Map();
+  // Main-document identity (navKey) when the current refs were handed out; read again
+  // fresh at every ref use, so a click/press that navigated to a new document kills them.
+  let refDoc = null;
   let botBlocked = false;
   // Outcome of the latest goto() ({url, status}); null before any goto.
   /** @type {NavigationOutcome|null} */
@@ -432,6 +435,20 @@ export async function connect(opts = {}) {
       const { frameTree } = await page.session.send('Page.getFrameTree');
       return `${page.targetId}:${frameTree.frame.loaderId}`;
     } catch { return null; }
+  }
+
+  /** Resolve a ref from the last snapshot; throws when the document it belongs to is gone. */
+  async function refEntry(ref) {
+    const entry = refMap.get(String(ref));
+    if (!entry) throw new Error(`No element found for ref "${ref}"`);
+    if (refDoc) {
+      const now = await navKey();
+      if (now && now !== refDoc) {
+        refMap = new Map(); refDoc = null;
+        throw new Error(`No element found for ref "${ref}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
+      }
+    }
+    return entry;
   }
 
   // A consent accept that navigates (a form submit, Google's consent.google.com) lands on
@@ -667,9 +684,12 @@ export async function connect(opts = {}) {
           try { await dismissConsentTracked(); } catch { /* best-effort */ }
         }
       }
-      const prevRefMap = refMap;
+      // a navigation since the last snapshot leaves nothing for a `within` ref to name
+      const prevRefMap = refDoc && (await navKey() ?? refDoc) !== refDoc ? new Map() : refMap;
+      const docBefore = await navKey(); // before the tree: a navigation mid-build leaves the refs stale, not live
       const result = await ariaTree(page);
       refMap = result.refMap;
+      refDoc = docBefore;
       const raw = formatTree(result.tree);
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
@@ -710,15 +730,13 @@ export async function connect(opts = {}) {
     },
 
     async click(ref) {
-      const entry = refMap.get(String(ref));
-      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      const entry = await refEntry(ref);
       await cdpClick(entry.session, entry.backendNodeId);
     },
 
     /** @param {string|number} ref @param {string} text @param {TypeOptions} [typeOpts] */
     async type(ref, text, typeOpts = {}) {
-      const entry = refMap.get(String(ref));
-      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      const entry = await refEntry(ref);
       await cdpType(entry.session, entry.backendNodeId, text, typeOpts);
     },
 
@@ -731,22 +749,18 @@ export async function connect(opts = {}) {
     },
 
     async hover(ref) {
-      const entry = refMap.get(String(ref));
-      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      const entry = await refEntry(ref);
       await cdpHover(entry.session, entry.backendNodeId);
     },
 
     async select(ref, value) {
-      const entry = refMap.get(String(ref));
-      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      const entry = await refEntry(ref);
       await cdpSelect(entry.session, entry.backendNodeId, value);
     },
 
     async drag(fromRef, toRef) {
-      const from = refMap.get(String(fromRef));
-      const to = refMap.get(String(toRef));
-      if (!from) throw new Error(`No element found for ref "${fromRef}"`);
-      if (!to) throw new Error(`No element found for ref "${toRef}"`);
+      const from = await refEntry(fromRef);
+      const to = await refEntry(toRef);
       // Drag across different frames isn't physically meaningful — bail
       // rather than mix sessions and produce nonsense coordinates.
       if (from.session !== to.session) {
@@ -756,8 +770,7 @@ export async function connect(opts = {}) {
     },
 
     async upload(ref, files) {
-      const entry = refMap.get(String(ref));
-      if (!entry) throw new Error(`No element found for ref "${ref}"`);
+      const entry = await refEntry(ref);
       // Upload sandbox: when uploadDir is set, every path must resolve
       // (symlinks included, via realpath) inside it. Stops a prompt-injected
       // agent from attaching ~/.ssh/id_rsa or other arbitrary local files.
