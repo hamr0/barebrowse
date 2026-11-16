@@ -564,7 +564,7 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `traverse()` in `src/index.js` waits for the main frame's `Page.frameStoppedLoading` (it follows the load event on a normal load and fires on the bfcache and same-document paths), subscribed before `Page.navigateToHistoryEntry`. Same 30s ceiling, same no-history errors, refs and `lastNavigation` cleared as before (N9/N19). Firefox untouched.
 **Cost:** one extra `Page.getFrameTree` call per traversal.
 **Regression test:** `test/integration/navigation.test.js`, "goBack/goForward return when the traversal lands" (both under 5s; Chromium also a pushState entry); red on Chromium before (30.5s). Real pages: goBack 30507ms to 96ms, goForward 30532ms to 109ms.
-**Not fixed (found while testing):** `goto()` to a hash-only change of the current URL (`/ok#a` then `/ok#b`) waits for a load event that never comes and times out on Chromium.
+**Not fixed (found while testing):** `goto()` to a hash-only change of the current URL (`/ok#a` then `/ok#b`) waits for a load event that never comes and times out on Chromium. (Fixed later by N25.)
 
 ## [2026-11-16] A click that navigated left the old refs live on Chromium (N24)
 
@@ -573,6 +573,7 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `snapshot()` records the main frame's `loaderId` (the existing `navKey()`), and every ref use (click/type/hover/select/drag/upload, and `within` with a numeric ref) reads it fresh via `Page.getFrameTree` and throws the not-found ref error if it differs. `loaderId` is unchanged by hash links and pushState, so those keep refs valid. Snapshot output unchanged.
 **Cost:** one `Page.getFrameTree` round-trip per ref use.
 **Firefox:** already correct, no change. Its refs are `data-bb-ref` attributes written into the DOM, so a new document has none and the lookup throws ("Could not resolve element for ref"); proven green before any change, same test now guards both engines.
+**Correction:** "already correct" held only for a new document; a document restored from the back/forward cache by a page-script `history.back()` kept its marks and a stale ref silently clicked it. See N26.
 **Regression test:** `test/integration/stale-refs.test.js`, "refs across in-page navigation" (link to another page kills refs; hash link and pushState keep them); red on Chromium before.
 
 ## [2026-11-16] Chromium goto() to a hash-only change took the full 30s (N25)
@@ -582,3 +583,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `Page.navigate` returns no `loaderId` for a same-document navigation; `navigate()` skips the load wait then. Result is `{url, status: 0}` (the requested url, no document response), the same shape Firefox returns. Normal navigations, downloads and 204s are untouched; the 500ms settle still runs.
 **Cost:** none.
 **Regression test:** `test/integration/navigation.test.js`, "goto to a hash-only change returns at once" (both engines, same `{url, status:0}`); red on Chromium before. The fix-ledger bullet is removed.
+
+## [2026-11-16] Firefox: a stale ref clicked the old document returned by the back/forward cache (N26)
+
+**Symptom:** Firefox: snapshot A, click a link to B, snapshot B, click a B button that runs `history.back()` (page script, not `goBack()`), then `click(ref)` with no new snapshot: document A comes back from the bfcache with its old `data-bb-ref` marks, so B's ref silently clicked A's element with that number. Chromium threw (N24).
+**Root cause:** the Firefox ref lookup trusted the `data-bb-ref` marks alone; a restored document still carries the marks of its own earlier snapshot.
+**Fix:** each snapshot stamps the context's document with a fresh token (non-enumerable `document.__bbDoc`, not a DOM attribute, so snapshots are unchanged) and remembers it; every ref use (and `within` with a numeric ref) checks the token in the same `script.evaluate` that finds the element, and throws the N24 not-found ref error on mismatch. Same-document changes (hash, pushState) keep the token.
+**Cost:** none measurable: the check rides the existing lookup, no extra round-trip.
+**Regression test:** `test/integration/stale-refs.test.js`, "a page-script history.back() onto the old document (bfcache) kills the new refs" (both engines); red on Firefox before. The fix-ledger bullets are removed.
