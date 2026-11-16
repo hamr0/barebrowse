@@ -508,3 +508,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `src/firefox-page.js` clicks through a `consentClick()` that settles 1s after the pointer click, for both consent passes (goto and the first-snapshot re-check). Generic, no site logic.
 **Cost:** one second after a successful consent click on Firefox, as on Chromium.
 **Regression test:** `test/integration/consent-late.test.js`, "an accept click that navigates is awaited" (a form-submit accept whose target answers after 500ms; both engines); red on Firefox before.
+
+## [2026-11-16] Chromium cookie reader could return a partitioned cookie in place of the top-level one (N17)
+
+**Symptom:** none seen; found in review. A Chromium jar can hold a partitioned (CHIPS) cookie and a top-level cookie with the same name+domain+path. The user's real jar has such a pair (10 of 17 rows partitioned, 1 shadowing pair).
+**Root cause:** `extractChromiumCookies` in `src/auth.js` had no partition filter (the Firefox reader got one in 88e1ae6), so `mergeCookies`/`extractCookies` kept whichever row came last and the injected session cookie could be the partitioned one.
+**Fix:** the query adds `top_frame_site_key = ''` when the `cookies` table has that column (checked with `PRAGMA table_info`; older Chromium schemas lack it and are read unfiltered). `extractChromiumCookies` is now exported for the test.
+**Cost:** partitioned cookies are no longer injected (same as the Firefox reader).
+**Regression test:** `test/unit/auth.test.js`, "extractChromiumCookies() — partitioned cookies" (partitioned + top-level pair; older schema without the column); the pair test red before.
