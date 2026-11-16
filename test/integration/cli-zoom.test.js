@@ -56,6 +56,9 @@ for (const engine of ['chromium', 'firefox']) {
         assert.ok(read(await run(dir, ['snapshot', `--within=${ref}`])).includes('product number 3 '));
         await assert.rejects(run(dir, ['snapshot', '--within=table "Nope"']), /nothing matches table "Nope"/);
 
+        const bigZoom = (await run(dir, ['snapshot', `--within=${ref}`, '--max-chars=500'])).split('\n');
+        assert.ok(readFileSync(bigZoom[0], 'utf8').includes('product number 3 '), 'the zoom file is still saved');
+        assert.match(bigZoom[1], /^The zoom was \d+ chars, over --max-chars \(500\): raise --max-chars, or zoom a smaller box \(from --map\)/, bigZoom.join('\n'));
         const over = await run(dir, ['snapshot', '--max-chars=500']);
         const [file, note, ...rest] = over.split('\n');
         assert.ok(readFileSync(file, 'utf8').includes('product number 39'), 'the file is the full snapshot');
