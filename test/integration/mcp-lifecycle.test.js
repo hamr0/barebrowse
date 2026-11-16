@@ -88,10 +88,14 @@ async function startServer(env = {}, seed) {
 
 let site;
 let siteUrl;
+const siteHits = [];
 const cleanups = [];
 async function withSite() {
   if (site) return;
   site = createServer((req, res) => {
+    siteHits.push(`${req.headers.host.split(':')[0]}${req.url}`);
+    // /redir (asked of `localhost`) bounces to 127.0.0.1: an off-site hop for a localhost-only site lock.
+    if (req.url === '/redir') { res.writeHead(302, { Location: `${siteUrl}/target` }); return res.end(); }
     res.setHeader('content-type', 'text/html');
     // /late adds the awaited text after ~5s (a call that outlives the idle TTL).
     res.end(req.url === '/late'
@@ -274,6 +278,19 @@ describe('MCP switch_engine', { skip: hasFirefox ? false : 'firefox not installe
     assert.equal((await caps(s)).activeEngine, 'chromium');
     assert.equal((await s.call('goto', { url: siteUrl })).isError, false);
     assert.equal(ownedBrowsers(s.pid).length, 1);
+  });
+
+  it('the site lock survives a switch: the relaunched browser still refuses an off-site redirect', async () => {
+    const s = await boot({ BAREBROWSE_ALLOW: 'localhost', BAREBROWSE_INCOGNITO: '1' });
+    const local = siteUrl.replace('127.0.0.1', 'localhost');
+    for (const [i, engine] of ['chromium', 'firefox', 'chromium'].entries()) {
+      if (i) assert.equal((await s.call('switch_engine', { engine })).isError, false);
+      assert.equal((await s.call('goto', { url: local })).isError, false, `${engine}: on-site goto works`);
+      const redir = await s.call('goto', { url: `${local}/redir` });
+      assert.match(redir.text, /127\.0\.0\.1 is not in allowHosts/, `${engine}: off-site redirect refused`);
+      assert.equal((await caps(s)).activeEngine, engine);
+    }
+    assert.equal(siteHits.filter((h) => h === '127.0.0.1/target').length, 0, 'off-site document never reached the server');
   });
 
   it('the same engine is a no-op that leaves the browser alone', async () => {

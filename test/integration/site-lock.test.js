@@ -21,6 +21,16 @@ async function serve() {
     const port = srv.address().port;
     const off = `http://127.0.0.1:${port}`;
     if (q.url === '/redir') { res.writeHead(302, { Location: `${off}/target?redir` }); return res.end(); }
+    if (q.url === '/challenge') {
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end('<!doctype html><title>x</title><main><h1>Just a moment...</h1></main>');
+    }
+    if (q.url === '/challenge-jump') {
+      // 1st load (headless): plain challenge. Later loads (the headed relaunch): also jump off-site.
+      const first = hits.filter((h) => h.endsWith('/challenge-jump')).length === 1;
+      res.writeHead(200, { 'Content-Type': 'text/html' });
+      return res.end(`<!doctype html><title>x</title><main><h1>Just a moment...</h1></main>${first ? '' : `<script>setTimeout(() => { location = '${off}/target?jump'; }, 300)</script>`}`);
+    }
     if (q.url === '/redir-in') { res.writeHead(302, { Location: `http://localhost:${port}/ok` }); return res.end(); }
     if (q.url.startsWith('/home')) {
       res.writeHead(200, { 'Content-Type': 'text/html' });
@@ -156,6 +166,32 @@ for (const engine of ['chromium', 'firefox']) {
         const out = await page.goto(s.url + '/redir');
         assert.equal(out.url, s.off + '/target?redir');
         assert.equal(s.offDocHits().length, 1);
+      } finally { await page.close(); await s.close(); }
+    });
+
+    // A bot-challenge page makes hybrid mode relaunch a headed browser (needs a display).
+    // The relaunched browser must carry the lock: the off-site redirect is refused by the
+    // browser-level guard (the goto pre-check only sees the first URL).
+    it('a goto after a hybrid headed relaunch is locked (headed -> headless relaunch)', { skip: !(process.env.DISPLAY || process.env.WAYLAND_DISPLAY) && 'no display for a headed browser' }, async () => {
+      const s = await serve();
+      const page = await lock(engine, { mode: 'hybrid' });
+      try {
+        await page.goto(s.url + '/challenge');
+        assert.equal(s.hits.filter((h) => h === 'localhost/challenge').length, 2, 'headless then headed relaunch both loaded the challenge');
+        assert.equal(page.botBlocked, true);
+        await assert.rejects(page.goto(s.url + '/redir'), { code: 'NAV_BLOCKED', host: '127.0.0.1' });
+        assert.equal(s.offDocHits().length, 0, 'off-site document never reached the server');
+      } finally { await page.close(); await s.close(); }
+    });
+
+    it('the headed browser from a hybrid relaunch is locked too', { skip: !(process.env.DISPLAY || process.env.WAYLAND_DISPLAY) && 'no display for a headed browser' }, async () => {
+      const s = await serve();
+      const page = await lock(engine, { mode: 'hybrid' });
+      try {
+        await page.goto(s.url + '/challenge-jump');
+        await wait(1500); // the relaunched page jumps off-site 300ms after it loads
+        assert.equal(s.hits.filter((h) => h === 'localhost/challenge-jump').length, 2, 'the headed relaunch loaded it');
+        assert.equal(s.offDocHits().length, 0, 'the headed browser never reached the off-site host');
       } finally { await page.close(); await s.close(); }
     });
 
