@@ -92,6 +92,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
   // ref (string int) → owning browsing-context id, rebuilt every snapshot so a
   // click after a snapshot routes to the frame the element actually lives in.
   let refContexts = new Map();
+  // context id → identity token stamped on that context's document at snapshot time.
+  // A document restored from the back/forward cache keeps its old data-bb-ref marks;
+  // its token differs from the one remembered here, so its refs are rejected.
+  let docTokens = new Map();
 
   /**
    * Depth-first list of the ACTIVE tab's contexts (main frame + descendant
@@ -120,6 +124,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function buildTree() {
     const contextIds = await allContexts();
     refContexts = new Map();
+    docTokens = new Map();
 
     // Snapshot each context, assigning refs from a shared running counter so
     // they're globally unique (matching CDP's flat integer refs).
@@ -128,7 +133,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
     for (const ctx of contextIds) {
       let raw;
       try {
-        raw = await bidi.evaluate(ctx, axSnapshotExpression(base), false);
+        const token = Math.random().toString(36).slice(2);
+        raw = await bidi.evaluate(ctx, `(() => { const r = ${axSnapshotExpression(base)}; Object.defineProperty(document, '__bbDoc', { value: ${JSON.stringify(token)}, configurable: true }); return r; })()`, false);
+        docTokens.set(ctx, token);
       } catch { continue; } // frame navigated mid-snapshot — skip it
       const { tree, count } = JSON.parse(raw);
       for (let r = base + 1; r <= base + count; r++) refContexts.set(String(r), ctx);
@@ -162,9 +169,12 @@ export async function createFirefoxPage(bidi, opts = {}) {
     const context = refContexts.get(String(ref));
     if (!context) throw new Error(`Unknown ref: ${ref} (snapshot first, or it's stale)`);
     const res = await bidi.send('script.evaluate', {
-      expression: `document.querySelector('[${REF_ATTR}="${ref}"]')`,
+      expression: `document.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? document.querySelector('[${REF_ATTR}="${ref}"]') : 'stale'`,
       target: { context }, awaitPromise: false, resultOwnership: 'root',
     });
+    if (res.type === 'success' && res.result.type === 'string') {
+      throw new Error(`No element found for ref "${ref}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
+    }
     if (res.type === 'exception' || !res.result || res.result.type !== 'node') {
       throw new Error(`Could not resolve element for ref ${ref}`);
     }
@@ -186,7 +196,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (!ref) continue;
       const context = refContexts.get(ref);
       if (!context) throw new Error(`within: ref ${ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
-      const ok = await bidi.evaluate(context, `(() => { const e = document.querySelector('[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false).catch(() => false);
+      const ok = await bidi.evaluate(context, `(() => { if (document.__bbDoc !== ${JSON.stringify(docTokens.get(context))}) return false; const e = document.querySelector('[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false).catch(() => false);
       if (!ok) throw new Error(`within: the element behind ref ${ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
       marks.set(ref, context);
     }
