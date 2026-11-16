@@ -125,6 +125,21 @@ for (const engine of ['chromium', 'firefox']) {
       } finally { await page.close(); await srvr.close(); }
     });
 
+    it('goto to a hash-only change returns at once with the same result shape on both engines (N25)', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/ok#a');
+        const t = Date.now();
+        const out = await page.goto(srvr.url + '/ok#b');
+        const ms = Date.now() - t;
+        assert.ok(ms < 5000, `hash-only goto took ${ms}ms (want < 5000)`);
+        assert.deepEqual(out, { url: srvr.url + '/ok#b', status: 0 });
+        assert.deepEqual(page.lastNavigation, out);
+        assert.match(await page.snapshot(), /Fine/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
     it('back/forward do not leave a stale outcome or HTTP warning (N9)', async () => {
       const srvr = await serve();
       const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
