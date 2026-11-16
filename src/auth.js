@@ -57,17 +57,27 @@ export function findFirefoxCookieDb() {
 // --- Chromium cookie decryption (Linux) ---
 
 /**
+ * kwallet-query output -> Chromium keyring password. Chromium feeds the stored
+ * string to PBKDF2 as-is (it is not base64 to decode).
+ * @param {string} stdout
+ * @returns {string}
+ */
+export function kwalletPassword(stdout) {
+  return stdout.trim();
+}
+
+/**
  * Get Chromium encryption password from OS keyring.
  * Tries KWallet (KDE) first, then GNOME keyring, then fallback.
  */
 function getChromiumPassword() {
   // KDE / KWallet
   try {
-    const b64 = execSync(
+    const pw = kwalletPassword(execSync(
       'kwallet-query -r "Chromium Safe Storage" -f "Chromium Keys" kdewallet',
       { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }
-    ).trim();
-    if (b64) return Buffer.from(b64, 'base64').toString('binary');
+    ));
+    if (pw) return pw;
   } catch { /* not KDE or no entry */ }
 
   // GNOME keyring / libsecret
@@ -87,7 +97,7 @@ function getChromiumPassword() {
  * Derive AES key from Chromium keyring password.
  * Chrome Linux: PBKDF2-SHA1, salt='saltysalt', 1 iteration, 16-byte key.
  */
-function deriveKey(password) {
+export function deriveKey(password) {
   return pbkdf2Sync(password, 'saltysalt', 1, 16, 'sha1');
 }
 
@@ -97,7 +107,7 @@ function deriveKey(password) {
  * @param {Buffer} aesKey - Derived AES key
  * @returns {string} Decrypted cookie value
  */
-function decryptCookie(encrypted, aesKey) {
+export function decryptCookie(encrypted, aesKey) {
   const buf = Buffer.from(encrypted);
   if (buf.length === 0) return '';
 

@@ -7,11 +7,12 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies, extractFirefoxCookies, extractChromiumCookies } from '../../src/auth.js';
+import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies, extractFirefoxCookies, extractChromiumCookies, kwalletPassword, deriveKey, decryptCookie } from '../../src/auth.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { createCipheriv } from 'node:crypto';
 
 // extractCookies() reads the real on-disk browser cookie database; skip when
 // none exists (e.g. a CI runner with no browser profile). The pure
@@ -187,5 +188,19 @@ describe('extractChromiumCookies() — partitioned cookies', () => {
   it('still reads a jar from an older Chromium without the top_frame_site_key column', () => {
     const got = run(false, [['.example.com', 'sid', 'plain', Buffer.alloc(0), '/', 0, 1, 1, 1]]);
     assert.deepEqual(got.map((c) => c.value), ['plain']);
+  });
+});
+
+describe('KWallet password -> cookie key', () => {
+  it('uses the stored string as-is, so a v11 cookie encrypted with it decrypts', () => {
+    const stored = 'aB3+/xYz9Q==\n'; // looks like base64; Chromium uses it verbatim
+    const chromiumKey = deriveKey('aB3+/xYz9Q=='); // what Chromium encrypted with
+    const c = createCipheriv('aes-128-cbc', chromiumKey, Buffer.alloc(16, ' '));
+    const enc = Buffer.concat([Buffer.from('v11'), c.update('secret-value'), c.final()]);
+    assert.equal(decryptCookie(enc, deriveKey(kwalletPassword(stored))), 'secret-value');
+  });
+
+  it('returns empty for empty output so the next keyring is tried', () => {
+    assert.equal(kwalletPassword('\n'), '');
   });
 });
