@@ -104,7 +104,8 @@ const A_PAGE = `<!doctype html><html><body><main><h1>Page A</h1>
 <button onclick="this.textContent='clicked'">Pick me</button></main></body></html>`;
 const B_PAGE = `<!doctype html><html><body><main><h1>Page B</h1>
 <a href="/b">to b</a><a href="#frag">hash</a>
-<button>Other</button><button onclick="this.textContent='clicked'">Pick me</button></main></body></html>`;
+<button>Other</button><button onclick="this.textContent='clicked'">Pick me</button>
+<button onclick="history.back()">Back</button></main></body></html>`;
 
 async function serveAB() {
   const srv = createServer((q, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(q.url.startsWith('/b') ? B_PAGE : A_PAGE); });
@@ -133,6 +134,25 @@ for (const engine of ['chromium', 'firefox']) {
         assert.match(fresh, /Page B/);
         await page.click(fresh.match(/button "Pick me" \[ref=(\d+)\]/)[1]);
         assert.match(await page.snapshot(), /button "clicked"/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('a page-script history.back() onto the old document (bfcache) kills the new refs', async () => {
+      const srvr = await serveAB();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/');
+        await page.click((await page.snapshot()).match(/link "to b" \[ref=(\d+)\]/)[1]);
+        await page.waitFor({ text: 'Page B', timeout: 10000 });
+        const snapB = await page.snapshot();
+        const back = snapB.match(/button "Back" \[ref=(\d+)\]/)[1];
+        const pick = snapB.match(/button "Pick me" \[ref=(\d+)\]/)[1];
+        const main = snapB.match(/main \[ref=(\d+)\]/)[1];
+        await page.click(back); // page script history.back(): document A returns, old marks and all
+        await page.waitFor({ text: 'Page A', timeout: 10000 });
+        await assert.rejects(page.click(pick), /ref/i); // must not click whatever A has at that number
+        await assert.rejects(page.snapshot({ within: Number(main) }), /ref/i);
+        assert.match(await page.snapshot(), /Page A/);
       } finally { await page.close(); await srvr.close(); }
     });
 
