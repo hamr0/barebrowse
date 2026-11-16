@@ -516,3 +516,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** the query adds `top_frame_site_key = ''` when the `cookies` table has that column (checked with `PRAGMA table_info`; older Chromium schemas lack it and are read unfiltered). `extractChromiumCookies` is now exported for the test.
 **Cost:** partitioned cookies are no longer injected (same as the Firefox reader).
 **Regression test:** `test/unit/auth.test.js`, "extractChromiumCookies() — partitioned cookies" (partitioned + top-level pair; older schema without the column); the pair test red before.
+
+## [2026-11-16] Chromium cookie extraction returned 0 cookies on KDE (N18)
+
+**Symptom:** `extractCookies({ browser: 'chromium' })` returned `[]` on KDE with a 17-cookie jar, so Chromium logins were never reused.
+**Root cause:** `getChromiumPassword()` base64-decoded the KWallet "Chromium Safe Storage" value, but Chromium feeds that string to PBKDF2 as-is. Every v11 row failed to decrypt, its value fell back to `''`, and `.filter((c) => c.value)` dropped it. POC on the real jar: raw string 17/17 decrypt, base64-decoded 0/17, `'peanuts'` 0/17. Present since the initial commit.
+**Fix:** a `kwalletPassword(stdout)` helper returns the trimmed `kwallet-query` output as-is. `deriveKey`/`decryptCookie` are exported for the test (auth.js is not a package export).
+**Cost:** none. Live: 0 → 7 cookies (17 rows minus 10 partitioned, N17), 0 duplicate name+domain+path keys.
+**Regression test:** `test/unit/auth.test.js`, "KWallet password -> cookie key"; red before.
