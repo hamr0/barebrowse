@@ -7,7 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies, extractFirefoxCookies } from '../../src/auth.js';
+import { extractCookies, cookieDomainMatch, scopedCookiesForUrl, mergeCookies, extractFirefoxCookies, extractChromiumCookies } from '../../src/auth.js';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -156,5 +156,36 @@ describe('extractFirefoxCookies() — partitioned cookies', () => {
       const got = extractFirefoxCookies(file, 'example.com');
       assert.deepEqual(got.map((c) => c.value), ['top-level']);
     } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+});
+
+describe('extractChromiumCookies() — partitioned cookies', () => {
+  const cols = `host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT,
+    expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, samesite INTEGER`;
+  const run = (withColumn, rows) => {
+    const dir = mkdtempSync(join(tmpdir(), 'bb-crcookies-'));
+    try {
+      const file = join(dir, 'Cookies');
+      const db = new DatabaseSync(file);
+      db.exec(`CREATE TABLE cookies (${cols}${withColumn ? ', top_frame_site_key TEXT NOT NULL DEFAULT \'\'' : ''})`);
+      const ph = withColumn ? '?, ?, ?, ?, ?, ?, ?, ?, ?, ?' : '?, ?, ?, ?, ?, ?, ?, ?, ?';
+      const ins = db.prepare(`INSERT INTO cookies VALUES (${ph})`);
+      for (const r of rows) ins.run(...r);
+      db.close();
+      return extractChromiumCookies(file, 'example.com');
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  };
+
+  it('skips CHIPS cookies (non-empty top_frame_site_key) so they cannot shadow the top-level cookie', () => {
+    const got = run(true, [
+      ['.example.com', 'sid', 'top-level', Buffer.alloc(0), '/', 0, 1, 1, 1, ''],
+      ['.example.com', 'sid', 'partitioned', Buffer.alloc(0), '/', 0, 1, 1, 0, 'https://other.com'],
+    ]);
+    assert.deepEqual(got.map((c) => c.value), ['top-level']);
+  });
+
+  it('still reads a jar from an older Chromium without the top_frame_site_key column', () => {
+    const got = run(false, [['.example.com', 'sid', 'plain', Buffer.alloc(0), '/', 0, 1, 1, 1]]);
+    assert.deepEqual(got.map((c) => c.value), ['plain']);
   });
 });

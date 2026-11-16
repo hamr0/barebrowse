@@ -121,7 +121,7 @@ function decryptCookie(encrypted, aesKey) {
  * @param {string} [domain] - Filter by domain (e.g. '.github.com')
  * @returns {Array<object>} Cookies in CDP Network.setCookie format
  */
-function extractChromiumCookies(dbPath, domain) {
+export function extractChromiumCookies(dbPath, domain) {
   const password = getChromiumPassword();
   const aesKey = deriveKey(password);
 
@@ -132,10 +132,18 @@ function extractChromiumCookies(dbPath, domain) {
     CAST(expires_utc AS TEXT) AS expires_utc, is_secure, is_httponly, samesite
     FROM cookies`;
   const params = [];
+  // Skip partitioned (CHIPS) rows: a non-empty top_frame_site_key marks a cookie
+  // scoped to a top-level site, and it can share name+domain+path with the real
+  // one. Older Chromium schemas lack the column, so only filter when it exists.
+  const where = [];
+  if (db.prepare('PRAGMA table_info(cookies)').all().some((c) => c.name === 'top_frame_site_key')) {
+    where.push(`top_frame_site_key = ''`);
+  }
   if (domain) {
-    sql += ` WHERE host_key LIKE ?`;
+    where.push(`host_key LIKE ?`);
     params.push(`%${domain}%`);
   }
+  if (where.length) sql += ` WHERE ${where.join(' AND ')}`;
 
   const stmt = db.prepare(sql);
   const rows = params.length ? stmt.all(...params) : stmt.all();
