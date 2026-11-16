@@ -532,3 +532,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `afterNavigate()` clears `refContexts` after its internal passes, so only a caller-requested snapshot hands out refs. Covers goto and the hybrid retry; reload/goBack/goForward already cleared and never rebuilt. Chromium untouched (change is in `src/firefox-page.js` only).
 **Cost:** none (a click that navigates still leaves refs valid on both engines; not changed).
 **Regression test:** `test/integration/stale-refs.test.js` (goto/reload/goBack/goForward; click, type, hover, select, drag, upload and `within` all reject an older ref; both engines); the Firefox goto case was red before.
+
+## [2026-11-16] A zoom over maxChars returned only a file path, no reason (N20)
+
+**Symptom:** MCP `snapshot` with `within`/`map` over `maxChars` answered `Snapshot (N chars) saved to <file>` and nothing else; the CLI printed the bare path. The agent could not tell it was the size cap, or what to do.
+**Root cause:** the over-cap branch returned the path for zooms by design (no map fallback for a zoom), but never said why.
+**Fix:** `overNote()` in `src/zoom.js` adds "The zoom was N chars, over maxChars (M): raise maxChars, or zoom a smaller box (from map:true) to get it inline." (a map says only "raise maxChars"). MCP appends it to the path line; the daemon returns it as `note` and `cli.js` prints it under the path (flag spelling). The file is still saved. The no-option default (map returned) and `full:true` are unchanged.
+**Cost:** none.
+**Regression test:** `test/integration/mcp-zoom.test.js` and `test/integration/cli-zoom.test.js` (zoom and map over a small cap); red before.

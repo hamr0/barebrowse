@@ -69,6 +69,10 @@ for (const engine of ['chromium', 'firefox']) {
         const ref = over.match(/list after "Results" \[ref=(\d+)\]/)[1];
         const zoom = await call('snapshot', { within: Number(ref) });
         assert.ok(zoom.includes('product number 3 ') && !zoom.includes('Terms') && !zoom.includes('related one'), zoom.slice(0, 300));
+        const big = await call('snapshot', { within: Number(ref), maxChars: 500 });
+        assert.match(big, /saved to \S+\.yml\. The zoom was \d+ chars, over maxChars \(500\): raise maxChars, or zoom a smaller box/, big);
+        const bigMap = await call('snapshot', { map: true, maxChars: 50 });
+        assert.match(bigMap, /saved to \S+\.yml\. The map was \d+ chars, over maxChars \(50\)/, bigMap);
         const named = await call('snapshot', { within: ['list after "Related"', 'list after "Results"'], pruneMode: 'read' });
         assert.ok(named.indexOf('product number 3 ') < named.indexOf('related one'), 'several boxes, page order');
         assert.match(await call('snapshot', { map: true }), /^url: [^\n]+\nmap: \d+ boxes/);

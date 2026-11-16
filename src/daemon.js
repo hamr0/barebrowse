@@ -11,6 +11,7 @@ import { writeFileSync, mkdirSync, existsSync, readFileSync, unlinkSync } from '
 import { randomBytes, timingSafeEqual } from 'node:crypto';
 import { join, resolve } from 'node:path';
 import { connect } from './index.js';
+import { overNote } from './zoom.js';
 import { formatReadable } from './readable.js';
 import { cleanOld } from './output-clean.js';
 import { isHttpError } from './navigation.js';
@@ -331,6 +332,9 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       if (within == null && !map && !full && text.length > (maxChars ?? 30000)) {
         const outline = await page.snapshot({ links, map: true });
         if (outline.length <= (maxChars ?? 30000)) return { ok: true, file, map: outline };
+      }
+      if ((within != null || map) && !full && text.length > (maxChars ?? 30000)) {
+        return { ok: true, file, note: overNote(within != null ? 'zoom' : 'map', text.length, maxChars ?? 30000, true) };
       }
       return { ok: true, file };
     },

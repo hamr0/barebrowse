@@ -156,3 +156,16 @@ export function zoomSnapshot(tree, { head, map, selectors, refNodes = new Map(),
   const what = boxes.map((b) => `${label(b, ix.after.get(b))} [ref=${b.nodeId}]`).join(', ');
   return `${head}zoom ${what}: ${rawLen.toLocaleString()} chars → ${sized.toLocaleString()} chars (${rawLen ? Math.round((1 - sized / rawLen) * 100) : 0}% pruned)\n${body}`;
 }
+
+/**
+ * Why a zoom/map came back as a file path only: it is over the inline cap.
+ * @param {'zoom'|'map'} kind
+ * @param {number} chars
+ * @param {number} limit
+ * @param {boolean} [cli] - flag spelling (--max-chars, --map) instead of tool arguments
+ */
+export function overNote(kind, chars, limit, cli = false) {
+  const cap = cli ? '--max-chars' : 'maxChars';
+  const fix = kind === 'zoom' ? `raise ${cap}, or zoom a smaller box (from ${cli ? '--map' : 'map:true'})` : `raise ${cap}`;
+  return `The ${kind} was ${chars} chars, over ${cap} (${limit}): ${fix} to get it inline.`;
+}

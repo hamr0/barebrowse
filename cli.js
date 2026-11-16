@@ -185,6 +185,8 @@ async function cmdProxy(command, cmdArgs) {
       process.stdout.write(`${result.file} (${result.count} entries)\n`);
     } else if (result.file && result.map) {
       process.stdout.write(`${result.file}\nOver --max-chars, so here is the map of the page; zoom with: snapshot --within=<ref or name> (repeat the flag for several boxes), or --full for the path alone.\n${result.map}\n`);
+    } else if (result.file && result.note) {
+      process.stdout.write(`${result.file}\n${result.note}\n`);
     } else if (result.file) {
       process.stdout.write(`${result.file}\n`);
     } else if (result.value !== undefined) {

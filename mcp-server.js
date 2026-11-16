@@ -15,6 +15,7 @@ import { formatReadable } from './src/readable.js';
 import { cleanOld } from './src/output-clean.js';
 import { scopedCookiesForUrl } from './src/auth.js';
 import { isHttpError } from './src/navigation.js';
+import { overNote } from './src/zoom.js';
 import { parseAllowHosts } from './src/site-lock.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -646,6 +647,7 @@ async function handleToolCall(name, args) {
       if (text.length > limit) {
         const file = saveSnapshot(text);
         const saved = `Snapshot (${text.length} chars) saved to ${file}`;
+        if (zoomed && !args.full) return `${saved}. ${overNote(args.within != null ? 'zoom' : 'map', text.length, limit)}`;
         if (zoomed || args.full) return saved;
         // Over the cap and the agent chose nothing: hand back the map (a few % of the page) to zoom from.
         const map = await page.snapshot({ links: args.links, map: true });
