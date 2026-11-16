@@ -152,7 +152,7 @@ await page.snapshot({ within: [430, 'table'], mode: 'data', links: true }); // s
 - A ref in `within` is a ref from your previous snapshot; it is found again by its element (refs renumber every snapshot). Gone element or a ref from before a navigation: throws. Refs printed in a zoom work with `click()` etc. Refs only hold until the next snapshot or navigation, and a ref from an older map can point at a different box; for anything you store or hardcode, use names (`list "Issues"`, `list after "Top flights"`), which are stable across reloads. `within` wins over `map`.
 - Firefox: act/read drop a table's cells (as in a full snapshot); zoom tables with `mode: 'data'`.
 - `browse()` and `createBrowseTools()` (bareagent) have no map/zoom.
-- MCP: `snapshot` takes `map`, `within`, `full`; over `maxChars` it returns the map inline and saves the full snapshot to a file (`full: true` = path only). CLI: `snapshot --map`, `--within=<box>` (repeatable; quote names), `--full`, `--max-chars=N`.
+- MCP: `snapshot` takes `map`, `within`, `full`; over `maxChars` it returns the map inline and saves the full snapshot to a file (`full: true` = path only). CLI: `snapshot --map`, `--within=<box>` (repeatable; quote names), `--full`, `--max-chars=N`. MCP and the CLI daemon wait once (network idle 500ms, up to 3s) before the first snapshot after a `goto` so late content is in it; `settle: false` / `--no-settle` skip it; the library is unchanged.
 
 ## readable() vs snapshot() — which to use
 
