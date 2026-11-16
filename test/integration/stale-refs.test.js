@@ -95,3 +95,62 @@ for (const engine of ['chromium', 'firefox']) {
     });
   });
 }
+
+// A click or key press that navigates to a new document must kill the refs of the
+// old one, even though no goto/reload ran; same-document changes must not.
+const A_PAGE = `<!doctype html><html><body><main><h1>Page A</h1>
+<a href="/b">to b</a><a href="#frag">hash</a>
+<button id="push" onclick="history.pushState({}, '', '/pushed'); this.textContent='pushed'">Push</button>
+<button onclick="this.textContent='clicked'">Pick me</button></main></body></html>`;
+const B_PAGE = `<!doctype html><html><body><main><h1>Page B</h1>
+<a href="/b">to b</a><a href="#frag">hash</a>
+<button>Other</button><button onclick="this.textContent='clicked'">Pick me</button></main></body></html>`;
+
+async function serveAB() {
+  const srv = createServer((q, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(q.url.startsWith('/b') ? B_PAGE : A_PAGE); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
+}
+
+for (const engine of ['chromium', 'firefox']) {
+  describe(`refs across in-page navigation — ${engine}`, { skip: engine === 'firefox' && !hasFirefox && 'no Firefox installed' }, () => {
+    it('a link click to another document kills old refs', async () => {
+      const srvr = await serveAB();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/');
+        const snap = await page.snapshot();
+        const link = snap.match(/link "to b" \[ref=(\d+)\]/)[1];
+        const button = snap.match(/button "Pick me" \[ref=(\d+)\]/)[1];
+        const main = snap.match(/main \[ref=(\d+)\]/)[1];
+        await page.click(link);
+        await page.waitFor({ text: 'Page B', timeout: 10000 });
+        await assert.rejects(page.click(button), /ref/i);
+        await assert.rejects(page.hover(button), /ref/i);
+        await assert.rejects(page.type(button, 'x'), /ref/i);
+        await assert.rejects(page.snapshot({ within: Number(main) }), /ref/i);
+        const fresh = await page.snapshot();
+        assert.match(fresh, /Page B/);
+        await page.click(fresh.match(/button "Pick me" \[ref=(\d+)\]/)[1]);
+        assert.match(await page.snapshot(), /button "clicked"/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('a hash link and a pushState keep old refs valid', async () => {
+      const srvr = await serveAB();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/');
+        const snap = await page.snapshot();
+        const hash = snap.match(/link "hash" \[ref=(\d+)\]/)[1];
+        const push = snap.match(/button "Push" \[ref=(\d+)\]/)[1];
+        const pick = snap.match(/button "Pick me" \[ref=(\d+)\]/)[1];
+        await page.click(hash);
+        await page.click(push);
+        await page.waitFor({ text: 'pushed', timeout: 10000 });
+        await page.click(pick); // refs from before both same-document changes
+        assert.match(await page.snapshot(), /button "clicked"/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+  });
+}

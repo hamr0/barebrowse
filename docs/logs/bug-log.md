@@ -565,3 +565,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Cost:** one extra `Page.getFrameTree` call per traversal.
 **Regression test:** `test/integration/navigation.test.js`, "goBack/goForward return when the traversal lands" (both under 5s; Chromium also a pushState entry); red on Chromium before (30.5s). Real pages: goBack 30507ms to 96ms, goForward 30532ms to 109ms.
 **Not fixed (found while testing):** `goto()` to a hash-only change of the current URL (`/ok#a` then `/ok#b`) waits for a load event that never comes and times out on Chromium.
+
+## [2026-11-16] A click that navigated left the old refs live on Chromium (N24)
+
+**Symptom:** after `click(link)` loaded a new document, `click(oldRef)` hit whatever element now carried that number (no snapshot in between), not an error. N19 only cleared refs on goto/reload/goBack/goForward.
+**Root cause:** Chromium's `refMap` was cleared only by those four methods; a navigation the page made itself changed nothing.
+**Fix:** `snapshot()` records the main frame's `loaderId` (the existing `navKey()`), and every ref use (click/type/hover/select/drag/upload, and `within` with a numeric ref) reads it fresh via `Page.getFrameTree` and throws the not-found ref error if it differs. `loaderId` is unchanged by hash links and pushState, so those keep refs valid. Snapshot output unchanged.
+**Cost:** one `Page.getFrameTree` round-trip per ref use.
+**Firefox:** already correct, no change. Its refs are `data-bb-ref` attributes written into the DOM, so a new document has none and the lookup throws ("Could not resolve element for ref"); proven green before any change, same test now guards both engines.
+**Regression test:** `test/integration/stale-refs.test.js`, "refs across in-page navigation" (link to another page kills refs; hash link and pushState keep them); red on Chromium before.
