@@ -484,3 +484,19 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** a shared `scrollIntoView()` in `connectFirefox`'s page (`script.callFunction`: `this.scrollIntoView({block:'center',inline:'center'})`) runs before every element-origin pointer action: click (so consent too), hover and drag. Drag now sends two `performActions` calls (press at the source, then move/release at the target) so each is scrolled into view before its move.
 **Cost:** one extra BiDi round trip per click/hover, two per drag.
 **Regression test:** `test/integration/offscreen-click.test.js` (both engines: click/hover/drag on buttons 3000px+ below the fold; a consent dialog whose "Accept all" is below the fold); red on Firefox before the fix.
+
+## [2026-11-16] Firefox act/read dropped table cell text (N14)
+
+**Symptom:** on Firefox, `snapshot()` in act and read mode showed a table as just its name: no header or cell text (`table "Stats"` and nothing under it). Chromium showed every `columnheader` and cell text. Data mode was fine.
+**Root cause:** `src/ax-snapshot.js` treats `cell`/`columnheader`/`rowheader` as name-from-content roles and, for those, drops the child text nodes; CDP keeps them as `StaticText` children, and prune.js prunes a cell whose only content is its name.
+**Fix:** the three cell roles still take their name from content but also emit their text as `StaticText` children, like CDP (`KEEP_TEXT_CHILDREN`). Chromium is untouched (the file runs only on the BiDi engine).
+**Cost:** none (act/read on Firefox tables now carry the table text, as on Chromium).
+**Regression test:** `test/integration/ax-fidelity.test.js`, fixture "table cells and image links" (asserts the cell `StaticText` and the role+name set against Chromium); red before.
+
+## [2026-11-16] Firefox gave an image-only link an empty name (N15)
+
+**Symptom:** `<a href=/solo><img alt=thumb></a>` was `link` with no name on Firefox (Chromium: `link "thumb"`), so data mode (which drops nameless link leaves, N6) lost the link and its URL; `<a>Two <img alt=pic></a>` was named "Two" instead of "Two pic".
+**Root cause:** name-from-content in `src/ax-snapshot.js` used `el.textContent`, which ignores an `<img>`'s alt.
+**Fix:** a `contentName()` helper concatenates descendant text and uses each `<img>`'s alt in place of the image (accname 2F). Same names as before for text-only content. The wrong comment in `test/integration/links.test.js` ("the image link only exists in Chromium's AX tree") is corrected. Alt-less image links stay nameless on both engines (not part of this fix).
+**Cost:** none.
+**Regression test:** `test/integration/ax-fidelity.test.js`, fixture "table cells and image links" (`link "thumb"`, `link "Two pic"`); red before.

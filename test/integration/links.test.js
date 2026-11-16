@@ -138,7 +138,7 @@ for (const engine of ['chromium', 'firefox']) {
           const before = cards.slice(0, m.index).trimEnd();
           assert.ok(before.endsWith('>') || /\[level=\d\]$/.test(before), `ref without url near: ${cards.slice(Math.max(0, m.index - 60), m.index + 12)}`);
         }
-        // the image link ("pic") only exists in Chromium's AX tree; "Title one" must carry /p1 either way
+        // the image link ("pic") is named from its alt on both engines; "Title one" must carry /p1 either way
         assert.ok(cards.split('\n').some((l) => l.includes('"Title one" <' + base + '/p1>')), 'Title one carries p1:\n' + cards);
         assert.ok((cards.match(new RegExp(`<${base}/p3>`, 'g')) || []).length === 2, 'p3 on both group items:\n' + cards);
       } finally { await page.goto(srvr.url + '/'); }

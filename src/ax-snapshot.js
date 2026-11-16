@@ -49,6 +49,10 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     'tab', 'menuitem', 'option', 'treeitem', 'switch', 'checkbox', 'radio',
   ]);
 
+  // Table cells name from content like the roles above, but CDP also keeps
+  // their text as StaticText children; without them act/read prune the cell away.
+  const KEEP_TEXT_CHILDREN = new Set(['cell', 'columnheader', 'rowheader']);
+
   // HTML tag → implicit ARIA role (the common, high-value subset).
   const TAG_ROLE = {
     A: (el) => (el.hasAttribute('href') ? 'link' : 'generic'),
@@ -159,6 +163,23 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     return '';
   }
 
+  // Descendant text for name-from-content, with an <img>'s alt standing in for
+  // the image (accname step 2F), so an image-only link is named like in CDP.
+  function contentName(el) {
+    let out = '';
+    const add = (n) => {
+      for (const c of n.childNodes) {
+        if (c.nodeType === 3) out += c.textContent;
+        else if (c.nodeType === 1) {
+          if (c.tagName === 'IMG') out += ' ' + (c.getAttribute('alt') || '') + ' ';
+          else add(c);
+        }
+      }
+    };
+    add(el);
+    return out.replace(/\s+/g, ' ').trim();
+  }
+
   function props(el, role) {
     const p = {};
     if (role === 'checkbox' || role === 'radio' || role === 'switch') p.checked = !!el.checked;
@@ -190,9 +211,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     // text for roles that name from content (button/link/heading/…), matching
     // CDP — otherwise those nodes come back nameless.
     let name = accName(el);
-    if (!name && NAME_FROM_CONTENT.has(role)) {
-      name = el.textContent.replace(/\s+/g, ' ').trim();
-    }
+    if (!name && NAME_FROM_CONTENT.has(role)) name = contentName(el);
     const node = makeNode(role, name, props(el, role));
     el.setAttribute(REF_ATTR, node.nodeId);
 
@@ -201,7 +220,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     // would otherwise flood every snapshot). A multi/size listbox keeps them.
     if (el.tagName === 'SELECT' && !el.multiple) return node;
 
-    if (!NAME_FROM_CONTENT.has(role)) {
+    if (!NAME_FROM_CONTENT.has(role) || KEEP_TEXT_CHILDREN.has(role)) {
       for (const child of kidsOf(el)) {
         if (child.nodeType === 3) {
           const t = child.textContent.replace(/\s+/g, ' ').trim();
@@ -213,7 +232,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
       }
     } else {
       // name-from-content: still recurse into element children for nested
-      // interactives (e.g. a link inside a heading), but drop bare text.
+      // interactives (e.g. a link inside a heading), but drop bare text (cells excepted, above).
       for (const child of kidsOf(el)) {
         if (child.nodeType !== 1) continue;
         const c = walk(child);

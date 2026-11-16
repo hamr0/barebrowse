@@ -77,6 +77,17 @@ const FIXTURES = {
     <script>h.attachShadow({mode:'open'}).innerHTML='<button>Shadow Btn</button><a href="/s">Shadow Link</a>'</script>
   </main>`,
 
+  // Table cell text and image-only links (N14/N15): Firefox cells carried a name
+  // but no StaticText child, so act/read pruned them; an <a> holding only an
+  // <img alt> came back nameless (Chromium names it from the alt).
+  'table cells and image links': `<main>
+    <table>
+      <tr><th>Name</th><th>Qty</th></tr>
+      <tr><td>Apple</td><td>12</td></tr></table>
+    <a href="/solo"><img alt="thumb" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a>
+    <a href="/two">Two <img alt="pic" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="></a>
+  </main>`,
+
   // Nested landmark + heading structure (document outline fidelity).
   'nested structure': `<main>
     <section aria-label="Intro"><h2>Intro</h2><p>hello</p></section>
@@ -146,6 +157,11 @@ describe('AX fidelity — Firefox/BiDi reconstruction vs CDP baseline', { skip }
       const missing = missingFrom(cdp, ff);
       const extra = missingFrom(ff, cdp);
 
+      if (name === 'table cells and image links') {
+        for (const t of ['"Apple"', '"12"']) {
+          assert.ok(ffSnap.includes('StaticText ' + t), `Firefox act/read tree lost cell text ${t}:\n${treeOnly(ffSnap)}`);
+        }
+      }
       assert.equal(
         missing.length, 0,
         `Firefox dropped ${missing.length} node(s) the CDP baseline found:\n` +
