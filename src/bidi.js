@@ -98,11 +98,12 @@ export async function createBiDi(wsUrl) {
      * @param {string} context - browsing-context id
      * @param {string} expression - JS source to evaluate
      * @param {boolean} [awaitPromise=true]
+     * @param {string} [sandbox] - run in this isolated realm (page script cannot see or alter it)
      * @returns {Promise<*>} the deserialized primitive value (result.value)
      */
-    async evaluate(context, expression, awaitPromise = true) {
+    async evaluate(context, expression, awaitPromise = true, sandbox) {
       const res = await client.send('script.evaluate', {
-        expression, target: { context }, awaitPromise,
+        expression, target: sandbox ? { context, sandbox } : { context }, awaitPromise,
       });
       if (res.type === 'exception') {
         const d = res.exceptionDetails;

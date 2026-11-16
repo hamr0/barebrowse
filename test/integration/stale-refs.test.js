@@ -25,6 +25,13 @@ async function serve() {
   return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
 }
 
+async function serveHostile(script) {
+  const html = `<!doctype html><html><body><script>${script}</script><main><h1>Page</h1><button onclick="this.textContent='clicked'">Pick me</button></main></body></html>`;
+  const srv = createServer((q, res) => { res.writeHead(200, { 'Content-Type': 'text/html' }); res.end(html); });
+  await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+  return { url: `http://127.0.0.1:${srv.address().port}`, close: () => new Promise((r) => srv.close(r)) };
+}
+
 let hasFirefox = false;
 try { findFirefox(); hasFirefox = true; } catch { /* skip below */ }
 
@@ -169,6 +176,32 @@ for (const engine of ['chromium', 'firefox']) {
         await page.click(push);
         await page.waitFor({ text: 'pushed', timeout: 10000 });
         await page.click(pick); // refs from before both same-document changes
+        assert.match(await page.snapshot(), /button "clicked"/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('a page that breaks Object.defineProperty still snapshots and clicks', async () => {
+      const srvr = await serveHostile(`Object.defineProperty = function () { throw new Error('no'); };`);
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/');
+        const snap = await page.snapshot();
+        const pick = snap.match(/button "Pick me" \[ref=(\d+)\]/)?.[1];
+        assert.ok(pick, 'snapshot not empty:\n' + snap);
+        await page.click(pick);
+        assert.match(await page.snapshot(), /button "clicked"/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+
+    it('a page that deletes or overwrites the stamp names cannot fake a stale ref', async () => {
+      const srvr = await serveHostile(`setInterval(() => { for (const o of [document, window, globalThis]) for (const k of ['__bbDoc', '__bbToken', '__bbdoc']) { try { delete o[k]; o[k] = 'x'; } catch {} } }, 5);`);
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/');
+        const snap = await page.snapshot();
+        const pick = snap.match(/button "Pick me" \[ref=(\d+)\]/)[1];
+        await new Promise((r) => setTimeout(r, 100)); // let the page script run over it
+        await page.click(pick);
         assert.match(await page.snapshot(), /button "clicked"/);
       } finally { await page.close(); await srvr.close(); }
     });

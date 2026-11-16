@@ -31,6 +31,9 @@ import { isChallengePage, countNodes } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
 import { navFailed, navBlocked, httpWarning } from './navigation.js';
 
+// Isolated BiDi realm holding the per-document stale-ref token (page script cannot reach it).
+const DOC_SANDBOX = 'barebrowse';
+
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
   Enter: "\uE007", Tab: "\uE004", Escape: "\uE00C", Backspace: "\uE003",
@@ -134,7 +137,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
       let raw;
       try {
         const token = Math.random().toString(36).slice(2);
-        raw = await bidi.evaluate(ctx, `(() => { const r = ${axSnapshotExpression(base)}; Object.defineProperty(document, '__bbDoc', { value: ${JSON.stringify(token)}, configurable: true }); return r; })()`, false);
+        raw = await bidi.evaluate(ctx, axSnapshotExpression(base), false);
+        // The token lives in a sandbox realm: page script can neither read, delete nor break it.
+        await bidi.evaluate(ctx, `globalThis.__bbDoc = ${JSON.stringify(token)}`, false, DOC_SANDBOX);
         docTokens.set(ctx, token);
       } catch { continue; } // frame navigated mid-snapshot — skip it
       const { tree, count } = JSON.parse(raw);
@@ -169,8 +174,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
     const context = refContexts.get(String(ref));
     if (!context) throw new Error(`Unknown ref: ${ref} (snapshot first, or it's stale)`);
     const res = await bidi.send('script.evaluate', {
-      expression: `document.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? document.querySelector('[${REF_ATTR}="${ref}"]') : 'stale'`,
-      target: { context }, awaitPromise: false, resultOwnership: 'root',
+      expression: `globalThis.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? document.querySelector('[${REF_ATTR}="${ref}"]') : 'stale'`,
+      target: { context, sandbox: DOC_SANDBOX }, awaitPromise: false, resultOwnership: 'root',
     });
     if (res.type === 'success' && res.result.type === 'string') {
       throw new Error(`No element found for ref "${ref}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
@@ -196,7 +201,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (!ref) continue;
       const context = refContexts.get(ref);
       if (!context) throw new Error(`within: ref ${ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
-      const ok = await bidi.evaluate(context, `(() => { if (document.__bbDoc !== ${JSON.stringify(docTokens.get(context))}) return false; const e = document.querySelector('[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false).catch(() => false);
+      const ok = await bidi.evaluate(context, `(() => { if (globalThis.__bbDoc !== ${JSON.stringify(docTokens.get(context))}) return false; const e = document.querySelector('[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false, DOC_SANDBOX).catch(() => false);
       if (!ok) throw new Error(`within: the element behind ref ${ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
       marks.set(ref, context);
     }
