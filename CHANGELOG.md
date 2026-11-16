@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.28.0] - 2026-11-16
 
 ### Added
 
@@ -41,6 +41,34 @@
 - **Firefox: clicks on elements below the fold.** `click()`, `hover()` and
   `drag()` threw `move target out of bounds`, so Google's consent interstitial
   was never dismissed on Firefox. The target is scrolled into view first.
+- **Chromium: `goBack()` / `goForward()` took 30s** when the traversal restored
+  the page from the back/forward cache or landed on a same-document history
+  entry. They now return when the traversal lands.
+- **Chromium: numeric refs.** `click`, `type`, `hover`, `select`, `drag` and
+  `upload` accept a ref as a number as well as a string.
+- **Firefox: refs from before a navigation no longer resolve to another
+  element.** A stale ref now throws, as on Chromium, including after a page
+  script's `history.back()` restores the old document from the bfcache. The
+  token that tracks this lives in an isolated BiDi sandbox realm, out of reach
+  of page script.
+- **Firefox: table cells and image-only links in act/read snapshots.** Cell,
+  column-header and row-header text was dropped, so tables pruned to their name;
+  an image-only link had no name (its `alt` was ignored), so data mode dropped
+  it. Both now match Chromium.
+- **Firefox: consent accept that navigates.** The snapshot after the click no
+  longer reads the consent interstitial before the next page lands (1s settle,
+  as on Chromium).
+- **Consent: `goto()` reports the page behind an accept that navigated.** The
+  resolved `{ url, status }` is the landed page, not the interstitial.
+- **MCP and CLI: a zoom over `maxChars` says why it came back as a file path**,
+  instead of returning the path with no explanation.
+- **Chromium cookie reuse works on KDE.** The KWallet password was
+  base64-decoded before key derivation, which made every encrypted (`v11`)
+  cookie fail to decrypt and get dropped (0 of 17 on a real jar). It is now used
+  as stored, as Chromium does.
+- **Partitioned Chromium cookies are skipped.** A partitioned (CHIPS) cookie
+  sharing name, domain and path with the top-level one could shadow it on merge,
+  as the Firefox reader already avoided.
 
 ## [0.27.0] - 2026-10-30
 
