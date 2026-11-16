@@ -344,6 +344,14 @@ export async function createFirefoxPage(bidi, opts = {}) {
     }
   }
 
+  // Settle after the accept click like consent.js does (1s): a consent form
+  // submits and navigates, and the click returns before the next page lands, so
+  // the snapshot would still show the interstitial.
+  async function consentClick(ref) {
+    await pointerClick(ref);
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+
   /**
    * Post-navigation routine shared by goto() and the hybrid retry: settle for
    * dynamic content, auto-dismiss consent (best-effort), then report whether
@@ -359,7 +367,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     try { root = await buildTree(); } catch { /* null → treated as challenge */ }
     consentRecheck = null;
     if (consent && root) {
-      try { if (!(await dismissConsentFirefox(root, (ref) => pointerClick(ref)))) consentRecheck = await docKey(); }
+      try { if (!(await dismissConsentFirefox(root, consentClick))) consentRecheck = await docKey(); }
       catch { /* consent dismissal is best-effort */ }
     }
     return isChallengePage(root, countNodes(root));
@@ -451,7 +459,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
           const key = consentRecheck;
           consentRecheck = null; // once per navigation
           try {
-            if (key === await docKey() && await dismissConsentFirefox(root, (ref) => pointerClick(ref))) root = await buildTree();
+            if (key === await docKey() && await dismissConsentFirefox(root, consentClick)) root = await buildTree();
           } catch { /* best-effort */ }
         }
       } finally { refNodes = await readMarks(marks); }

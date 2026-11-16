@@ -500,3 +500,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** a `contentName()` helper concatenates descendant text and uses each `<img>`'s alt in place of the image (accname 2F). Same names as before for text-only content. The wrong comment in `test/integration/links.test.js` ("the image link only exists in Chromium's AX tree") is corrected. Alt-less image links stay nameless on both engines (not part of this fix).
 **Cost:** none.
 **Regression test:** `test/integration/ax-fidelity.test.js`, fixture "table cells and image links" (`link "thumb"`, `link "Two pic"`); red before.
+
+## [2026-11-16] Firefox did not get past a consent interstitial whose accept is a form submit (N16)
+
+**Symptom:** `goto()` of a Google Flights URL from the EU on Firefox, then `snapshot()`, still showed "Before you continue to Google" with both buttons `[disabled]`; Chromium showed the results.
+**Root cause:** the consent click worked on both engines. Chromium's `consent.js` waits 1s after the click; Firefox's returned straight from `performActions`, so the snapshot read the interstitial while its form was still submitting (it landed ~2s later).
+**Fix:** `src/firefox-page.js` clicks through a `consentClick()` that settles 1s after the pointer click, for both consent passes (goto and the first-snapshot re-check). Generic, no site logic.
+**Cost:** one second after a successful consent click on Firefox, as on Chromium.
+**Regression test:** `test/integration/consent-late.test.js`, "an accept click that navigates is awaited" (a form-submit accept whose target answers after 500ms; both engines); red on Firefox before.
