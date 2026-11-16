@@ -62,7 +62,7 @@ for (const engine of ['chromium', 'firefox']) {
     }));
 
     it('zoom on a table has the rows and none of the noise (data mode)', () => withPage(async (page) => {
-      // Data mode is the one that reads table cells on both engines: Firefox's AX cells carry a name but no text child, which act/read drop.
+      // Data mode reads table cells on both engines.
       const out = await page.snapshot({ within: 'table "Cities"', mode: 'data' });
       assert.ok(out.includes('city 3') && out.includes('pop 3000'), out.slice(0, 400));
       assert.ok(!NOISE.test(out) && !out.includes('top item 1'), 'noise in the zoom');
