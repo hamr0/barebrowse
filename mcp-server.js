@@ -123,6 +123,16 @@ export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
 }
 
 let _page = null;
+// A goto's load event is not the page's last request: the first snapshot after it waits
+// once for the network to go quiet (idle 500ms, capped 3s), like consentRecheck does once
+// per navigation. A goto followed by a click pays nothing. Library timing is unchanged.
+let _settlePending = false;
+async function settleOnce(page, settle) {
+  if (!_settlePending) return;
+  _settlePending = false;
+  if (settle === false) return;
+  try { await page.waitForNetworkIdle({ idle: 500, timeout: 3000 }); } catch { /* best-effort: a busy page is snapshotted as it is */ }
+}
 let _pageConnecting = null;
 // Active engine: starts from BAREBROWSE_ENGINE, changed at runtime by switch_engine.
 let _engine = process.env.BAREBROWSE_ENGINE === 'firefox' ? 'firefox' : 'chromium';
@@ -354,6 +364,7 @@ export const TOOLS = [
           anyOf: [{ type: 'string' }, { type: 'number' }, { type: 'array', items: { anyOf: [{ type: 'string' }, { type: 'number' }] } }],
           description: 'Zoom: return only this box, as if it were the whole page (works with every pruneMode and links). A ref from the map (e.g. 40; refs change on every snapshot, so use one from the latest map), a role (table), a role and its exact name (list "Issues"), or an unnamed box by the heading right before it (list after "Other flights"). An array returns several boxes, in page order. If two or more boxes match you get the map back with the matches marked; if none match, an error. A ref whose element is gone is an error: take a fresh map. Refs only hold until the next snapshot or navigation, and a ref from an older map can point at a different box; for anything you store or hardcode, use names (list "Issues", list after "Top flights"), which are stable across reloads.',
         },
+        settle: { type: 'boolean', description: 'The first snapshot after a goto waits once for the network to go quiet (up to 3s, about 0.5s on a finished page) so late-loading content is in it. Pass false to snapshot immediately. Default: true.' },
         full: { type: 'boolean', description: 'Skip the automatic map: a snapshot over maxChars is saved to a file and only the path is returned (the old behavior). Ignored when within or map is set.' },
         maxChars: { type: 'number', description: 'Max chars to return inline. A larger snapshot is saved to .barebrowse/ in full and the map of the page is returned instead (or just the file path with full:true). Default: 30000.' },
       },
@@ -636,10 +647,12 @@ async function handleToolCall(name, args) {
         _lastCookies = cookieReport(args.url, { cookies, error });
       }
       const { status } = await page.goto(args.url);
+      _settlePending = true;
       return isHttpError(status) ? `ok (HTTP ${status})` : 'ok';
     }, TIMEOUTS.goto);
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
+      await settleOnce(page, args.settle);
       const zoomed = args.map || args.within != null;
       const text = await page.snapshot(args.pruneMode || args.links || zoomed
         ? { mode: args.pruneMode, links: args.links, map: args.map, within: args.within } : undefined);

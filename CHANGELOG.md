@@ -15,9 +15,22 @@
   `within` and `full`; a snapshot over `maxChars` now also returns the map
   inline (the full snapshot is still saved to a file). CLI: `snapshot --map`,
   `--within=<box>` (repeatable), `--full`, `--max-chars=N`.
+- **MCP and CLI settle once before the first snapshot after a goto.** A page's
+  load event is not its last request (Airbnb on Firefox was incomplete 5 of 5
+  times; Flights about 1 in 5). The first `snapshot` after a `goto` now waits for
+  the network to go quiet (idle 500ms, capped at 3s; about 0.5s on a finished
+  page), best-effort: a timeout is not an error. A goto followed by a click pays
+  nothing. MCP `snapshot` takes `settle: false` and the CLI `snapshot --no-settle`
+  to skip it. The library (`connect()`, `browse()`) is unchanged.
 
 ### Fixed
 
+- **Chromium: `goto()` to a hash-only change took 30s.** `goto('/ok#a')` then
+  `goto('/ok#b')` waited for a load event that never fires; it now returns at once
+  with `{ url, status: 0 }`, as Firefox does.
+- **Chromium: refs die when a click or key press navigates to a new document.**
+  An old ref after a link click used to hit whatever element now had that number;
+  it now throws, like after `goto`. Hash links and `pushState` keep refs valid.
 - **Firefox: clicks on elements below the fold.** `click()`, `hover()` and
   `drag()` threw `move target out of bounds`, so Google's consent interstitial
   was never dismissed on Firefox. The target is scrolled into view first.

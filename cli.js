@@ -44,6 +44,7 @@ if (args.includes('--daemon-internal')) {
     within: within && (within.length === 1 ? within[0] : within),
     map: hasFlag('--map') || undefined, full: hasFlag('--full') || undefined,
     maxChars: parseFlag('--max-chars') && Number(parseFlag('--max-chars')),
+    settle: hasFlag('--no-settle') ? false : undefined,
   });
 } else if (cmd === 'readable') {
   await cmdProxy('readable');
@@ -620,6 +621,7 @@ Navigation:
                                     for several boxes (page order). Works with --mode and --links.
     --full                          Skip the auto map. A snapshot over --max-chars (default 30000) is saved
                                     in full and the map is printed after the path, to zoom from.
+    --no-settle                     Don't wait for the network to go quiet (up to 3s) before the first snapshot after a goto
   barebrowse readable               Clean article text -> .barebrowse/article-*.txt
   barebrowse screenshot [--format]  Screenshot -> .barebrowse/screenshot-*.png
   barebrowse pdf [--landscape]      PDF export -> .barebrowse/page-*.pdf

@@ -58,6 +58,7 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 | `barebrowse snapshot --links` | Add each link's absolute URL after its name: `link "title" <https://…> [ref=N]` (combine with `--mode`; also on `browse <url> --links`). `javascript:` and same-page `#` links get none. |
 | `barebrowse snapshot --map` | Outline of the page's big boxes (lists, tables, main, …), each with a ref and a size. Cheap (1-2% of the page): use it on big pages, then zoom. |
 | `barebrowse snapshot --within=<box>` | Only that box, as if it were the page. `<box>` = a ref from the map, a role (`table`), `role "name"` (`--within='list "Issues"'`), or an unnamed box by its heading (`--within='list after "Other flights"'`). Repeat the flag for several boxes (page order). Combine with `--mode` / `--links`. Several matches: the map comes back with the matches marked; none: error. |
+| `barebrowse snapshot --no-settle` | The first snapshot after a `goto` waits once for the network to go quiet (up to 3s) so late-loading content is in it; this skips the wait. |
 | `barebrowse snapshot --full` | A snapshot over `--max-chars` (default 30000) is saved in full and the map is printed after the path; `--full` prints the path alone. |
 | `barebrowse readable` | Clean article text → `.barebrowse/article-<timestamp>.txt`. For reading/summarising articles (news, blogs, docs); falls back to snapshot on non-articles. |
 | `barebrowse screenshot` | Screenshot → `.barebrowse/screenshot-<timestamp>.png` |

@@ -303,12 +303,23 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   }
   await attachCapture(page);
 
+  // The first snapshot after a goto waits once for the network to go quiet (idle 500ms,
+  // capped 3s): a page's load event is not its last request. Library timing is unchanged.
+  let settlePending = false;
+  async function settleOnce(settle) {
+    if (!settlePending) return;
+    settlePending = false;
+    if (settle === false) return;
+    try { await page.waitForNetworkIdle({ idle: 500, timeout: 3000 }); } catch { /* best-effort */ }
+  }
+
   // Navigate to initial URL if provided
   if (initialUrl) {
     if (opts.cookies !== false) {
       try { await page.injectCookies(initialUrl, { browser: opts.browser }); } catch { /* no cookies */ }
     }
     await page.goto(initialUrl, opts.timeout ? Number(opts.timeout) : 30000);
+    settlePending = true;
   }
 
   // Default prune mode
@@ -318,10 +329,12 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   const handlers = {
     async goto({ url, timeout }) {
       const { status } = await page.goto(url, timeout || 30000);
+      settlePending = true;
       return isHttpError(status) ? { ok: true, status } : { ok: true };
     },
 
-    async snapshot({ mode, links, within, map, full, maxChars }) {
+    async snapshot({ mode, links, within, map, full, maxChars, settle }) {
+      await settleOnce(settle);
       const pruneMode = mode || defaultPruneMode;
       const text = await page.snapshot({ mode: pruneMode, links, within, map });
       const ts = new Date().toISOString().replace(/[:.]/g, '-');
