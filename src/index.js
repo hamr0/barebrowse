@@ -1304,7 +1304,9 @@ async function navigate(page, url, timeout = 30000, lock = null) {
     // response carries the status), so report it like any other HTTP error.
     const httpError = nav.errorText === 'net::ERR_HTTP_RESPONSE_CODE_FAILURE';
     if (nav.errorText && !aborted && !httpError) throw navFailed(url, nav.errorText);
-    if (!aborted) await loaded;
+    // A same-document navigation (fragment-only change) commits no new document: Page.navigate
+    // returns no loaderId and no load event follows, so don't wait for one.
+    if (!aborted && nav.loaderId) await loaded;
     // Brief settle time for dynamic content
     await new Promise((r) => setTimeout(r, 500));
     // loaderId is shared by every redirect hop of one navigation.

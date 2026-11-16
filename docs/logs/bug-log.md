@@ -574,3 +574,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Cost:** one `Page.getFrameTree` round-trip per ref use.
 **Firefox:** already correct, no change. Its refs are `data-bb-ref` attributes written into the DOM, so a new document has none and the lookup throws ("Could not resolve element for ref"); proven green before any change, same test now guards both engines.
 **Regression test:** `test/integration/stale-refs.test.js`, "refs across in-page navigation" (link to another page kills refs; hash link and pushState keep them); red on Chromium before.
+
+## [2026-11-16] Chromium goto() to a hash-only change took the full 30s (N25)
+
+**Symptom:** `goto('/ok#a')` then `goto('/ok#b')` rejected after 30s with `Timeout waiting for CDP event: Page.loadEventFired` on Chromium; Firefox resolved at once. (Found while fixing N23.)
+**Root cause:** `navigate()` always waited for `Page.loadEventFired`; a fragment-only navigation commits no new document and fires none.
+**Fix:** `Page.navigate` returns no `loaderId` for a same-document navigation; `navigate()` skips the load wait then. Result is `{url, status: 0}` (the requested url, no document response), the same shape Firefox returns. Normal navigations, downloads and 204s are untouched; the 500ms settle still runs.
+**Cost:** none.
+**Regression test:** `test/integration/navigation.test.js`, "goto to a hash-only change returns at once" (both engines, same `{url, status:0}`); red on Chromium before. The fix-ledger bullet is removed.
