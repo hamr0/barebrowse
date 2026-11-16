@@ -524,3 +524,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** a `kwalletPassword(stdout)` helper returns the trimmed `kwallet-query` output as-is. `deriveKey`/`decryptCookie` are exported for the test (auth.js is not a package export).
 **Cost:** none. Live: 0 → 7 cookies (17 rows minus 10 partitioned, N17), 0 duplicate name+domain+path keys.
 **Regression test:** `test/unit/auth.test.js`, "KWallet password -> cookie key"; red before.
+
+## [2026-11-16] Firefox: a ref from before a navigation resolved to a different element (N19)
+
+**Symptom:** goto(A), snapshot, take ref R, goto(A or B) with no snapshot, then `click(R)` or `snapshot({within: R})`. Chromium threw ("No element found for ref"). Firefox did not: `within` returned some box of the new page and `click(R)` clicked a random link (landed on a `#cite_note` anchor).
+**Root cause:** `goto()` cleared `refContexts`, but its own `afterNavigate()` then ran `buildTree()` for the consent/challenge passes, which repopulated the table with the new page's refs (and the DOM carried matching `data-bb-ref` marks). Old numbers resolved to whatever now held them. Chromium's goto builds its tree without touching `refMap`.
+**Fix:** `afterNavigate()` clears `refContexts` after its internal passes, so only a caller-requested snapshot hands out refs. Covers goto and the hybrid retry; reload/goBack/goForward already cleared and never rebuilt. Chromium untouched (change is in `src/firefox-page.js` only).
+**Cost:** none (a click that navigates still leaves refs valid on both engines; not changed).
+**Regression test:** `test/integration/stale-refs.test.js` (goto/reload/goBack/goForward; click, type, hover, select, drag, upload and `within` all reject an older ref; both engines); the Firefox goto case was red before.
