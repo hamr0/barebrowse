@@ -696,14 +696,14 @@ export async function connect(opts = {}) {
     },
 
     async click(ref) {
-      const entry = refMap.get(ref);
+      const entry = refMap.get(String(ref));
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
       await cdpClick(entry.session, entry.backendNodeId);
     },
 
-    /** @param {string} ref @param {string} text @param {TypeOptions} [typeOpts] */
+    /** @param {string|number} ref @param {string} text @param {TypeOptions} [typeOpts] */
     async type(ref, text, typeOpts = {}) {
-      const entry = refMap.get(ref);
+      const entry = refMap.get(String(ref));
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
       await cdpType(entry.session, entry.backendNodeId, text, typeOpts);
     },
@@ -717,20 +717,20 @@ export async function connect(opts = {}) {
     },
 
     async hover(ref) {
-      const entry = refMap.get(ref);
+      const entry = refMap.get(String(ref));
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
       await cdpHover(entry.session, entry.backendNodeId);
     },
 
     async select(ref, value) {
-      const entry = refMap.get(ref);
+      const entry = refMap.get(String(ref));
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
       await cdpSelect(entry.session, entry.backendNodeId, value);
     },
 
     async drag(fromRef, toRef) {
-      const from = refMap.get(fromRef);
-      const to = refMap.get(toRef);
+      const from = refMap.get(String(fromRef));
+      const to = refMap.get(String(toRef));
       if (!from) throw new Error(`No element found for ref "${fromRef}"`);
       if (!to) throw new Error(`No element found for ref "${toRef}"`);
       // Drag across different frames isn't physically meaningful — bail
@@ -742,7 +742,7 @@ export async function connect(opts = {}) {
     },
 
     async upload(ref, files) {
-      const entry = refMap.get(ref);
+      const entry = refMap.get(String(ref));
       if (!entry) throw new Error(`No element found for ref "${ref}"`);
       // Upload sandbox: when uploadDir is set, every path must resolve
       // (symlinks included, via realpath) inside it. Stops a prompt-injected

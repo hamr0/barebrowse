@@ -540,3 +540,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `overNote()` in `src/zoom.js` adds "The zoom was N chars, over maxChars (M): raise maxChars, or zoom a smaller box (from map:true) to get it inline." (a map says only "raise maxChars"). MCP appends it to the path line; the daemon returns it as `note` and `cli.js` prints it under the path (flag spelling). The file is still saved. The no-option default (map returned) and `full:true` are unchanged.
 **Cost:** none.
 **Regression test:** `test/integration/mcp-zoom.test.js` and `test/integration/cli-zoom.test.js` (zoom and map over a small cap); red before.
+
+## [2026-11-16] Chromium `page.click(41)` failed with a number ref (N21)
+
+**Symptom:** `page.click(41)` threw "No element found for ref"; `click("41")` worked. Refs print as `[ref=41]` and `within` accepts numbers, so callers pass numbers.
+**Root cause:** Chromium's `refMap` is keyed by strings and click/type/hover/select/drag/upload looked refs up as given. The Firefox page already did `String(ref)` in `resolveRef`.
+**Fix:** the six Chromium methods look up `String(ref)` (drag: both refs); ref params are typed `string|number` in the JSDoc (so in the `.d.ts`). The MCP and bareagent handlers pass `args.ref` straight through, so they are covered; input schemas are unchanged.
+**Cost:** none.
+**Regression test:** `test/integration/stale-refs.test.js`, "numeric refs" (all six methods, both engines); red on Chromium before.

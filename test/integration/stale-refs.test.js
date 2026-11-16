@@ -70,3 +70,28 @@ for (const engine of ['chromium', 'firefox']) {
     }
   });
 }
+
+for (const engine of ['chromium', 'firefox']) {
+  describe(`numeric refs — ${engine}`, { skip: engine === 'firefox' && !hasFirefox && 'no Firefox installed' }, () => {
+    it('click, type, hover, select, drag and upload take a number as well as a string', async () => {
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/');
+        const snap = await page.snapshot();
+        const n = (re) => Number(snap.match(re)[1]);
+        const button = n(/button "Pick me" \[ref=(\d+)\]/);
+        const input = n(/textbox "Name" \[ref=(\d+)\]/);
+        const select = n(/combobox "Size" [^\n]*?\[ref=(\d+)\]/);
+        await page.hover(button);
+        await page.type(input, 'abc');
+        await page.select(select, 'm');
+        await page.drag(button, input);
+        await page.upload(input, []).catch((e) => { assert.ok(!/No element found|Unknown ref/.test(e.message), e.message); });
+        await page.click(button);
+        assert.match(await page.snapshot(), /button "clicked"/);
+        assert.match(await page.snapshot(), /textbox "Name"[^\n]*abc|abc/);
+      } finally { await page.close(); await srvr.close(); }
+    });
+  });
+}
