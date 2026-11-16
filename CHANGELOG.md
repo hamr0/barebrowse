@@ -15,6 +15,13 @@
   `within` and `full`; a snapshot over `maxChars` now also returns the map
   inline (the full snapshot is still saved to a file). CLI: `snapshot --map`,
   `--within=<box>` (repeatable), `--full`, `--max-chars=N`.
+- **Map lists card groups.** A grid of alike cards (products, listings, videos)
+  that no landmark, list or table role marks now shows in the map as
+  `- group ×18 (6.3k chars) [ref=N]`, nested where it sits; `within: <ref>` zooms
+  to it and `within: 'group'` selects the groups. Found by structure only (4 or
+  more siblings of one role with similar shape and real text), never inside
+  banner/navigation/contentinfo, never for a list or table. Only the map and
+  `within` output change; default, act, read and data snapshots are unchanged.
 - **MCP and CLI settle once before the first snapshot after a goto.** A page's
   load event is not its last request (Airbnb on Firefox was incomplete 5 of 5
   times; Flights about 1 in 5). The first `snapshot` after a `goto` now waits for
