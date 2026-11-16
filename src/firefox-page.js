@@ -499,7 +499,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     async click(ref) { await pointerClick(ref); },
 
-    /** @param {string} ref @param {string} text @param {import('./index.js').TypeOptions} [typeOpts] */
+    /** @param {string|number} ref @param {string} text @param {import('./index.js').TypeOptions} [typeOpts] */
     async type(ref, text, typeOpts = {}) {
       const { context, sharedId } = await resolveRef(ref);
       // Focus the field (and optionally clear it) in-page, then send real key
