@@ -233,6 +233,11 @@ export const TOOL_TIER = {
   upload: 'rwx', eval: 'rwx',
 };
 
+// MCP annotation hints, classified next to the tier map: read tools whose repeat call is a no-op,
+// and state-changing tools that are still non-destructive.
+const IDEMPOTENT_READS = new Set(['snapshot', 'readable', 'screenshot', 'pdf', 'tabs', 'capabilities', 'wait_for']);
+const NON_DESTRUCTIVE = new Set(['hover', 'switch_engine']);
+
 /** @param {string} name */
 export function toolTier(name) { return TOOL_TIER[name] ?? 'rwx'; }
 
@@ -259,10 +264,10 @@ function readAccess() {
 function annotationsFor(name) {
   if (toolTier(name) === 'r') {
     const a = { readOnlyHint: true, openWorldHint: name !== 'capabilities' };
-    if (['snapshot', 'readable', 'screenshot', 'pdf', 'tabs', 'capabilities', 'wait_for'].includes(name)) a.idempotentHint = true;
+    if (IDEMPOTENT_READS.has(name)) a.idempotentHint = true;
     return a;
   }
-  return { readOnlyHint: false, destructiveHint: !['hover', 'switch_engine'].includes(name), openWorldHint: true };
+  return { readOnlyHint: false, destructiveHint: !NON_DESTRUCTIVE.has(name), openWorldHint: true };
 }
 
 async function getPage() {
