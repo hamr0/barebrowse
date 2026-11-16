@@ -347,9 +347,20 @@ export async function createFirefoxPage(bidi, opts = {}) {
   // Settle after the accept click like consent.js does (1s): a consent form
   // submits and navigates, and the click returns before the next page lands, so
   // the snapshot would still show the interstitial.
+  // That landed document is the page goto() now reports (not the interstitial's).
   async function consentClick(ref) {
-    await pointerClick(ref);
-    await new Promise((r) => setTimeout(r, 1000));
+    const docs = [];
+    const off = bidi.on('network.responseCompleted', (e) => {
+      if (e.navigation && e.context === topContext) docs.push(e);
+    });
+    try {
+      await pointerClick(ref);
+      await new Promise((r) => setTimeout(r, 1000));
+    } finally {
+      off();
+      const last = docs.pop();
+      if (last) lastNavigation = { url: last.response.url, status: last.response.status };
+    }
   }
 
   /**

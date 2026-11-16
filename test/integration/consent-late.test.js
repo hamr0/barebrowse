@@ -91,9 +91,13 @@ for (const engine of ['chromium', 'firefox']) {
       const srvr = await serve();
       const page = await connect({ engine, mode: 'headless', allowLocalUrls: true });
       try {
-        await page.goto(srvr.url + '/gate');
+        const nav = await page.goto(srvr.url + '/gate');
         const snap = await page.snapshot();
         assert.ok(snap.includes('Landed'), 'must be past the consent form:\n' + snap);
+        // goto() used to report the interstitial it landed on first; it reports the page behind it.
+        assert.ok(nav.url.startsWith(srvr.url + '/landed'), 'goto url is the landed page: ' + JSON.stringify(nav));
+        assert.equal(nav.status, 200);
+        assert.deepEqual(page.lastNavigation, nav);
       } finally { await page.close(); await srvr.close(); }
     });
 

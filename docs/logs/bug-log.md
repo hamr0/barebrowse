@@ -548,3 +548,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** the six Chromium methods look up `String(ref)` (drag: both refs); ref params are typed `string|number` in the JSDoc (so in the `.d.ts`). The MCP and bareagent handlers pass `args.ref` straight through, so they are covered; input schemas are unchanged.
 **Cost:** none.
 **Regression test:** `test/integration/stale-refs.test.js`, "numeric refs" (all six methods, both engines); red on Chromium before.
+
+## [2026-11-16] goto() reported the consent page's URL after an accept that navigated (N22)
+
+**Symptom:** on Google Flights from the EU, `goto()` returned `{url: "https://consent.google.com/m?continue=…", status: 200}` while the next snapshot was the real results page. Callers that log goto's url or read its status saw the interstitial's. Chromium, and Firefox after N16.
+**Root cause:** `lastNavigation` was set from the navigation `goto()` itself made; the consent accept (a form submit) caused a second document navigation that nothing read.
+**Fix:** while a consent pass clicks, the engine collects the main-frame Document responses (Chromium: `Network.responseReceived`, type Document, main frameId; Firefox: `network.responseCompleted` with a navigation id in the top context) and, if one arrived, sets `lastNavigation` to the last one: its url and real status. Covers goto, the hybrid retry and the first-snapshot re-check. A consent click that navigates nothing changes nothing; no-consent pages report exactly as before.
+**Cost:** none.
+**Regression test:** `test/integration/consent-late.test.js`, "an accept click that navigates is awaited" now asserts goto's `{url, status}` and `page.lastNavigation` are the landed page; red on both engines before.
