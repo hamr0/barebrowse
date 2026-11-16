@@ -434,6 +434,24 @@ export async function connect(opts = {}) {
     } catch { return null; }
   }
 
+  // A consent accept that navigates (a form submit, Google's consent.google.com) lands on
+  // the real page: report that document in lastNavigation, not the interstitial's.
+  async function dismissConsentTracked() {
+    const docs = [];
+    let off = () => {};
+    try {
+      const { frameTree } = await page.session.send('Page.getFrameTree');
+      off = page.session.on('Network.responseReceived', (p) => {
+        if (p.type === 'Document' && p.frameId === frameTree.frame.id) docs.push(p);
+      });
+    } catch { /* no tracking; dismissal itself still runs */ }
+    try { return await dismissConsent(page.session); } finally {
+      off();
+      const last = docs.pop();
+      if (last) lastNavigation = { url: last.response.url, status: last.response.status };
+    }
+  }
+
   // Suppress permission prompts. Skipped in attach mode — Browser.setPermission
   // is browser-wide (no origin scope here), so flipping permissions to denied
   // would leak into the user's other tabs.
@@ -561,7 +579,7 @@ export async function connect(opts = {}) {
 
       lastNavigation = await navigate(page, url, timeout, lock);
       if (opts.consent !== false) {
-        const dismissed = await dismissConsent(page.session);
+        const dismissed = await dismissConsentTracked();
         if (!dismissed) consentRecheck = await navKey();
       }
 
@@ -586,7 +604,7 @@ export async function connect(opts = {}) {
           await suppressPermissions(cdp);
           lastNavigation = await navigate(page, url, timeout, lock);
           consentRecheck = null;
-          if (opts.consent !== false && !(await dismissConsent(page.session))) {
+          if (opts.consent !== false && !(await dismissConsentTracked())) {
             consentRecheck = await navKey();
           }
 
@@ -650,7 +668,7 @@ export async function connect(opts = {}) {
         consentRecheck = null; // once per navigation
         // Only if we are still on the document the goto landed on.
         if (key === await navKey()) {
-          try { await dismissConsent(page.session); } catch { /* best-effort */ }
+          try { await dismissConsentTracked(); } catch { /* best-effort */ }
         }
       }
       const prevRefMap = refMap;
