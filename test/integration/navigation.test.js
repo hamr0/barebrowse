@@ -106,6 +106,25 @@ for (const engine of ['chromium', 'firefox']) {
       } finally { await page.close(); await srvr.close(); }
     });
 
+    it('goBack/goForward return when the traversal lands, not at the timeout (N23)', async () => {
+      // bfcache restores and same-document entries never fire a load event.
+      const srvr = await serve();
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
+      try {
+        await page.goto(srvr.url + '/ok');
+        await page.goto(srvr.url + '/ok?b=1');
+        const timed = async (fn) => { const t = Date.now(); await fn(); return Date.now() - t; };
+        const back = await timed(() => page.goBack());
+        const fwd = await timed(() => page.goForward());
+        assert.ok(back < 5000 && fwd < 5000, `goBack ${back}ms, goForward ${fwd}ms (want < 5000)`);
+        if (page.cdp) { // same-document entry (pushState writes no load event)
+          await page.cdp.send('Runtime.evaluate', { expression: "history.pushState({}, '', '#b')" });
+          const hash = await timed(() => page.goBack());
+          assert.ok(hash < 5000, `same-document goBack ${hash}ms`);
+        }
+      } finally { await page.close(); await srvr.close(); }
+    });
+
     it('back/forward do not leave a stale outcome or HTTP warning (N9)', async () => {
       const srvr = await serve();
       const page = await connect({ engine, mode: 'headless', allowLocalUrls: true, incognito: true });
