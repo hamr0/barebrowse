@@ -14,17 +14,24 @@ import { connect } from '../../src/index.js';
 import { findFirefox } from '../../src/firefox.js';
 
 const BODY = '<main><h1>Quarterly report</h1>' + '<p>Ordinary prose about revenue and growth.</p>'.repeat(8) + '</main>';
+const WIDGET = '<iframe title="Widget containing a Cloudflare security challenge" srcdoc="<p>x</p>"></iframe>';
+let solveHits = 0; // /mit-solve: first request is the challenge, the reload gets the real page
 const PAGES = {
   '/ok': [200, {}, `<!doctype html><title>t</title>${BODY}`],
-  '/mitigated': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}`],
+  '/mitigated': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}${WIDGET}`],
   '/frame-go': [200, {}, `<!doctype html><title>t</title><h1>Hold on</h1><a href="/ok">Continue</a><div><iframe title="Human verification challenge" srcdoc="<p>x</p>"></iframe></div>`],
-  '/mit-go': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}<a href="/ok">Continue</a>`],
+  '/mit-go': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}${WIDGET}<a href="/ok">Continue</a>`],
   '/iframe': [200, {}, `<!doctype html><title>t</title><h1>Hold on</h1><div><iframe title="Human verification challenge" srcdoc="<button>Press &amp; Hold Human Challenge</button>"></iframe></div>`],
 };
 
 let srv, base;
 before(async () => {
   srv = createServer((q, res) => {
+    if (q.url === '/mit-solve') {
+      const first = solveHits++ === 0; // a managed challenge that solves itself and reloads in place
+      res.writeHead(first ? 403 : 200, { 'Content-Type': 'text/html', ...(first ? { 'cf-mitigated': 'challenge' } : {}) });
+      return res.end(`<!doctype html><title>t</title>${BODY}${first ? WIDGET + '<script>setTimeout(() => location.reload(), 300)</script>' : ''}`);
+    }
     const [status, headers, html] = PAGES[q.url] || [404, {}, 'nope'];
     res.writeHead(status, { 'Content-Type': 'text/html', ...headers }); res.end(html);
   });
@@ -87,5 +94,25 @@ for (const engine of ['chromium', 'firefox']) {
         } finally { await page.close(); }
       });
     }
+  });
+}
+
+// N29: a challenge that solves itself and reloads in place to the same URL.
+for (const engine of ['chromium', 'firefox']) {
+  describe(`botBlocked after an in-place solve (${engine})`, { skip: engine === 'firefox' && !hasFirefox }, () => {
+    it('does not keep the cf-mitigated flag once the page is real content', async () => {
+      solveHits = 0;
+      const page = await connect({ mode: 'headless', engine });
+      try {
+        const out = await page.goto(base + '/mit-solve');
+        assert.equal(out.mitigated, true);
+        assert.equal(page.botBlocked, true, 'goto saw the challenge');
+        await new Promise((r) => setTimeout(r, 1500)); // the page reloads itself
+        const snap = await page.snapshot();
+        assert.ok(snap.includes('Quarterly report') && !snap.includes('security challenge'), 'real content is showing');
+        assert.equal(page.botBlocked, false);
+        assert.ok(!snap.includes('BOT CHALLENGE DETECTED'));
+      } finally { await page.close(); }
+    });
   });
 }
