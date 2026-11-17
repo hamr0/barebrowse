@@ -693,8 +693,8 @@ export async function connect(opts = {}) {
       const raw = formatTree(result.tree);
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
-      // Recompute from the tree just built; cf-mitigated only counts while still on that document's URL.
-      botBlocked = isChallengePage(result.tree, result.nodeCount, { mitigated: !!lastNavigation?.mitigated && lastNavigation.url === pageUrl });
+      // Recompute from the tree just built. cf-mitigated is a goto-time signal only: a challenge that solves itself in place leaves it stale.
+      botBlocked = isChallengePage(result.tree, result.nodeCount);
       const warn = (botBlocked ? BOT_WARNING : '')
         + httpWarning(lastNavigation?.status) + (lock?.takeNotes(page.targetId) ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);

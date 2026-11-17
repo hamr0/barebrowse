@@ -610,3 +610,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Supersedes** the accepted "botBlocked not refreshed after reload/goBack/goForward": the next snapshot refreshes it.
 **Known limits (not chased):** `createTab()` handles have no snapshot, so their `botBlocked` is still goto-only. `cf-mitigated` is keyed on URL, so a same-URL reload that is still mitigated reads false on the next snapshot unless a phrase or the iframe rule also matches (reload and goBack clear the stored outcome). A same-URL reload that clears reads false.
 **Regression test:** `test/integration/challenge.test.js`, "botBlocked follows the page" (challenge iframe page and a cf-mitigated page, click to a real page; marker stays while still a challenge; both engines); 4 red before.
+
+## [2026-11-17] botBlocked stayed set after a challenge solved itself in place (N29)
+
+**Symptom:** a Cloudflare managed challenge that auto-solves and reloads in the page to the same URL: the next `snapshot()` still reported `botBlocked` true and printed the marker on the real content.
+**Root cause:** N28 let `snapshot()` keep `cf-mitigated` from the `goto()` outcome while the page URL still equalled the outcome's URL; an in-place reload keeps the URL, and only `goto()` rewrites the outcome.
+**Fix:** `cf-mitigated` counts only at `goto()` time (the flag and the hybrid-fallback decision); `snapshot()` recomputes from the tree alone, both engines. Removes the URL-keyed carve-out. Live: backmarket.com/en-us/search?q=lenovo (redirects to /testchallengepage, Turnstile iframe) stays `botBlocked` true after goto and snapshot on Chromium; the tree alone flags it.
+**Known limit:** a content-rich `cf-mitigated` page whose tree matches no rule is flagged at goto but reads false on the next snapshot (real Cloudflare challenges are small pages with the Turnstile iframe or phrases). The `[HTTP 403 ...]` line also persists in that stale case: it reports the `goto()` document's status, and the in-page reload's status is not read.
+**Regression test:** `test/integration/challenge.test.js`, "botBlocked after an in-place solve" (both engines); red before. The `/mitigated` and `/mit-go` fixtures now carry a Turnstile-style iframe so the tree alone shows a challenge.
+
