@@ -27,9 +27,9 @@ import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { dismissConsentFirefox } from './consent-firefox.js';
 import { waitForNetworkIdleBiDi } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
-import { isChallengePage, countNodes } from './challenge.js';
+import { isChallengePage, countNodes, BOT_WARNING } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
-import { navFailed, navBlocked, httpWarning } from './navigation.js';
+import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
 
 // Isolated BiDi realm holding the per-document stale-ref token (page script cannot reach it).
 const DOC_SANDBOX = 'barebrowse';
@@ -340,7 +340,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
         timeout, `goto(${url})`);
       const last = events.filter((e) => e.navigation === res.navigation).pop();
-      return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
+      return { url: last ? last.response.url : url, status: last ? last.response.status : 0, ...mitigation(last?.response.headers) };
     } catch (err) {
       // A lock-refused document (the URL or a redirect hop) surfaces as
       // NS_ERROR_ABORT; report it as NAV_BLOCKED, not NAV_FAILED.
@@ -400,7 +400,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     // from before this navigation must stay dead (Chromium's goto never hands out refs
     // either), or an old ref number resolves to a different element of the new page.
     refContexts = new Map();
-    return isChallengePage(root, countNodes(root));
+    return isChallengePage(root, countNodes(root), lastNavigation || {});
   }
 
   const page = {
@@ -500,7 +500,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
       const raw = formatTree(root);
-      const warn = httpWarning(lastNavigation?.status) + (lock?.takeNotes(topContext) ?? '');
+      const warn = (botBlocked ? BOT_WARNING : '') + httpWarning(lastNavigation?.status) + (lock?.takeNotes(topContext) ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(root, pageUrl) : root;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);

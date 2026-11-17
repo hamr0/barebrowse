@@ -14,6 +14,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { isChallengePage } from '../../src/index.js';
+import { mitigation } from '../../src/navigation.js';
 
 // Minimal tree node shape — only role/name/children matter to the heuristic.
 function leaf(name) {
@@ -97,6 +98,65 @@ describe('isChallengePage (H9)', () => {
   describe('truly empty trees still flag', () => {
     it('flags null tree (AX tree fetch failed)', () => {
       assert.equal(isChallengePage(null, 0), true);
+    });
+  });
+
+  describe('structural: challenge iframe (N27)', () => {
+    const node = (role, name, ...children) => ({ role, name, children });
+    const frame = (name, role = 'Iframe') => node(role, name, node('RootWebArea', name, node('button', 'Press & Hold Human Challenge')));
+    // Pad out so wording alone can't decide (text >= 50 chars, no phrase).
+    const pad = (n) => Array.from({ length: n }, (_, i) => leaf(`paragraph number ${i} of ordinary page text`));
+
+    it('flags a small page whose only content is a "Human verification challenge" iframe (Walmart shape)', () => {
+      const tree = root(node('link', 'Home'), node('heading', 'Some heading'), frame('Human verification challenge'), ...pad(5));
+      assert.equal(isChallengePage(tree, 87), true);
+    });
+
+    it('flags it when the iframe sits in a dialog on a big page, even with a close button', () => {
+      const dlg = node('dialog', 'Verify', node('button', 'Close'), frame('Human verification challenge'));
+      assert.equal(isChallengePage(root(dlg, ...pad(400)), 2000), true);
+    });
+
+    it('does NOT flag the same iframe on a big page outside any dialog', () => {
+      assert.equal(isChallengePage(root(frame('Human verification challenge'), ...pad(400)), 2000), false);
+    });
+
+    it('does NOT flag a reCAPTCHA widget in a form (IframePresentational, 83 nodes)', () => {
+      const tree = root(node('form', '', node('textbox', 'Name'), frame('reCAPTCHA', 'IframePresentational'), node('button', 'Submit')), ...pad(5));
+      assert.equal(isChallengePage(tree, 83), false);
+    });
+
+    it('does NOT flag an hCaptcha widget beside a Submit button on a small page', () => {
+      const tree = root(node('form', '', frame('Widget containing checkbox for hCaptcha security challenge'), node('button', 'Submit')), ...pad(5));
+      assert.equal(isChallengePage(tree, 86), false);
+    });
+
+    it('does NOT flag a login dialog that carries a captcha iframe and a field', () => {
+      const dlg = node('dialog', 'Sign in', node('textbox', 'Email'), frame('reCAPTCHA', 'IframePresentational'));
+      assert.equal(isChallengePage(root(dlg, ...pad(400)), 2000), false);
+    });
+
+    it('does NOT flag an iframe with an unrelated name', () => {
+      assert.equal(isChallengePage(root(frame('Embedded video player'), ...pad(5)), 40), false);
+    });
+
+    it('flags the HUMAN heading "Robot or human?" (Firefox never renders the iframe)', () => {
+      assert.equal(isChallengePage(root(node('heading', 'Robot or human?'), ...pad(5)), 200), true);
+    });
+  });
+
+  describe('cf-mitigated header (N27)', () => {
+    it('flags a content-rich page when the response was mitigated', () => {
+      const tree = big(['ordinary text', 'a'.repeat(200)]);
+      assert.equal(isChallengePage(tree, 500), false);
+      assert.equal(isChallengePage(tree, 500, { mitigated: true }), true);
+    });
+
+    it('mitigation() reads CDP object headers and BiDi array headers, case-insensitively', () => {
+      assert.deepEqual(mitigation({ 'CF-Mitigated': 'challenge' }), { mitigated: true });
+      assert.deepEqual(mitigation([{ name: 'cf-mitigated', value: { type: 'string', value: 'challenge' } }]), { mitigated: true });
+      assert.deepEqual(mitigation({ 'cf-mitigated': 'other' }), {});
+      assert.deepEqual(mitigation(undefined), {});
     });
   });
 });

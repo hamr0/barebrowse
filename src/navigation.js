@@ -6,9 +6,21 @@
 /**
  * What goto() resolves to: where the page ended up and how the server answered.
  * `status` is 0 when no HTTP response was observed for the navigation (e.g. an
- * aborted navigation that never got one).
- * @typedef {{ url: string, status: number }} NavigationOutcome
+ * aborted navigation that never got one). `mitigated` is present (true) only when
+ * the document carried Cloudflare's `cf-mitigated: challenge` header.
+ * @typedef {{ url: string, status: number, mitigated?: true }} NavigationOutcome
  */
+
+/**
+ * The outcome's `mitigated` flag from a main-document response's headers
+ * (CDP: `{name: value}` object; BiDi: `[{name, value: {value}}]` array).
+ * @param {object|Array<{name: string, value: {value: string}}>} [headers]
+ * @returns {{ mitigated: true } | {}}
+ */
+export function mitigation(headers) {
+  const entries = Array.isArray(headers) ? headers.map((h) => [h.name, h.value?.value]) : Object.entries(headers || {});
+  return entries.some(([k, v]) => /^cf-mitigated$/i.test(k) && /challenge/i.test(String(v))) ? { mitigated: true } : {};
+}
 
 /**
  * Typed error for a navigation that never reached a document (DNS failure,
