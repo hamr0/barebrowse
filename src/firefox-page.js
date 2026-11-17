@@ -95,7 +95,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   // ref (string int) → owning browsing-context id, rebuilt every snapshot so a
   // click after a snapshot routes to the frame the element actually lives in.
   let refContexts = new Map();
-  // context id → identity token stamped on that context's document at snapshot time.
+  // context id → identity token set in that context's sandbox realm (DOC_SANDBOX) at snapshot time.
   // A document restored from the back/forward cache keeps its old data-bb-ref marks;
   // its token differs from the one remembered here, so its refs are rejected.
   let docTokens = new Map();
