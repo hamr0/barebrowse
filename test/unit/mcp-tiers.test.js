@@ -67,13 +67,13 @@ describe('tool annotations + tier map', () => {
 
   it('the tier table: reads, interactions, upload/eval', () => {
     for (const n of ['browse', 'goto', 'back', 'forward', 'reload', 'scroll', 'snapshot', 'readable', 'screenshot', 'pdf', 'wait_for', 'tabs', 'capabilities']) assert.equal(TOOL_TIER[n], 'r', n);
-    for (const n of ['click', 'type', 'press', 'select', 'drag', 'hover', 'switch_engine']) assert.equal(TOOL_TIER[n], 'rw', n);
+    for (const n of ['click', 'type', 'press', 'select', 'drag', 'hover', 'hold', 'switch_engine']) assert.equal(TOOL_TIER[n], 'rw', n);
     for (const n of ['upload', 'eval']) assert.equal(TOOL_TIER[n], 'rwx', n);
   });
 
   it('destructive/open-world/idempotent hints follow the plan', () => {
     const by = Object.fromEntries(TOOLS.map((t) => [t.name, t.annotations]));
-    for (const n of ['click', 'type', 'press', 'select', 'drag', 'upload']) assert.equal(by[n].destructiveHint, true, n);
+    for (const n of ['click', 'type', 'press', 'select', 'drag', 'hold', 'upload']) assert.equal(by[n].destructiveHint, true, n);
     for (const n of ['hover', 'switch_engine']) assert.equal(by[n].destructiveHint, false, n);
     for (const t of TOOLS) assert.equal(t.annotations.openWorldHint, t.name === 'capabilities' ? false : true, t.name);
     for (const n of ['snapshot', 'readable', 'screenshot', 'pdf', 'tabs', 'capabilities', 'wait_for']) assert.equal(by[n].idempotentHint, true, n);

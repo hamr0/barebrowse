@@ -552,6 +552,25 @@ export async function createFirefoxPage(bidi, opts = {}) {
       await bidi.evaluate(topContext, `window.scrollBy(0, ${Number(deltaY)})`, false);
     },
 
+    /** Press and hold for `ms` (default 10s), then release. @param {string|number} ref @param {number} [ms=10000] */
+    async hold(ref, ms = 10000) {
+      const target = await resolveRef(ref);
+      await scrollIntoView(target);
+      const { context, sharedId } = target;
+      await bidi.send('input.performActions', {
+        context,
+        actions: [{
+          type: 'pointer', id: 'mouse', parameters: { pointerType: 'mouse' },
+          actions: [
+            { type: 'pointerMove', x: 0, y: 0, origin: { type: 'element', element: { sharedId } } },
+            { type: 'pointerDown', button: 0 },
+            { type: 'pause', duration: ms },
+            { type: 'pointerUp', button: 0 },
+          ],
+        }],
+      });
+    },
+
     async hover(ref) {
       const target = await resolveRef(ref);
       await scrollIntoView(target);

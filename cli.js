@@ -62,6 +62,8 @@ if (args.includes('--daemon-internal')) {
   await cmdProxy('scroll', { deltaY: Number(args[1]) });
 } else if (cmd === 'hover' && args[1]) {
   await cmdProxy('hover', { ref: args[1] });
+} else if (cmd === 'hold' && args[1]) {
+  await cmdProxy('hold', { ref: args[1], ms: args[2] ? Number(args[2]) : undefined });
 } else if (cmd === 'select' && args[1] && args[2]) {
   await cmdProxy('select', { ref: args[1], value: args[2] });
 } else if (cmd === 'eval' && args[1]) {
@@ -633,6 +635,7 @@ Interaction:
   barebrowse press <key>            Press key (Enter, Tab, Escape, ...)
   barebrowse scroll <deltaY>        Scroll (positive=down)
   barebrowse hover <ref>            Hover element
+  barebrowse hold <ref> [ms]        Press and hold (default 10000, max 30000) for Press & Hold challenges
   barebrowse select <ref> <value>   Select dropdown value
   barebrowse drag <from> <to>       Drag element to another
   barebrowse upload <ref> <files..> Upload files to file input

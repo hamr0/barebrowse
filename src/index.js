@@ -19,7 +19,7 @@ import { prune as pruneTree } from './prune.js';
 import { dataSnapshot, stripLegend } from './data.js';
 import { annotateLinks } from './links.js';
 import { parseWithin, zoomSnapshot } from './zoom.js';
-import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
+import { click as cdpClick, type as cdpType, scroll as cdpScroll, press as cdpPress, hover as cdpHover, hold as cdpHold, select as cdpSelect, drag as cdpDrag, upload as cdpUpload } from './interact.js';
 import { dismissConsent } from './consent.js';
 import { applyStealth } from './stealth.js';
 import { applyFirefoxStealth } from './stealth-firefox.js';
@@ -732,6 +732,16 @@ export async function connect(opts = {}) {
     async click(ref) {
       const entry = await refEntry(ref);
       await cdpClick(entry.session, entry.backendNodeId);
+    },
+
+    /**
+     * Press and hold the element for `ms` (default 10s) then release: for
+     * "Press & Hold" bot challenges. Plain press, no motion curve.
+     * @param {string|number} ref @param {number} [ms=10000]
+     */
+    async hold(ref, ms = 10000) {
+      const entry = await refEntry(ref);
+      await cdpHold(entry.session, entry.backendNodeId, ms);
     },
 
     /** @param {string|number} ref @param {string} text @param {TypeOptions} [typeOpts] */

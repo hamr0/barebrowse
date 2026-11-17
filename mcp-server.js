@@ -49,6 +49,7 @@ export const TIMEOUTS = {
   press: 15000,
   scroll: 15000,
   hover: 15000,
+  hold: 45000, // up to 30s of holding (HOLD_MAX_MS) plus slack
   select: 15000,
   drag: 15000,
   tabs: 5000,
@@ -235,12 +236,13 @@ function engineInfo() {
 // (navigate, observe); rw: + interact (click/type/...); rwx: + upload and eval.
 // Every tool has an explicit tier; a tool missing from the map is rwx, so a
 // new tool is hidden from restricted tiers until someone classifies it.
+const HOLD_MAX_MS = 30000;
 const TIER_RANK = { r: 0, rw: 1, rwx: 2 };
 export const TOOL_TIER = {
   browse: 'r', goto: 'r', back: 'r', forward: 'r', reload: 'r', scroll: 'r',
   snapshot: 'r', readable: 'r', screenshot: 'r', pdf: 'r', wait_for: 'r', tabs: 'r',
   capabilities: 'r', assess: 'r',
-  click: 'rw', type: 'rw', press: 'rw', select: 'rw', drag: 'rw', hover: 'rw', switch_engine: 'rw',
+  click: 'rw', type: 'rw', press: 'rw', select: 'rw', drag: 'rw', hover: 'rw', hold: 'rw', switch_engine: 'rw',
   upload: 'rwx', eval: 'rwx',
 };
 
@@ -537,6 +539,18 @@ export const TOOLS = [
     },
   },
   {
+    name: 'hold',
+    description: 'Press and hold an element by ref for a duration, then release: for "Press & Hold" bot challenges (a snapshot marked [BOT CHALLENGE DETECTED] whose iframe holds a "Press & Hold" button). Plain press, no mouse motion. Default 10s, max 30s; give the challenge a little over its stated time (about 12s works on Walmart). Returns ok; snapshot afterwards to see whether the page let you through.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        ref: { type: 'string', description: 'Element ref from snapshot' },
+        ms: { type: 'number', description: 'Hold duration in milliseconds (default 10000, max 30000)' },
+      },
+      required: ['ref'],
+    },
+  },
+  {
     name: 'switch_engine',
     description: 'Switch the browser engine (chromium or firefox) without restarting the MCP server. LOSES all in-session state: the current page, tabs, refs, and any logins or form state made inside the session. Logins from your real browser are re-injected on the next goto. Costs a few seconds (about 2s to chromium, 4-5s to firefox) as the new browser launches on your next call. After switching, call goto. Same engine as the active one is a no-op.',
     inputSchema: {
@@ -772,6 +786,12 @@ async function handleToolCall(name, args) {
       await page.hover(args.ref);
       return 'ok';
     }, TIMEOUTS.hover, { retry: false });
+    case 'hold': return withRetry(async () => {
+      const page = await getPage();
+      const ms = Math.min(Math.max(Number(args.ms) || 10000, 0), HOLD_MAX_MS);
+      await page.hold(args.ref, ms);
+      return 'ok';
+    }, TIMEOUTS.hold, { retry: false });
     case 'eval': {
       // Only reachable when BAREBROWSE_MCP_EVAL=1 — the tool isn't registered
       // otherwise, but this guard is the second line of defense in case the

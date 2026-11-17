@@ -241,7 +241,7 @@ describe('MCP tool surface (H6)', () => {
     // These existed in the connect() API + daemon + bareagent but weren't
     // wired through the MCP server until H6. Each gap meant Claude Desktop /
     // Cursor / Code agents couldn't reach them at all.
-    for (const tool of ['screenshot', 'wait_for', 'tabs', 'select', 'hover', 'reload']) {
+    for (const tool of ['screenshot', 'wait_for', 'tabs', 'select', 'hover', 'hold', 'reload']) {
       assert.ok(toolNames.includes(tool),
         `MCP TOOLS must include "${tool}" — H6 added it; if absent it's not reachable from MCP clients`);
     }

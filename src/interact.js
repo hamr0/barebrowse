@@ -70,6 +70,23 @@ export async function click(session, backendNodeId) {
 }
 
 /**
+ * Press and hold the primary button on an element for `ms`, then release. A plain
+ * press at the element's center: no motion, no jitter (humanlike paths do worse
+ * against "Press & Hold" bot walls, which time the hold itself).
+ *
+ * @param {object} session - Session-scoped CDP handle
+ * @param {number} backendNodeId - Backend DOM node ID
+ * @param {number} ms - Hold duration in milliseconds
+ */
+export async function hold(session, backendNodeId, ms) {
+  const { x, y } = await getCenter(session, backendNodeId);
+  await session.send('Input.dispatchMouseEvent', { type: 'mouseMoved', x, y });
+  await session.send('Input.dispatchMouseEvent', { type: 'mousePressed', x, y, button: 'left', buttons: 1, clickCount: 1 });
+  await new Promise((r) => setTimeout(r, ms));
+  await session.send('Input.dispatchMouseEvent', { type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
+}
+
+/**
  * Type text into an element by its backendDOMNodeId.
  * Default: DOM.focus + Input.insertText (fast, no key events).
  * With { keyEvents: true }: dispatches keyDown/keyUp per character (triggers handlers).

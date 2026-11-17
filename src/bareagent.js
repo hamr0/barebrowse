@@ -186,6 +186,19 @@ export function createBrowseTools(opts = {}) {
       execute: async ({ ref }) => actionAndSnapshot((page) => page.hover(ref)),
     },
     {
+      name: 'hold',
+      description: 'Press and hold an element by its ref for ms milliseconds (default 10000), then release, for "Press & Hold" bot challenges. Returns the updated snapshot.',
+      parameters: {
+        type: 'object',
+        properties: {
+          ref: { type: 'string', description: 'Element ref from snapshot' },
+          ms: { type: 'number', description: 'Hold duration in milliseconds (default 10000)' },
+        },
+        required: ['ref'],
+      },
+      execute: async ({ ref, ms }) => actionAndSnapshot((page) => page.hold(ref, ms)),
+    },
+    {
       name: 'back',
       description: 'Go back in browser history. Returns the updated snapshot.',
       parameters: { type: 'object', properties: {} },
