@@ -1263,8 +1263,9 @@ async function traverse(page, entryId) {
   const { frameTree } = await session.send('Page.getFrameTree');
   const mainId = frameTree.frame.id;
   let off = () => {};
+  let timer;
   const landed = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => { off(); reject(new Error('timeout')); }, 30000);
+    timer = setTimeout(() => { off(); reject(new Error('timeout')); }, 30000);
     off = session.on('Page.frameStoppedLoading', (p) => {
       if (p.frameId === mainId) { clearTimeout(timer); off(); resolve(undefined); }
     });
@@ -1272,7 +1273,7 @@ async function traverse(page, entryId) {
   landed.catch(() => {});
   try {
     await session.send('Page.navigateToHistoryEntry', { entryId });
-  } catch (e) { off(); throw e; }
+  } catch (e) { clearTimeout(timer); off(); throw e; }
   try { await landed; } catch { await new Promise((r) => setTimeout(r, 500)); }
 }
 
