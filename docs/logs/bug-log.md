@@ -602,3 +602,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Negatives (live):** reCAPTCHA demo (IframePresentational "reCAPTCHA" in a form) and hCaptcha demo (form with Submit) are not flagged; en.wikipedia.org/wiki/Bot and news.ycombinator.com are not. Node count alone could not separate them on Chromium (Walmart block 84-87, reCAPTCHA demo 83, hCaptcha demo 85), hence the "no form field" rule.
 **Known limit:** a challenge iframe on a page that also has fields or buttons (outside a dialog) is not flagged by the structural rule.
 **Regression test:** `test/unit/challenge.test.js` (trees incl. the captcha negatives, `mitigation()`), `test/integration/challenge.test.js` (local server: cf-mitigated 403, challenge iframe, ordinary page; both engines); red before.
+
+## [2026-11-17] botBlocked and the marker stayed set after the challenge was passed (N28)
+
+**Symptom:** after `hold()` got past Walmart's challenge, the real results page still printed `[BOT CHALLENGE DETECTED ...]` and `page.botBlocked` stayed true: both were computed only at `goto()`.
+**Fix:** every `snapshot()` (both engines) recomputes `botBlocked` from the tree it just built, no extra protocol calls. The `cf-mitigated` signal counts only while the page URL still equals the URL of the `goto()` outcome that carried it. Hybrid fallback at goto is unchanged.
+**Supersedes** the accepted "botBlocked not refreshed after reload/goBack/goForward": the next snapshot refreshes it.
+**Known limits (not chased):** `createTab()` handles have no snapshot, so their `botBlocked` is still goto-only. `cf-mitigated` is keyed on URL, so a same-URL reload that is still mitigated reads false on the next snapshot unless a phrase or the iframe rule also matches (reload and goBack clear the stored outcome). A same-URL reload that clears reads false.
+**Regression test:** `test/integration/challenge.test.js`, "botBlocked follows the page" (challenge iframe page and a cf-mitigated page, click to a real page; marker stays while still a challenge; both engines); 4 red before.
