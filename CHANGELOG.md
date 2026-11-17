@@ -16,6 +16,10 @@
 - **Firefox `snapshot()` now writes the `[BOT CHALLENGE DETECTED ...]` line**
   when `botBlocked` is true, as Chromium always did.
 
+- **`botBlocked` and the snapshot marker now follow the page.** Every `snapshot()`
+  recomputes them from the tree it built, so they clear after `hold()` or a
+  click gets you past a challenge (they used to stay set until the next `goto()`).
+
 ### Added
 
 - **`hold(ref, ms = 10000)`**: press an element, wait, release (plain press, no

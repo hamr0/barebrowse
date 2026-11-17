@@ -500,6 +500,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
       const pageUrl = await bidi.evaluate(topContext, 'location.href', false).catch(() => '');
       const raw = formatTree(root);
+      // Recompute from the tree just built; cf-mitigated only counts while still on that document's URL.
+      botBlocked = isChallengePage(root, countNodes(root), { mitigated: !!lastNavigation?.mitigated && lastNavigation.url === pageUrl });
       const warn = (botBlocked ? BOT_WARNING : '') + httpWarning(lastNavigation?.status) + (lock?.takeNotes(topContext) ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(root, pageUrl) : root;

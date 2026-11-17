@@ -91,7 +91,7 @@ const snapshot = await browse('https://example.com', {
 | `waitForNetworkIdle(opts?)` | { timeout?: number, idle?: number } | void | Wait until no pending requests for `idle` ms (default 500) |
 | `saveState(filePath)` | filePath: string | void | Export cookies + localStorage to JSON file |
 | `injectCookies(url, opts?)` | url: string, { browser?: string } | void | Extract cookies from user's browser and inject via CDP |
-| `botBlocked` | -- | boolean | True if last `goto()` hit a bot challenge. Heuristic tightened in v0.9.0 (H9): Cloudflare-strong phrases fire alone; generic phrases ("access denied"/"unknown error") only fire on near-empty pages. Resets on each navigation. |
+| `botBlocked` | -- | boolean | True if the page is a bot challenge: set by `goto()`, then recomputed on every `snapshot()` (so it clears once `hold()` or a click gets you through). Heuristic tightened in v0.9.0 (H9): Cloudflare-strong phrases fire alone; generic phrases ("access denied"/"unknown error") only fire on near-empty pages. Resets on each navigation. |
 | `dialogLog` | -- | Array<{type, message, timestamp}> | Auto-dismissed JS dialog history |
 | `onDialog(handler)` | handler: ({type, message, defaultPrompt}) => {accept, promptText} \| undefined, or null to remove | void | Override the auto-accept default. Handler receives the dialog params; return `{accept: false}` to cancel, `{accept: true, promptText: 'x'}` to supply prompt input. Pass `null` to restore defaults. |
 | `downloads` | -- | Array<{guid, url, suggestedFilename, savedPath, state, totalBytes, receivedBytes}> | Live array of every `Content-Disposition: attachment` download captured during this session. `state`: `inProgress` → `completed` \| `canceled`. |

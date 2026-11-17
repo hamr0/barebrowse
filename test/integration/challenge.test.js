@@ -17,6 +17,8 @@ const BODY = '<main><h1>Quarterly report</h1>' + '<p>Ordinary prose about revenu
 const PAGES = {
   '/ok': [200, {}, `<!doctype html><title>t</title>${BODY}`],
   '/mitigated': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}`],
+  '/frame-go': [200, {}, `<!doctype html><title>t</title><h1>Hold on</h1><a href="/ok">Continue</a><div><iframe title="Human verification challenge" srcdoc="<p>x</p>"></iframe></div>`],
+  '/mit-go': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}<a href="/ok">Continue</a>`],
   '/iframe': [200, {}, `<!doctype html><title>t</title><h1>Hold on</h1><div><iframe title="Human verification challenge" srcdoc="<button>Press &amp; Hold Human Challenge</button>"></iframe></div>`],
 };
 
@@ -55,5 +57,35 @@ for (const engine of ['chromium', 'firefox']) {
         assert.equal(page.botBlocked, false, 'flag resets');
       } finally { await page.close(); }
     });
+  });
+}
+
+// N28: botBlocked and the marker follow the page, not the goto.
+for (const engine of ['chromium', 'firefox']) {
+  describe(`botBlocked follows the page (${engine})`, { skip: engine === 'firefox' && !hasFirefox }, () => {
+    const MARK = 'BOT CHALLENGE DETECTED';
+    const clickContinue = async (page) => {
+      const ref = /link "Continue" \[ref=(\d+)\]/.exec(await page.snapshot())?.[1];
+      assert.ok(ref, 'Continue link in snapshot');
+      await page.click(ref);
+      await new Promise((r) => setTimeout(r, 1000));
+    };
+
+    for (const start of ['/frame-go', '/mit-go']) {
+      it(`clears after a click leaves ${start}`, async () => {
+        const page = await connect({ mode: 'headless', engine });
+        try {
+          await page.goto(base + start);
+          assert.equal(page.botBlocked, true);
+          assert.ok((await page.snapshot()).includes(MARK), 'still a challenge: marker stays');
+          assert.equal(page.botBlocked, true);
+          await clickContinue(page);
+          const snap = await page.snapshot();
+          assert.ok(snap.includes('Quarterly report'), 'landed on the real page');
+          assert.equal(page.botBlocked, false);
+          assert.ok(!snap.includes(MARK));
+        } finally { await page.close(); }
+      });
+    }
   });
 }

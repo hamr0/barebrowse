@@ -202,7 +202,7 @@ From the CLI: `barebrowse open <url> --incognito`. From MCP: set
 
 ## What it handles automatically
 
-Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (challenge-phrase + node-count heuristic + stealth patches + automatic headed fallback — a flagged page sets `page.botBlocked` and the snapshot starts with `[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]`; check the boolean, not the text. Press & Hold challenges can be passed with `hold(ref, ms)`), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
+Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (challenge-phrase + node-count heuristic + stealth patches + automatic headed fallback — a flagged page sets `page.botBlocked` (set at `goto()`, refreshed by every `snapshot()`) and the snapshot starts with `[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]`; check the boolean, not the text. Press & Hold challenges can be passed with `hold(ref, ms)`), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
 ## Safe by default
 
