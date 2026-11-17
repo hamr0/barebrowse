@@ -96,7 +96,7 @@ Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`
 }
 ```
 
-MCP tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`, `capabilities` (reports the active engine — chromium or firefox — and what the session can do, plus a `cookies` field naming the cookies injected on the last goto — names only, never values; no side effects), `switch_engine` (swap chromium/firefox without restarting; page, tabs and refs reset, so call `goto` after). Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. `BAREBROWSE_TIER` and `BAREBROWSE_ALLOW` restrict the tool set and the reachable hosts (see Site lock and MCP access tiers below). Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
+MCP tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `hold`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`, `capabilities` (reports the active engine — chromium or firefox — and what the session can do, plus a `cookies` field naming the cookies injected on the last goto — names only, never values; no side effects), `switch_engine` (swap chromium/firefox without restarting; page, tabs and refs reset, so call `goto` after). Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. `BAREBROWSE_TIER` and `BAREBROWSE_ALLOW` restrict the tool set and the reachable hosts (see Site lock and MCP access tiers below). Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
 
 **Idle release.** An MCP server can outlive its conversation, so it closes its browser after `BAREBROWSE_IDLE_MINUTES` (default `15`, `0` = never, blank/invalid = default, fractional allowed, capped at ~24.8 days) with no tool call in flight. The next call opens a fresh browser (a new job, not a resume — a page left open, e.g. a solved captcha in the headed window, is gone). A transient browser error also closes the broken browser rather than orphaning it; an ordinary `wait_for` timeout does not reset the page.
 
@@ -202,7 +202,7 @@ From the CLI: `barebrowse open <url> --incognito`. From MCP: set
 
 ## What it handles automatically
 
-Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (challenge-phrase + node-count heuristic + stealth patches + automatic headed fallback — snapshot shows `[BOT CHALLENGE DETECTED]` warning when blocked), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
+Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (challenge-phrase + node-count heuristic + stealth patches + automatic headed fallback — a flagged page sets `page.botBlocked` and the snapshot starts with `[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]`; check the boolean, not the text. Press & Hold challenges can be passed with `hold(ref, ms)`), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
 
 ## Safe by default
 
@@ -223,7 +223,7 @@ See `barebrowse.context.md` and the PRD's "Security Model & Safe Defaults" for t
 
 Not locked, by design: subresources (images, scripts, CSS, XHR/fetch), iframes and WebSocket. The lock stops an agent being steered to another site, not a page from loading its own assets. The MCP `eval` tool (tier `rwx`) can still `fetch()` anywhere.
 
-MCP only: `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier. `r` reads (`browse`, `goto`, `back`, `forward`, `reload`, `scroll`, `snapshot`, `readable`, `screenshot`, `pdf`, `wait_for`, `tabs`, `capabilities`, `assess`); `rw` adds `click`, `type`, `press`, `select`, `drag`, `hover`, `switch_engine`; `rwx` adds `upload` and `eval`. A hidden tool answers `Unknown tool`. Every tool also carries MCP `annotations` (`readOnlyHint`, `destructiveHint`, `openWorldHint`, `idempotentHint`). An invalid `BAREBROWSE_TIER` or `BAREBROWSE_ALLOW` stops the server at start; it never falls back to `rwx` or to no lock. `capabilities` and the server instructions report the tier and the allowed hosts.
+MCP only: `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier. `r` reads (`browse`, `goto`, `back`, `forward`, `reload`, `scroll`, `snapshot`, `readable`, `screenshot`, `pdf`, `wait_for`, `tabs`, `capabilities`, `assess`); `rw` adds `click`, `type`, `press`, `select`, `drag`, `hover`, `hold`, `switch_engine`; `rwx` adds `upload` and `eval`. A hidden tool answers `Unknown tool`. Every tool also carries MCP `annotations` (`readOnlyHint`, `destructiveHint`, `openWorldHint`, `idempotentHint`). An invalid `BAREBROWSE_TIER` or `BAREBROWSE_ALLOW` stops the server at start; it never falls back to `rwx` or to no lock. `capabilities` and the server instructions report the tier and the allowed hosts.
 
 ## What the agent sees
 
@@ -253,6 +253,7 @@ Everything the agent can do through barebrowse:
 | **Press** | Special keys: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
 | **Scroll** | Mouse wheel up or down (accepts direction or pixels) |
 | **Hover** | Move mouse to element center (triggers tooltips, hover states) |
+| **Hold** | `hold(ref, ms)`: press, wait, release; for "Press & Hold" bot challenges |
 | **Select** | Set dropdown value (native select or custom dropdown) |
 | **Drag** | Drag one element to another (Kanban boards, sliders) |
 | **Upload** | Set files on a file input element |

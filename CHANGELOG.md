@@ -1,5 +1,28 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- **Walmart's "Press & Hold" bot challenge (HUMAN/PerimeterX) is now flagged.**
+  It is an HTTP 200 page with no phrase from the English list, so `botBlocked`
+  stayed false. Detection now also looks at structure: an iframe named like a
+  challenge or captcha ("Human verification challenge") counts when it is the
+  content of a small page, or sits in a dialog, with no form field of its own;
+  a reCAPTCHA or hCaptcha widget inside a form does not. The `Robot or human?`
+  heading is a phrase too (Firefox headless never renders the iframe). A
+  Cloudflare `cf-mitigated: challenge` response header flags the page on both
+  engines; `goto()`'s outcome gains `mitigated: true` in that case only.
+- **Firefox `snapshot()` now writes the `[BOT CHALLENGE DETECTED ...]` line**
+  when `botBlocked` is true, as Chromium always did.
+
+### Added
+
+- **`hold(ref, ms = 10000)`**: press an element, wait, release (plain press, no
+  mouse path; a humanlike path did worse against Press & Hold walls). Both
+  engines. MCP tool `hold` (max 30s, tier `rw`), CLI `hold <ref> [ms]`, bareagent
+  tool `hold`. Passed Walmart's challenge 3 of 3 on Chromium with 12s.
+
 ## [0.28.0] - 2026-11-16
 
 ### Added
