@@ -27,10 +27,10 @@ import { applyFirefoxBlocklist } from './blocklist-firefox.js';
 import { resolveBlocklistPatterns } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
-import { isChallengePage } from './challenge.js';
+import { isChallengePage, BOT_WARNING } from './challenge.js';
 import { withTimeout } from './with-timeout.js';
 import { readable as extractReadable } from './readable.js';
-import { navFailed, navBlocked, httpWarning } from './navigation.js';
+import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
 import { createSiteLock, applySiteLockCDP } from './site-lock.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
@@ -128,7 +128,7 @@ export async function browse(url, opts = {}) {
     let { tree, nodeCount } = await ariaTree(page);
 
     // Step 5.5: Hybrid fallback — if headless was bot-blocked, retry headed
-    if (mode === 'hybrid' && isChallengePage(tree, nodeCount)) {
+    if (mode === 'hybrid' && isChallengePage(tree, nodeCount, outcome)) {
       await cdp.send('Target.closeTarget', { targetId: page.targetId });
       cdp.close();
       await cleanupBrowser(browser); browser = null;
@@ -602,7 +602,7 @@ export async function connect(opts = {}) {
 
       // Check for bot challenge
       const { tree, nodeCount } = await ariaTree(page);
-      botBlocked = isChallengePage(tree, nodeCount);
+      botBlocked = isChallengePage(tree, nodeCount, lastNavigation || {});
 
       // Hybrid fallback: if bot-blocked, retry with headed browser.
       // Suppressed in attach mode — we can't tear down the user's running
@@ -627,7 +627,7 @@ export async function connect(opts = {}) {
 
           // Re-check after headed fallback
           const after = await ariaTree(page);
-          botBlocked = isChallengePage(after.tree, after.nodeCount);
+          botBlocked = isChallengePage(after.tree, after.nodeCount, lastNavigation || {});
           currentlyHeaded = true;
         } catch {
           // Headed launch failed (no display?) — keep headless result, botBlocked stays true
@@ -693,7 +693,7 @@ export async function connect(opts = {}) {
       const raw = formatTree(result.tree);
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       const pageUrl = entries[currentIndex]?.url || '';
-      const warn = (botBlocked ? '[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]\n' : '')
+      const warn = (botBlocked ? BOT_WARNING : '')
         + httpWarning(lastNavigation?.status) + (lock?.takeNotes(page.targetId) ?? '');
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(result.tree, pageUrl) : result.tree;
@@ -933,7 +933,7 @@ export async function connect(opts = {}) {
             await dismissConsent(tab.session);
           }
           const { tree, nodeCount } = await ariaTree(tab);
-          tabBotBlocked = isChallengePage(tree, nodeCount);
+          tabBotBlocked = isChallengePage(tree, nodeCount, outcome);
           return outcome;
         },
         get botBlocked() { return tabBotBlocked; },
@@ -1311,7 +1311,7 @@ async function navigate(page, url, timeout = 30000, lock = null) {
     await new Promise((r) => setTimeout(r, 500));
     // loaderId is shared by every redirect hop of one navigation.
     const last = docs.filter((d) => d.loaderId === nav.loaderId).pop();
-    return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
+    return { url: last ? last.response.url : url, status: last ? last.response.status : 0, ...mitigation(last?.response.headers) };
   } finally {
     cancel();
     offDoc();
