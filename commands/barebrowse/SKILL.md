@@ -74,6 +74,7 @@ All output files go to `.barebrowse/` in the current directory. Read them with t
 | `barebrowse press <key>` | Press key: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
 | `barebrowse scroll <deltaY>` | Scroll page (positive=down, negative=up) |
 | `barebrowse hover <ref>` | Hover over element (triggers tooltips) |
+| `barebrowse hold <ref> [ms]` | Press and hold (default 10000, max 30000), for "Press & Hold" bot challenges |
 | `barebrowse select <ref> <value>` | Select dropdown option |
 | `barebrowse drag <fromRef> <toRef>` | Drag element to another element |
 | `barebrowse upload <ref> <files..>` | Upload file(s) to a file input element |

@@ -402,6 +402,11 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       return { ok: true };
     },
 
+    async hold({ ref, ms }) {
+      await page.hold(String(ref), Math.min(Math.max(Number(ms) || 10000, 0), 30000));
+      return { ok: true };
+    },
+
     async select({ ref, value }) {
       await page.select(String(ref), value);
       return { ok: true };
