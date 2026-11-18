@@ -7,6 +7,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import http from 'node:http';
 import { connect } from '../../src/index.js';
 
 describe('connect() — page handle contract', () => {
@@ -351,6 +352,40 @@ describe('connect() — page handle contract', () => {
         `click(ref) must dispatch in the iframe session — expected "CLICKED-IN-IFRAME" in re-snapshot, got:\n${snap2}`);
     } finally {
       await page.close();
+    }
+  });
+
+  it('snapshot reads a real cross-site iframe + clicks land in it (N32)', async () => {
+    // localhost vs 127.0.0.1 are different sites, so under --site-per-process the
+    // iframe is a true OOPIF: Page.getFrameTree on the parent lists no child for
+    // it. (The H2 data: URL iframe above stays in-process and never hit this.)
+    const srv = http.createServer((req, res) => {
+      res.setHeader('content-type', 'text/html');
+      if (req.url === '/inner') {
+        return res.end('<html><body><button id="b">XSITE-BUTTON</button>'
+          + '<script>document.getElementById("b").addEventListener("click",'
+          + '()=>{document.getElementById("b").textContent="XSITE-CLICKED"})</script></body></html>');
+      }
+      res.end(`<html><body><h1>XSITE-OUTER</h1><iframe title="x-site" `
+        + `src="http://127.0.0.1:${srv.address().port}/inner" width="400" height="200"></iframe></body></html>`);
+    });
+    await new Promise((r) => srv.listen(0, r));
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto(`http://localhost:${srv.address().port}/`);
+      await new Promise((r) => setTimeout(r, 1000));
+      const snap = await page.snapshot();
+      assert.ok(snap.includes('XSITE-BUTTON'),
+        `snapshot must surface cross-site iframe content, got:\n${snap}`);
+      const m = snap.match(/button[^[]*XSITE-BUTTON[^[]*\[ref=(\d+)\]/);
+      assert.ok(m, `expected a [ref=N] for the iframe button, got:\n${snap}`);
+      await page.click(m[1]);
+      const snap2 = await page.snapshot();
+      assert.ok(snap2.includes('XSITE-CLICKED'),
+        `click(ref) must land in the cross-site iframe, got:\n${snap2}`);
+    } finally {
+      await page.close();
+      srv.close();
     }
   });
 

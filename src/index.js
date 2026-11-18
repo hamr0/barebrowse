@@ -1350,7 +1350,8 @@ async function navigate(page, url, timeout = 30000, lock = null) {
 /**
  * Get the ARIA accessibility tree for a page as a nested object.
  *
- * Walks every frame (main + iframes) via Page.getFrameTree, queries each
+ * Walks every frame (main + iframes) via Page.getFrameTree plus the tracked
+ * OOPIF sessions (the parent's tree omits cross-site frames), queries each
  * frame's AX tree on the right session (child session for OOPIF, main
  * session with frameId param for same-origin), and splices child frame
  * trees under their iframe placeholders in the parent. Refs are assigned
@@ -1368,6 +1369,17 @@ async function ariaTree(page) {
     frames.push({ frame: node.frame, parentId });
     for (const child of node.childFrames || []) walk(child, node.frame.id);
   })(frameTree, null);
+
+  // Cross-site iframes (OOPIFs) are absent from the parent's Page.getFrameTree.
+  // The tracked child sessions know them: each reports its own frame's parentId.
+  const known = new Set(frames.map((f) => f.frame.id));
+  for (const [frameId, entry] of page.framesByFrameId || []) {
+    if (known.has(frameId)) continue;
+    try {
+      const { frameTree: own } = await entry.session.send('Page.getFrameTree');
+      frames.push({ frame: own.frame, parentId: own.frame.parentId ?? null });
+    } catch {} // detached mid-snapshot
+  }
 
   // 2. For each frame, fetch its AX nodes and build a tree. refMap value is
   //    { session, backendNodeId } so click(ref) routes to the right CDP
