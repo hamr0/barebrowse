@@ -40,7 +40,7 @@ async function getCenter(session, backendNodeId) {
 
 /**
  * In-page click check (runs with `this` = the node, both engines): null when a click at the
- * node's centre lands on it, inside it or on an ancestor, else why the click is blocked: the
+ * node's centre lands on it, inside it or on an ancestor (or on the element's own <label>), else why the click is blocked: the
  * element is disabled (`:disabled`, or aria-disabled="true" on it or an ancestor), or a short
  * description of the element that covers the point. Uses the node's own root and frame-local rect, so it is
  * right inside iframes and shadow roots. Anything unmeasurable counts as not covered.
@@ -55,6 +55,8 @@ export const HIT_TEST_FN = `function() {
   const doc = root.elementFromPoint ? root : el.ownerDocument;
   const hit = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
   if (!hit || hit === el || el.contains(hit) || hit.contains(el)) return null;
+  const lab = hit.closest('label');
+  if (lab && lab.control === el) return null;
   const cls = hit.getAttribute('class');
   return 'the point is covered by <' + hit.localName + (cls ? ' class="' + cls.slice(0, 60) + '"' : '') + '> — close the overlay or dialog first (take a snapshot to find it)';
 }`;

@@ -691,3 +691,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the mouse event is dispatched at the element and the browser ignores it for a disabled control; nothing checked for that.
 **Fix:** the in-page check from N36 (`HIT_TEST_FN`, shared by both engines) first tests the element (a text node's parent): `:disabled`, or `aria-disabled="true"` on it or an ancestor, throws `click blocked: the element is disabled`. The function now returns the whole reason (disabled, or covered as before) and `blockedError()` replaces `coveredError()`; the covered message is unchanged.
 **Regression test:** `test/integration/firefox.test.js`, "click on a disabled control throws and does nothing" (both engines: disabled button and aria-disabled ancestor throw with no handler run, an enabled button still clicks; red before).
+
+## [2026-11-18] A custom checkbox covered by its own label could not be clicked (N40)
+
+**Symptom:** a custom checkbox/radio (`<input>` at `opacity:0` with a same-size sibling `<label for=cb>` stacked over it) toggled on `click(ref)` before N36; since N36 it threw `click blocked: the point is covered by <label>` on both engines.
+**Root cause:** the N36 hit test treated any element that is not the node, inside it or an ancestor as an overlay; the control's own label is none of those, yet clicking it is exactly what a human does.
+**Fix:** `HIT_TEST_FN` also counts the hit as not covered when it is, or sits inside, a `<label>` whose `.control` is the element. A real overlay still throws.
+**Regression test:** `test/integration/firefox.test.js`, "click on a custom checkbox covered by its own label toggles it" (both engines; red before: threw `covered by <label>`).
