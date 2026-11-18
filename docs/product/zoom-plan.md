@@ -102,10 +102,10 @@ auto map. CLI: `snapshot --within=<ref|role|role "name"> --map --full`.
 - **`within` by role / role + name:** exact match on role and accessible name,
   never text guessing. Zero matches → error naming what was asked. Two or more
   → return the map with the matches marked, never pick one.
-- **`within` by ref:** refs are renumbered on every snapshot
-  (`refCounter` starts at 1 per `ariaTree`), so a ref from the map is resolved
-  through the previous snapshot's `refMap` to its `backendNodeId`, then found in
-  the new tree. Gone (page changed) → clear error, never wrong content.
+- **`within` by ref:** refs stay the same within a page since N37
+  (a node keeps its number until the document changes), so a ref from the map is
+  resolved through the previous snapshot's `refMap` to its `backendNodeId`, then
+  found in the new tree. Gone (page changed) → clear error, never wrong content.
 - **MCP/CLI auto threshold:** reuse the existing `maxChars` cap (default
   30,000; today a bigger snapshot is saved to a file and a path is returned).
   New: over the cap, return the map inline, keep saving the full snapshot to

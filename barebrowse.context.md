@@ -129,9 +129,9 @@ url: https://example.com/
 
 Key rules:
 - `[ref=N]` markers appear on interactive and named elements
-- Refs are **ephemeral** -- they change on every `snapshot()` call
-- Always call `snapshot()` to get fresh refs before interacting
-- `click(ref)` / `type(ref, text)` / `hover(ref)` / `select(ref, value)` use these ref strings
+- An element keeps its ref across `snapshot()` calls until the page navigates or reloads; a number is never reused for another element, and a ref whose element is gone throws "No element found". Call `snapshot()` again after a navigation
+- `click(ref)` / `type(ref, text)` / `hover(ref)` / `select(ref, value)` use these ref strings (`441`, `ref=441` and `[ref=441]` all work). `click` throws `click blocked: ...` when an overlay covers the click point or the element is disabled (a control covered by its own `<label>` is fine); no JS-click fallback
+- When a click opens a new tab, the next `snapshot()` starts with `[new tab opened by this page: <url> — tabs() lists it, switchTab(N) moves to it]` once
 - Pruning removes noise (~47-95% token reduction) while keeping all interactive elements
 
 ## Map + zoom — big pages
