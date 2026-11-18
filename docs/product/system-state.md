@@ -55,7 +55,7 @@ Every action returns a **pruned ARIA snapshot** -- the agent's view of the page 
 | Drag | `page.drag(fromRef, toRef)` | Mouse down on source, move to target, release | Done |
 | Upload | `page.upload(ref, files)` | Set files on file input via `DOM.setFileInputFiles` | Done |
 | PDF | `page.pdf(opts)` | Export page as PDF via `Page.printToPDF` | Done |
-| Tabs | `page.tabs()` / `page.switchTab(index)` | List and switch between browser tabs | Done |
+| Tabs | `page.tabs()` / `page.switchTab(index)` | List and switch between browser tabs (a launched browser's stray `about:blank` is hidden; attach mode lists all) | Done |
 | Dialog handling | Auto | JS alert/confirm/prompt auto-dismissed, logged to `page.dialogLog` | Done |
 | Save state | `page.saveState(filePath)` | Export cookies + localStorage to JSON for later `--storage-state` | Done |
 | Inject cookies | `page.injectCookies(url, opts)` | Extract cookies from Firefox/Chromium, inject via CDP | Done |
@@ -221,7 +221,7 @@ Try headless first. If bot-blocked (Cloudflare, etc.), auto-launch headed for th
 - One flag: `mode: 'hybrid'`
 
 ### Interactions -- done, real-world tested
-On `connect()` sessions: `click(ref)`, `type(ref, text, opts)`, `press(key)`, `scroll(deltaY)`, `hover(ref)`, `select(ref, value)`, `screenshot()`, `waitForNavigation()`, `waitForNetworkIdle()`, `injectCookies(url, opts)`.
+On `connect()` sessions: `click(ref)`, `type(ref, text, opts)`, `press(key)`, `scroll(deltaY)`, `hover(ref)`, `hold(ref, ms)`, `select(ref, value)`, `screenshot()`, `waitForNavigation()`, `waitForNetworkIdle()`, `injectCookies(url, opts)`.
 - Refs come from ARIA snapshot (`[ref=N]` markers)
 - Click: `DOM.scrollIntoViewIfNeeded` -> `DOM.getBoxModel` -> center -> `Input.dispatchMouseEvent`
 - Type: `DOM.focus` + `Input.insertText` (fast) or `Input.dispatchKeyEvent` (triggers handlers)
@@ -229,6 +229,7 @@ On `connect()` sessions: `click(ref)`, `type(ref, text, opts)`, `press(key)`, `s
 - Press: special keys (Enter, Tab, Escape, Backspace, arrows) with proper key/code/keyCode
 - Scroll: `Input.dispatchMouseEvent` mouseWheel
 - Hover: `DOM.scrollIntoViewIfNeeded` -> `Input.dispatchMouseEvent` mouseMoved
+- Hold: mouseMoved + mousePressed at element center, wait `ms`, mouseReleased (no motion path; Firefox: BiDi `input.performActions` pointerDown/pause/pointerUp)
 - Select: native `<select>` (set value + change event) or custom dropdown (click + find option)
 - Screenshot: `Page.captureScreenshot` -> base64 string (png/jpeg/webp)
 - WaitForNavigation: `Promise.race` of `Page.loadEventFired` + `Page.frameNavigated` (SPA-aware)
@@ -337,7 +338,7 @@ Architecture: `open` spawns a detached child process running an HTTP server on a
 
 **Auth (v0.11.0):** loopback alone is not an authorization boundary (shared across local users), so the daemon mints a 32-byte token at startup, writes it into `session.json` (mode `0600`) and requires it on `POST /command` via `x-barebrowse-token` (constant-time compare). `session-client` sends it transparently. Session dir is `0700`; snapshots/`saveState`/logs are `0600`. `GET /status` stays open (liveness only).
 
-Full commands: open, close, status, goto, back, forward, snapshot, screenshot, pdf, click, type, fill, press, scroll, hover, select, drag, upload, tabs, tab, eval, wait-idle, wait-for, console-logs, network-log, dialog-log, save-state, switch-engine.
+Full commands: open, close, status, goto, back, forward, snapshot, screenshot, pdf, click, type, fill, press, scroll, hover, hold, select, drag, upload, tabs, tab, eval, wait-idle, wait-for, console-logs, network-log, dialog-log, save-state, switch-engine.
 
 Self-sufficiency features (console/network capture, eval) let agents debug without guessing -- they see JS errors and failed requests directly.
 

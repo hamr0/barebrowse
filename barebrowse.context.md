@@ -66,8 +66,8 @@ const snapshot = await browse('https://example.com', {
 
 | Method | Args | Returns | Notes |
 |---|---|---|---|
-| `goto(url, timeout?)` | url: string, timeout: number (default 30000) | `{ url, status }` | Navigate + wait for load + dismiss consent. Resolves to the final URL (after redirects) and the main document's HTTP status (`0` = no HTTP response observed, e.g. an aborted navigation). Non-2xx still resolves; `snapshot()` then carries `[HTTP 404 — the page may be an error page]`. Network failure (DNS, refused, TLS) rejects with `err.code === 'NAV_FAILED'` and `err.reason` (raw browser string, e.g. `net::ERR_NAME_NOT_RESOLVED` / `NS_ERROR_UNKNOWN_HOST`). A download or 204 (`ERR_ABORTED` / `NS_BINDING_ABORTED`) is not a failure and returns without waiting for a load event. `browse()` still returns a string (warning line prepended when non-2xx) and rejects with the same `NAV_FAILED`. With `allowHosts`, an off-list URL or redirect hop rejects with `err.code === 'NAV_BLOCKED'` (`err.host`) and the page stays put. |
-| `lastNavigation` | -- | `{ url, status }` or null | Outcome of the latest `goto()`; null before any goto and while a goto is failing. Reset to null by `reload`/`goBack`/`goForward`/`switchTab` (status is reported for `goto()` only) |
+| `goto(url, timeout?)` | url: string, timeout: number (default 30000) | `{ url, status, mitigated? }` | Navigate + wait for load + dismiss consent. Resolves to the final URL (after redirects) and the main document's HTTP status (`0` = no HTTP response observed, e.g. an aborted navigation); `mitigated: true` appears only when the document carried Cloudflare's `cf-mitigated: challenge` header. Non-2xx still resolves; `snapshot()` then carries `[HTTP 404 — the page may be an error page]`. Network failure (DNS, refused, TLS) rejects with `err.code === 'NAV_FAILED'` and `err.reason` (raw browser string, e.g. `net::ERR_NAME_NOT_RESOLVED` / `NS_ERROR_UNKNOWN_HOST`). A download or 204 (`ERR_ABORTED` / `NS_BINDING_ABORTED`) is not a failure and returns without waiting for a load event. `browse()` still returns a string (warning line prepended when non-2xx) and rejects with the same `NAV_FAILED`. With `allowHosts`, an off-list URL or redirect hop rejects with `err.code === 'NAV_BLOCKED'` (`err.host`) and the page stays put. |
+| `lastNavigation` | -- | `{ url, status, mitigated? }` or null | Outcome of the latest `goto()`; null before any goto and while a goto is failing. Reset to null by `reload`/`goBack`/`goForward`/`switchTab` (status is reported for `goto()` only) |
 | `goBack()` | -- | void | Navigate back in browser history |
 | `goForward()` | -- | void | Navigate forward in browser history |
 | `reload(opts?)` | { ignoreCache?: boolean, timeout?: number } | void | Reload the current page. Clears refMap (refs from pre-reload reject). |
@@ -84,7 +84,7 @@ const snapshot = await browse('https://example.com', {
 | `upload(ref, files)` | ref: string, files: string[] | void | Set files on a file input (absolute paths) |
 | `screenshot(opts?)` | { format?: 'png'\|'jpeg'\|'webp', quality?: number } | string (base64) | Page screenshot |
 | `pdf(opts?)` | { landscape?: boolean } | string (base64) | Export page as PDF |
-| `tabs()` | -- | Array<{index, url, title, targetId}> | List open browser tabs |
+| `tabs()` | -- | Array<{index, url, title, targetId}> | List open browser tabs. A launched browser's own stray `about:blank` is hidden (so `switchTab(0)` stays on your page); attach mode lists every tab |
 | `switchTab(index)` | index: number | void | Switch to tab by index |
 | `waitFor(opts)` | { text?: string, selector?: string, timeout?: number } | void | Poll for content to appear on page |
 | `waitForNavigation(timeout?)` | timeout: number (default 30000) | void | Wait for page load or frame navigation |
@@ -263,10 +263,10 @@ try {
 ```
 
 `createBrowseTools(opts)` returns:
-- `tools` -- array of bareagent-compatible tool objects: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `select`, `hover`, `back`, `forward`, `reload` (v0.9.0), `drag`, `upload`, `tabs`, `switchTab`, `pdf`, `screenshot`, `wait_for` (v0.9.0), `downloads` (v0.9.0), plus `assess` if wearehere installed
+- `tools` -- array of bareagent-compatible tool objects: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `select`, `hover`, `hold`, `back`, `forward`, `reload` (v0.9.0), `drag`, `upload`, `tabs`, `switchTab`, `pdf`, `screenshot`, `wait_for` (v0.9.0), `downloads` (v0.9.0), plus `assess` if wearehere installed
 - `close()` -- cleanup function, call when done
 
-Action tools (click, type, press, scroll, hover, goto, back, forward, reload, drag, upload, select, switchTab, wait_for) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates. `readable` is a read tool (like `snapshot`): it returns the article text directly, not a follow-up snapshot.
+Action tools (click, type, press, scroll, hover, hold, goto, back, forward, reload, drag, upload, select, switchTab, wait_for) auto-return a fresh snapshot so the LLM always sees the result. 300ms settle delay after actions for DOM updates. `readable` is a read tool (like `snapshot`): it returns the article text directly, not a follow-up snapshot.
 
 `onDialog` is intentionally not exposed as a tool — it's a callback shape that doesn't fit a request/response tool loop. If your bareagent flow needs to override a confirm/prompt, drop to `import { connect }` directly and pass the page through.
 
@@ -366,7 +366,7 @@ URL -> chromium.js (find/launch browser, permission flags)
 | `src/consent.js` | 200 | Auto-dismiss cookie consent dialogs across languages |
 | `src/stealth.js` | ~110 | UA override + JS patches (webdriver, WebGL, hardware, Notification, chrome.runtime) |
 | `src/network-idle.js` | ~50 | Set-based network-idle wait (extracted in v0.8.0, F9) |
-| `src/bareagent.js` | ~330 | Tool adapter for bareagent Loop (21 tools) |
+| `src/bareagent.js` | ~330 | Tool adapter for bareagent Loop (22 tools) |
 | `mcp-server.js` | ~660 | MCP server (JSON-RPC over stdio, `runStdio()`, `TIMEOUTS`/`TOOLS` exports, opt-in eval, assess session reuse + concurrency) |
 
 ## Privacy assessment (optional)
