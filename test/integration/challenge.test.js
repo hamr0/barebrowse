@@ -19,6 +19,7 @@ let solveHits = 0; // /mit-solve: first request is the challenge, the reload get
 const PAGES = {
   '/ok': [200, {}, `<!doctype html><title>t</title>${BODY}`],
   '/mitigated': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}${WIDGET}`],
+  '/mit-header': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}`], // header only, no widget
   '/frame-go': [200, {}, `<!doctype html><title>t</title><h1>Hold on</h1><a href="/ok">Continue</a><div><iframe title="Human verification challenge" srcdoc="<p>x</p>"></iframe></div>`],
   '/mit-go': [403, { 'cf-mitigated': 'challenge' }, `<!doctype html><title>t</title>${BODY}${WIDGET}<a href="/ok">Continue</a>`],
   '/iframe': [200, {}, `<!doctype html><title>t</title><h1>Hold on</h1><div><iframe title="Human verification challenge" srcdoc="<button>Press &amp; Hold Human Challenge</button>"></iframe></div>`],
@@ -112,6 +113,24 @@ for (const engine of ['chromium', 'firefox']) {
         assert.ok(snap.includes('Quarterly report') && !snap.includes('security challenge'), 'real content is showing');
         assert.equal(page.botBlocked, false);
         assert.ok(!snap.includes('BOT CHALLENGE DETECTED'));
+      } finally { await page.close(); }
+    });
+  });
+}
+
+// The cf-mitigated header alone (no widget, no wording) must flag at goto.
+for (const engine of ['chromium', 'firefox']) {
+  describe(`cf-mitigated header alone (${engine})`, { skip: engine === 'firefox' && !hasFirefox }, () => {
+    it('flags at goto; the next snapshot recomputes from the tree', async () => {
+      const page = await connect({ mode: 'headless', engine });
+      try {
+        const out = await page.goto(base + '/mit-header');
+        assert.equal(out.mitigated, true);
+        assert.equal(page.botBlocked, true, 'header-only page flagged at goto');
+        // N29 known limit: the header counts at goto only. The tree is ordinary, so snapshot() clears it.
+        const snap = await page.snapshot();
+        assert.equal(page.botBlocked, false);
+        assert.ok(!snap.includes('[BOT CHALLENGE DETECTED'));
       } finally { await page.close(); }
     });
   });
