@@ -656,3 +656,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `hasChallengeFrame()` accepts a challenge-named iframe outside a dialog only on a small page (`nodeCount < 150`). The raw tree had 418 nodes, nearly all `ignored`; the snapshot it produces is about 30 lines.
 **Fix:** the small-page test counts only visible nodes of the tree (not `ignored`, not `InlineTextBox`/`LineBreak`), via a small `countVisible()` in `src/challenge.js`. Structural and language-free; the phrase lists and the `tinyPage` test are unchanged.
 **Regression test:** `test/unit/challenge.test.js`, "structural frame test counts visible nodes (N34)": the Target shape padded with 380 ignored nodes is flagged (red before), and the same shape with 160 visible nodes is not.
+
+## [2026-11-18] click("ref=441") was rejected (N35)
+
+**Symptom:** an agent passed the ref as printed in the snapshot, `click {"ref":"ref=441"}`, and got `No element found for ref "ref=441"`.
+**Root cause:** both engines looked refs up by `String(ref)`, so only the bare id matched.
+**Fix:** `normRef()` in new `src/ref.js` strips a `ref=` / `[ref=...]` wrapper; used by Chromium `refEntry()` and Firefox `resolveRef()`. Error messages still show what the caller passed.
+**Regression test:** `test/unit/ref.test.js` (pure) and `test/integration/interact.test.js`, "click accepts the ref as printed in the snapshot" (Chromium; red before). Firefox shares the same normaliser; its existing click tests pass.

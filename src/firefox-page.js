@@ -28,6 +28,7 @@ import { dismissConsentFirefox } from './consent-firefox.js';
 import { waitForNetworkIdleBiDi } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage, countNodes, BOT_WARNING } from './challenge.js';
+import { normRef } from './ref.js';
 import { withTimeout } from './with-timeout.js';
 import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
 
@@ -173,18 +174,19 @@ export async function createFirefoxPage(bidi, opts = {}) {
   }
 
   /** Resolve a ref to a BiDi element sharedId in its owning context. */
-  async function resolveRef(ref) {
-    const context = refContexts.get(String(ref));
-    if (!context) throw new Error(`Unknown ref: ${ref} (snapshot first, or it's stale)`);
+  async function resolveRef(rawRef) {
+    const ref = normRef(rawRef);
+    const context = refContexts.get(ref);
+    if (!context) throw new Error(`Unknown ref: ${rawRef} (snapshot first, or it's stale)`);
     const res = await bidi.send('script.evaluate', {
       expression: `(() => { ${DEEP_QUERY} return globalThis.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? bbq(document, '[${REF_ATTR}="${ref}"]') : 'stale'; })()`,
       target: { context, sandbox: DOC_SANDBOX }, awaitPromise: false, resultOwnership: 'root',
     });
     if (res.type === 'success' && res.result.type === 'string') {
-      throw new Error(`No element found for ref "${ref}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
+      throw new Error(`No element found for ref "${rawRef}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
     }
     if (res.type === 'exception' || !res.result || res.result.type !== 'node') {
-      throw new Error(`Could not resolve element for ref ${ref}`);
+      throw new Error(`Could not resolve element for ref ${rawRef}`);
     }
     return { context, sharedId: res.result.sharedId };
   }

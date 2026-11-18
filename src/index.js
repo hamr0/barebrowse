@@ -28,6 +28,7 @@ import { resolveBlocklistPatterns } from './blocklist.js';
 import { waitForNetworkIdle } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage, BOT_WARNING } from './challenge.js';
+import { normRef } from './ref.js';
 import { withTimeout } from './with-timeout.js';
 import { readable as extractReadable } from './readable.js';
 import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
@@ -439,7 +440,7 @@ export async function connect(opts = {}) {
 
   /** Resolve a ref from the last snapshot; throws when the document it belongs to is gone. */
   async function refEntry(ref) {
-    const entry = refMap.get(String(ref));
+    const entry = refMap.get(normRef(ref));
     if (!entry) throw new Error(`No element found for ref "${ref}"`);
     if (refDoc) {
       const now = await navKey();

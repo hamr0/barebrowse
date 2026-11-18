@@ -128,6 +128,19 @@ describe('interact — data: URL fixture', () => {
     }
   });
 
+  it('click accepts the ref as printed in the snapshot, "ref=N" (N35)', async () => {
+    const page = await connect();
+    try {
+      await page.goto(FIXTURE);
+      const ref = findRoleRef(await page.snapshot(), 'button', 'Click Me');
+      await page.click(`ref=${ref}`);
+      await new Promise(r => setTimeout(r, 100));
+      assert.equal(await evaluate(page, 'document.getElementById("result").textContent'), 'clicked');
+    } finally {
+      await page.close();
+    }
+  });
+
   it('click on offscreen element scrolls into view first', async () => {
     const page = await connect();
     try {
