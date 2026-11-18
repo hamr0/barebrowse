@@ -29,6 +29,7 @@ import { waitForNetworkIdleBiDi } from './network-idle.js';
 import { decideDialog, dialogLogEntry } from './dialog.js';
 import { isChallengePage, countNodes, BOT_WARNING } from './challenge.js';
 import { normRef } from './ref.js';
+import { HIT_TEST_FN, coveredError } from './interact.js';
 import { withTimeout } from './with-timeout.js';
 import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
 
@@ -227,6 +228,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
     const target = await resolveRef(ref);
     await scrollIntoView(target);
     const { context, sharedId } = target;
+    const hit = await bidi.send('script.callFunction', {
+      functionDeclaration: HIT_TEST_FN, this: { sharedId }, target: { context }, awaitPromise: false,
+    }).catch(() => null); // a failed hit test must not block the click
+    if (hit?.result?.type === 'string') throw coveredError(hit.result.value);
     await bidi.send('input.performActions', {
       context,
       actions: [{

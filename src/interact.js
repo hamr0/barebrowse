@@ -39,6 +39,30 @@ async function getCenter(session, backendNodeId) {
 }
 
 /**
+ * In-page hit test (runs with `this` = the node, both engines): null when a click at the
+ * node's centre lands on it, inside it or on an ancestor, else a short description of the
+ * element that covers the point. Uses the node's own root and frame-local rect, so it is
+ * right inside iframes and shadow roots. Anything unmeasurable counts as not covered.
+ */
+export const HIT_TEST_FN = `function() {
+  const el = this.nodeType === 1 ? this : this.parentElement;
+  if (!el) return null;
+  const r = el.getBoundingClientRect();
+  if (!r.width || !r.height) return null;
+  const root = el.getRootNode();
+  const doc = root.elementFromPoint ? root : el.ownerDocument;
+  const hit = doc.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+  if (!hit || hit === el || el.contains(hit) || hit.contains(el)) return null;
+  const cls = hit.getAttribute('class');
+  return '<' + hit.localName + (cls ? ' class="' + cls.slice(0, 60) + '"' : '') + '>';
+}`;
+
+/** Throw when something else covers the click point (a human's click would hit it too). */
+export function coveredError(covered) {
+  return new Error(`click blocked: the point is covered by ${covered} — close the overlay or dialog first (take a snapshot to find it)`);
+}
+
+/**
  * Click an element by its backendDOMNodeId.
  * Scrolls into view, resolves coordinates, then dispatches mousePressed + mouseReleased.
  *
@@ -48,6 +72,12 @@ async function getCenter(session, backendNodeId) {
 export async function click(session, backendNodeId) {
   try {
     const { x, y } = await getCenter(session, backendNodeId);
+    const covered = await session.send('DOM.resolveNode', { backendNodeId })
+      .then(({ object }) => session.send('Runtime.callFunctionOn', {
+        objectId: object.objectId, functionDeclaration: HIT_TEST_FN, returnByValue: true,
+      }))
+      .then((r) => r.result.value, () => null); // a failed hit test must not block the click
+    if (covered) throw coveredError(covered);
     await session.send('Input.dispatchMouseEvent', {
       type: 'mousePressed', x, y, button: 'left', clickCount: 1,
     });
