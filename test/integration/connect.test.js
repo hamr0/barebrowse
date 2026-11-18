@@ -389,6 +389,41 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('snapshot reads a nested cross-site iframe + clicks land in it (N33)', async () => {
+    // localhost -> 127.0.0.1 -> 127.0.0.2: three sites, so "deep" is an OOPIF
+    // inside an OOPIF. Its attach event arrives on the "mid" child session.
+    const srv = http.createServer((req, res) => {
+      const port = srv.address().port;
+      res.setHeader('content-type', 'text/html');
+      if (req.url === '/deep') {
+        return res.end('<html><body><button id="b" onclick="this.textContent=\'DEEP-CLICKED\'">DEEP-BUTTON</button></body></html>');
+      }
+      if (req.url === '/mid') {
+        return res.end(`<html><body><button>MID-BUTTON</button><iframe title="deep" `
+          + `src="http://127.0.0.2:${port}/deep" width="300" height="100"></iframe></body></html>`);
+      }
+      res.end(`<html><body><h1>NEST-OUTER</h1><iframe title="mid" `
+        + `src="http://127.0.0.1:${port}/mid" width="400" height="250"></iframe></body></html>`);
+    });
+    await new Promise((r) => srv.listen(0, '0.0.0.0', r));
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto(`http://localhost:${srv.address().port}/`);
+      await new Promise((r) => setTimeout(r, 2000));
+      const snap = await page.snapshot();
+      assert.ok(snap.includes('MID-BUTTON'), `mid frame missing, got:\n${snap}`);
+      assert.ok(snap.includes('DEEP-BUTTON'), `nested frame missing, got:\n${snap}`);
+      const m = snap.match(/button[^[]*DEEP-BUTTON[^[]*\[ref=(\d+)\]/);
+      assert.ok(m, `expected a [ref=N] for the deep button, got:\n${snap}`);
+      await page.click(m[1]);
+      const snap2 = await page.snapshot();
+      assert.ok(snap2.includes('DEEP-CLICKED'), `click must land in nested frame, got:\n${snap2}`);
+    } finally {
+      await page.close();
+      srv.close();
+    }
+  });
+
   it('switchTab actually swaps the working session (F4)', async () => {
     const page = await connect({ mode: 'headless' });
     try {
