@@ -619,3 +619,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Known limit:** a content-rich `cf-mitigated` page whose tree matches no rule is flagged at goto but reads false on the next snapshot (real Cloudflare challenges are small pages with the Turnstile iframe or phrases). The `[HTTP 403 ...]` line also persists in that stale case: it reports the `goto()` document's status, and the in-page reload's status is not read.
 **Regression test:** `test/integration/challenge.test.js`, "botBlocked after an in-place solve" (both engines); red before. The `/mitigated` and `/mit-go` fixtures now carry a Turnstile-style iframe so the tree alone shows a challenge.
 
+
+## [2026-11-18] Chromium switchTab(0) landed on a stray about:blank (N30)
+
+**Symptom:** after `goto(u)` in the only tab, `tabs()` was `[u, about:blank]` (or the reverse: `Target.getTargets` order is not stable) and `switchTab(0)` could silently move the handle to the blank tab.
+**Root cause:** a launched Chromium starts with one about:blank page target the library never uses; `tabs()` and `switchTab()` listed every page target.
+**Fix:** `createPage` records the page targets that exist before the first page it creates on a connection; `tabs()` and `switchTab()` share one `pageTabs()` list that drops them in launch mode. Attach mode hides nothing (every tab is the user's). Excluded by targetId, so a blank tab opened later is still listed.
+**Known limit:** order is still whatever `Target.getTargets` returns; tracking creation order would miss tabs the page opens itself, so it was not added.
+**Regression test:** `test/integration/connect.test.js`, "tabs()/switchTab(0) hide the stray launch about:blank"; red before.
