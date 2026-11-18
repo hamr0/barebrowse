@@ -450,7 +450,7 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Symptom:** goto(`/404`) → goto(`/ok`) → goto(`/404`) → `goBack()`: the snapshot of the healthy `/ok` page started with `[HTTP 404 …]`. A `reload()` of a 404 that now returned 200 kept the warning. Both engines.
 **Root cause:** `lastNavigation` (which the warning is built from) was written only by `goto()`; history traversal and reload changed the page without touching it.
 **Fix:** `goBack`, `goForward`, `reload` and `switchTab` reset `lastNavigation` to `null` on both engines (`src/index.js`, `src/firefox-page.js`). Status stays a `goto()`/`browse()` feature; nothing new is read for traversals.
-**Cost:** none.
+**Cost:** trades a false positive for a false negative: reload/back/forward onto a real 404 now loses its `[HTTP 404]` warning, because traversal clears `lastNavigation` and does not read the status.
 **Regression test:** `test/integration/navigation.test.js` (both engines: goBack/goForward and reload); red before the fix. `switchTab` is not covered by a test (needs a second tab).
 
 ## [2026-10-27] Data mode stripped the URL from a link that shared one with a neighbour (N10)
