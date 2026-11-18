@@ -627,3 +627,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Fix:** `createPage` records the page targets that exist before the first page it creates on a connection; `tabs()` and `switchTab()` share one `pageTabs()` list that drops them in launch mode. Attach mode hides nothing (every tab is the user's). Excluded by targetId, so a blank tab opened later is still listed.
 **Known limit:** order is still whatever `Target.getTargets` returns; tracking creation order would miss tabs the page opens itself, so it was not added.
 **Regression test:** `test/integration/connect.test.js`, "tabs()/switchTab(0) hide the stray launch about:blank"; red before.
+
+## [2026-11-18] Firefox click/type could not resolve refs inside open shadow roots (N31)
+
+**Symptom:** a button in an `attachShadow({mode:'open'})` root appeared in the Firefox snapshot, but `click(ref)`/`type(ref)` threw "Could not resolve element for ref N".
+**Root cause:** `src/ax-snapshot.js` walks `el.shadowRoot` so shadow elements get refs, but `resolveRef` (and the `within` mark/read lookups) used `document.querySelector`, which does not pierce shadow roots.
+**Fix:** one `DEEP_QUERY` snippet in `src/firefox-page.js` (recursive `querySelector` that descends open shadow roots), prepended inside the three in-page expressions; the N26 sandbox-realm stamp check is untouched. Closed shadow roots are still unreachable (as in the snapshot).
+**Regression test:** `test/integration/firefox.test.js`, "clicks a button inside an open shadow root by ref"; red on Firefox before, and a green guard on Chromium (which already worked).
