@@ -634,3 +634,11 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `src/ax-snapshot.js` walks `el.shadowRoot` so shadow elements get refs, but `resolveRef` (and the `within` mark/read lookups) used `document.querySelector`, which does not pierce shadow roots.
 **Fix:** one `DEEP_QUERY` snippet in `src/firefox-page.js` (recursive `querySelector` that descends open shadow roots), prepended inside the three in-page expressions; the N26 sandbox-realm stamp check is untouched. Closed shadow roots are still unreachable (as in the snapshot).
 **Regression test:** `test/integration/firefox.test.js`, "clicks a button inside an open shadow root by ref"; red on Firefox before, and a green guard on Chromium (which already worked).
+
+## [2026-11-18] Chromium snapshot showed nothing inside a real cross-site iframe (N32)
+
+**Symptom:** a cross-site iframe (outer `localhost`, inner `127.0.0.1`) appeared in `snapshot()` as an empty `Iframe` placeholder; its buttons/fields had no refs, so an agent could not see or click them (payment fields, captcha widgets, embeds). Headless and headed alike.
+**Root cause:** `ariaTree()` built its frame list only from the parent's `Page.getFrameTree`, which omits out-of-process iframes. `framesByFrameId` was populated correctly (the child session was registered), but nothing consulted it for frames the tree did not list. The H2 test used a `data:` iframe, which stays in-process and never hit this.
+**Fix:** `ariaTree()` appends every tracked OOPIF not already in the list, taking its `parentId` from the child session's own `Page.getFrameTree`; the existing splice step then works unchanged (`DOM.getFrameOwner` on the parent session gives the placeholder node; refs stay flat, `refMap` keeps the child session).
+**Known limit:** nested OOPIFs (cross-site inside cross-site) are not registered, since auto-attach events from a child session are not tracked; not verified.
+**Regression test:** `test/integration/connect.test.js`, "snapshot reads a real cross-site iframe + clicks land in it (N32)"; red before.
