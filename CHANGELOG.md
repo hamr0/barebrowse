@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.30.0] - 2026-11-18
+
+### Changed
+
+- **Refs are now stable within a page.** An element keeps its ref across
+  `snapshot()` calls for as long as the document lives; new elements get new
+  numbers and a number is never reused. Before, every snapshot renumbered, so an
+  old ref could silently click a different element after the page changed. A ref
+  whose element is gone now throws `No element found for ref N ... no longer on
+  the page`. Refs still die on navigation (a new document) and are not stable
+  across reloads. Both engines. `drag()` with a gone element throws the same
+  clear error (it used to surface Chromium's raw "Node is detached") and names
+  the ref that is actually gone.
+- **`click()` throws instead of misclicking.** When another element covers the
+  click point it throws `click blocked: the point is covered by <...>`; when the
+  element is disabled (or has a disabled ancestor) it throws
+  `click blocked: the element is disabled`. Both engines. A control covered by
+  its own `<label>` (a custom checkbox or radio) is not a blocker and clicks
+  normally. Adopters: a click that used to report success and do nothing now
+  throws, so wrap or handle it.
+- **A click that opens a new tab says so.** The next `snapshot()` carries a
+  one-time `[new tab opened by this page ...]` line.
+
+### Fixed
+
+- **Chromium `snapshot()` reads cross-site (out-of-process) iframes**, including
+  iframes nested inside them, which `Page.getFrameTree` omits. Refs inside them
+  click correctly.
+- **Target's "Human verification" block page is now flagged `botBlocked`.** The
+  small-page test counts visible nodes only, so hidden markup no longer hides a
+  challenge page.
+- **`click("ref=441")` and `click("[ref=441]")` are accepted** wherever a ref is
+  resolved, on both engines (the snapshot prints `[ref=441]`).
+- **Stale "refs renumber every snapshot" wording** in error messages, the README
+  and the context guide now describes stable refs.
+
 ## [0.29.0] - 2026-11-18
 
 ### Fixed
