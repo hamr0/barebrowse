@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [0.29.0] - 2026-11-18
 
 ### Fixed
 
@@ -19,6 +19,15 @@
 - **`botBlocked` and the snapshot marker now follow the page.** Every `snapshot()`
   recomputes them from the tree it built, so they clear after `hold()` or a
   click gets you past a challenge (they used to stay set until the next `goto()`).
+  The `cf-mitigated` header counts at `goto()` only, so a later `snapshot()` of
+  the same page is judged on its tree alone.
+- **`tabs()` and `switchTab()` no longer list the stray `about:blank`** a launched
+  Chromium starts with, and they share one list, so indexes agree. Attach mode
+  hides nothing: every tab is the user's own.
+- **Firefox ref lookups descend open shadow roots**, so `click`, `type` and the
+  other ref actions reach elements inside web components, as Chromium does.
+- **`back()` and `forward()` no longer leave a 30s timer running** when the
+  history navigation throws.
 
 ### Added
 
