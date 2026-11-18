@@ -161,6 +161,29 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
     });
   }
 
+  for (const engine of ['firefox', 'chromium']) {
+    it(`click on a disabled control throws and does nothing (${engine}, N39)`, async () => {
+      const page = await connect({ engine, mode: 'headless' });
+      try {
+        await page.goto(data(`<title>before</title>
+          <button disabled onclick="document.title='clicked-disabled'">Off</button>
+          <div aria-disabled="true"><button onclick="document.title='clicked-aria'">Aria off</button></div>
+          <button onclick="document.title='clicked-on'">On</button>`));
+        const snap = await page.snapshot({ mode: 'browse' });
+        const ref = (n) => snap.match(new RegExp(`${n}[^\\n]*\\[ref=(\\d+)\\]`))[1];
+        await assert.rejects(page.click(ref('"Off"')), /click blocked: the element is disabled/);
+        await assert.rejects(page.click(ref('"Aria off"')), /click blocked: the element is disabled/);
+        await new Promise((r) => setTimeout(r, 200));
+        assert.match(await page.snapshot({ mode: 'browse' }), /before/, 'no handler ran');
+        await page.click(ref('"On"'));
+        await new Promise((r) => setTimeout(r, 200));
+        assert.match(await page.snapshot({ mode: 'browse' }), /clicked-on/);
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
   it('reconstructs the tree under a strict CSP (script.evaluate in an isolated realm)', async () => {
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {
