@@ -760,7 +760,7 @@ export async function connect(opts = {}) {
         for (const s of selectors || []) {
           if (!s.ref) continue;
           const old = prevRefMap.get(s.ref);
-          if (!old) throw new Error(`within: ref ${s.ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
+          if (!old) throw new Error(`within: ref ${s.ref} is not in the last snapshot (refs stay the same within a page and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
           const now = [...result.refMap].find(([, e]) => e.session === old.session && e.backendNodeId === old.backendNodeId);
           if (!now) throw new Error(`within: the element behind ref ${s.ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
           refNodes.set(s.ref, now[0]);
