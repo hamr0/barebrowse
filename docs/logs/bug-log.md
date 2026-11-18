@@ -684,3 +684,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the new tab is a separate target the page object never looked at.
 **Fix:** the next snapshot's header carries `[new tab opened by this page: <url> — tabs() lists it, switchTab(N) moves to it]` (`newTabNote()` in `src/navigation.js`), once, next to the site-lock notes. Chromium: `Target.setDiscoverTargets` on the browser connection, `Target.targetCreated` with `openerId` equal to the page's target id; the URL is read at snapshot time (it is `about:blank` at creation) and `N` is the tab's index in the same list `tabs()`/`switchTab()` use. Firefox: BiDi `browsingContext.contextCreated` carries `originalOpener`; a top-level context opened by the active tab is queued and reported the same way.
 **Regression test:** `test/integration/firefox.test.js`, "a click that opens a new tab is noted once in the next snapshot" (both engines, local server: target=_blank link and `window.open` button; red before).
+
+## [2026-11-18] Clicking a disabled control did nothing, silently (N39)
+
+**Symptom:** `click()` on `<button disabled>` returned normally; nothing happened and the agent could not tell why.
+**Root cause:** the mouse event is dispatched at the element and the browser ignores it for a disabled control; nothing checked for that.
+**Fix:** the in-page check from N36 (`HIT_TEST_FN`, shared by both engines) first tests the element (a text node's parent): `:disabled`, or `aria-disabled="true"` on it or an ancestor, throws `click blocked: the element is disabled`. The function now returns the whole reason (disabled, or covered as before) and `blockedError()` replaces `coveredError()`; the covered message is unchanged.
+**Regression test:** `test/integration/firefox.test.js`, "click on a disabled control throws and does nothing" (both engines: disabled button and aria-disabled ancestor throw with no handler run, an enabled button still clicks; red before).
