@@ -35,8 +35,8 @@ function fakeBidi(treeName) {
     },
     async evaluate(_ctx, expr) {
       if (expr === 'location.href') return 'http://test.local/';
-      // Stand in for axSnapshotExpression — return the {tree,count} shape.
-      return JSON.stringify({ tree: { role: 'RootWebArea', name: this._name, children: [] }, count: 1 });
+      // Stand in for axSnapshotExpression — return the {tree,top} shape.
+      return JSON.stringify({ tree: { role: 'RootWebArea', name: this._name, children: [], nodeId: '1' }, top: 1 });
     },
     close() {},
   };
