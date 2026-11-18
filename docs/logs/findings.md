@@ -80,9 +80,30 @@ Checked and **not** barebrowse bugs:
 - Etsy's DataDome slider is visible after N32, but its handle has no role or name in the accessibility tree, so an agent cannot target it. Left alone ("enough, not perfect").
 - fwd's "socket hang up" errors in F218 came from the model provider's connection, not barebrowse.
 
+### F5. "Remember each site's results box" (5 sites, headless, Chromium)
+
+Idea: on the first visit, note where the results live; on later visits, snapshot only that box (zoom `within`), so the agent reads less. It is the PRD's "agent memory integration" idea.
+
+How: visit 1 searched "lamp" and noted the box as a path in the map (refs die on a new document and results boxes are unnamed, so a ref or `role "name"` cannot be stored); e.g. "first group inside main". Visit 2 searched "chair" and "kettle", found the box again from the note, and measured it against the full act snapshot. PyPI returned an empty page (511 chars) and was dropped.
+
+| Site | Box found again | Box only (act) | Box + data mode |
+|---|---|---|---|
+| Target | 2/2 | 9% smaller | 44% |
+| IKEA | 2/2 | 25–37% | 40% |
+| npm | 2/2 | 11–15% | 71% |
+| Wikipedia | 2/2 | 52–56% | 63% |
+| Bing | 2/2 | 53–73% | 74% |
+
+- The note works: 10/10 found the right box on a new query.
+- The guess that "Target's 56k becomes just the results box" was wrong: on big shops the results box *is* the page (30 cards ≈ 48k of 53k).
+- Most of the saving comes from data mode, which already exists. An agent can already do map → `within` on every visit today; memory would only skip the map call.
+- Building it would need a new selector kind (box path), since unnamed boxes have no durable selector.
+
+**Verdict: parked.** **Do not repeat** without a new reason: per-site memory of the results box. The saving belongs to zoom + data mode, not to remembering.
+
 ### Scripts
 
-Saved (git-ignored) in `.claude/stash/poc-2026-11-18/`: `poc-sitemap.mjs` (F1), `poc-calls.mjs` + `shrink.mjs` (F2), `oopif.mjs` + `nested.mjs` (N32/N33 repros). The POC build lives in worktree `/home/hamr/PycharmProjects/bb-calls`. fwd's raw traces and scorer are on fwd's side (F217/F218, branch `poc/f217-bb-calls`).
+Saved (git-ignored) in `.claude/stash/poc-2026-11-18/`: `poc-sitemap.mjs` (F1), `poc-calls.mjs` + `shrink.mjs` (F2), `oopif.mjs` + `nested.mjs` (N32/N33 repros), `visit1.mjs` + `visit2.mjs` (F5). The POC build lives in worktree `/home/hamr/PycharmProjects/bb-calls`. fwd's raw traces and scorer are on fwd's side (F217/F218, branch `poc/f217-bb-calls`).
 
 ---
 

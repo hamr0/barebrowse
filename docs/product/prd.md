@@ -214,7 +214,7 @@ barebrowse  = the eyes + hands  (browse, read, interact with the web)
 - **Profile management** (long-term): multiple browser profiles for different identities (docs/archive/prd.md:442-442).
 - **Session recording/replay**: record sessions as CDP commands and replay for testing (docs/archive/prd.md:443-443).
 - **Visual grounding**: combine the ARIA tree with screenshot regions for multimodal agents (docs/archive/prd.md:444-444).
-- **Agent memory integration**: remember visited pages, cache snapshots, track which sites need headed mode (docs/archive/prd.md:445-445).
+- **Agent memory integration**: remember visited pages, cache snapshots, track which sites need headed mode (docs/archive/prd.md:445-445). The "remember the results box" part was POC'd and parked 2026-11-18 (saving belongs to zoom + data mode): [findings F5](../logs/findings.md).
 
 ### Parked
 
