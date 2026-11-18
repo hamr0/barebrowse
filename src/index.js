@@ -31,7 +31,7 @@ import { isChallengePage, BOT_WARNING } from './challenge.js';
 import { normRef } from './ref.js';
 import { withTimeout } from './with-timeout.js';
 import { readable as extractReadable } from './readable.js';
-import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
+import { navFailed, navBlocked, httpWarning, newTabNote, mitigation } from './navigation.js';
 import { createSiteLock, applySiteLockCDP } from './site-lock.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
 import { join as pathJoin } from 'node:path';
@@ -593,6 +593,28 @@ export async function connect(opts = {}) {
     return targetInfos.filter((t) => t.type === 'page' && !stray?.has(t.targetId));
   };
 
+  // Tabs this page opened (target=_blank, window.open) that no snapshot has reported yet.
+  // Discovery is read-only, so it is also safe in attach mode.
+  let openedTabs = [];
+  function watchOpenedTabs() {
+    openedTabs = [];
+    cdp.on('Target.targetCreated', ({ targetInfo: t }) => {
+      if (t.type === 'page' && t.openerId === page.targetId) openedTabs.push(t.targetId);
+    });
+    return cdp.send('Target.setDiscoverTargets', { discover: true });
+  }
+  await watchOpenedTabs();
+  async function takeOpenedNote() {
+    const ids = openedTabs;
+    openedTabs = [];
+    if (!ids.length) return '';
+    const tabs = await pageTabs();
+    return ids.map((id) => {
+      const i = tabs.findIndex((t) => t.targetId === id);
+      return i < 0 ? '' : newTabNote(tabs[i].url, i);
+    }).join('');
+  }
+
   return {
     async goto(url, timeout = 30000) {
       assertNavigable(url, urlGuard);
@@ -616,6 +638,7 @@ export async function connect(opts = {}) {
         cdp = await createCDP(browser.wsUrl);
         if (lock) await applySiteLockCDP(cdp, lock);
         page = await createPage(cdp, true, pageOpts);
+        await watchOpenedTabs();
         setupDialogHandler(page.session);
         await suppressPermissions(cdp);
         currentlyHeaded = false;
@@ -644,6 +667,7 @@ export async function connect(opts = {}) {
           cdp = await createCDP(browser.wsUrl);
           if (lock) await applySiteLockCDP(cdp, lock);
           page = await createPage(cdp, false, pageOpts);
+          await watchOpenedTabs(); // the new connection has no listener yet
           setupDialogHandler(page.session);
           await suppressPermissions(cdp);
           lastNavigation = await navigate(page, url, timeout, lock);
@@ -724,7 +748,7 @@ export async function connect(opts = {}) {
       // Recompute from the tree just built. cf-mitigated is a goto-time signal only: a challenge that solves itself in place leaves it stale.
       botBlocked = isChallengePage(result.tree, result.nodeCount);
       const warn = (botBlocked ? BOT_WARNING : '')
-        + httpWarning(lastNavigation?.status) + (lock?.takeNotes(page.targetId) ?? '');
+        + httpWarning(lastNavigation?.status) + (lock?.takeNotes(page.targetId) ?? '') + await takeOpenedNote();
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(result.tree, pageUrl) : result.tree;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);

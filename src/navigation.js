@@ -64,3 +64,8 @@ export function isHttpError(status) {
 export function httpWarning(status) {
   return isHttpError(status) ? `[HTTP ${status} — the page may be an error page]\n` : '';
 }
+
+/** Snapshot line for a tab the page opened (a click on target=_blank, window.open): index is what switchTab() takes. */
+export function newTabNote(url, index) {
+  return `[new tab opened by this page: ${url} — tabs() lists it, switchTab(${index}) moves to it]\n`;
+}

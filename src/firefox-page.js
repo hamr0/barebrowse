@@ -31,7 +31,7 @@ import { isChallengePage, countNodes, BOT_WARNING } from './challenge.js';
 import { normRef } from './ref.js';
 import { HIT_TEST_FN, coveredError } from './interact.js';
 import { withTimeout } from './with-timeout.js';
-import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js';
+import { navFailed, navBlocked, httpWarning, newTabNote, mitigation } from './navigation.js';
 
 // Isolated BiDi realm holding the per-document stale-ref token (page script cannot reach it).
 const DOC_SANDBOX = 'barebrowse';
@@ -330,7 +330,25 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function setupSubscriptions() {
     await setupDialogs();
     await setupDownloads();
-    await bidi.subscribe(['browsingContext.load', 'network.responseCompleted', 'network.responseStarted']);
+    await bidi.subscribe(['browsingContext.load', 'network.responseCompleted', 'network.responseStarted', 'browsingContext.contextCreated']);
+    openedTabs = [];
+    // A top-level context whose opener is the active tab: target=_blank, window.open.
+    bidi.on('browsingContext.contextCreated', (e) => {
+      if (!e.parent && e.originalOpener === topContext) openedTabs.push(e.context);
+    });
+  }
+
+  // Tabs this page opened that no snapshot has reported yet.
+  let openedTabs = [];
+  async function takeOpenedNote() {
+    const ids = openedTabs;
+    openedTabs = [];
+    if (!ids.length) return '';
+    const { contexts } = await bidi.send('browsingContext.getTree', {});
+    return ids.map((id) => {
+      const i = contexts.findIndex((c) => c.context === id);
+      return i < 0 ? '' : newTabNote(contexts[i].url, i);
+    }).join('');
   }
 
   /**
@@ -520,7 +538,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       const raw = formatTree(root);
       // Recompute from the tree just built. cf-mitigated is a goto-time signal only: a challenge that solves itself in place leaves it stale.
       botBlocked = isChallengePage(root, countNodes(root));
-      const warn = (botBlocked ? BOT_WARNING : '') + httpWarning(lastNavigation?.status) + (lock?.takeNotes(topContext) ?? '');
+      const warn = (botBlocked ? BOT_WARNING : '') + httpWarning(lastNavigation?.status) + (lock?.takeNotes(topContext) ?? '') + await takeOpenedNote();
       const links = !!((pruneOpts || undefined)?.links ?? opts.links);
       const tree = links ? annotateLinks(root, pageUrl) : root;
       if (pruneOpts === false) return `url: ${pageUrl}\n` + warn + (links ? formatTree(tree) : raw);

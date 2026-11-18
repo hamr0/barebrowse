@@ -130,6 +130,37 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
     });
   }
 
+  for (const engine of ['firefox', 'chromium']) {
+    it(`a click that opens a new tab is noted once in the next snapshot (${engine}, N38)`, async () => {
+      const srv = createServer((q, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(q.url === '/' ? '<a href="/second" target="_blank">Open</a><button onclick="window.open(\'/third\')">Pop</button>' : `<title>${q.url}</title>hi`);
+      });
+      await new Promise((r) => srv.listen(0, '127.0.0.1', r));
+      const base = `http://127.0.0.1:${srv.address().port}`;
+      const page = await connect({ engine, mode: 'headless', allowLocalUrls: true });
+      try {
+        await page.goto(base + '/');
+        const snap = await page.snapshot({ mode: 'browse' });
+        assert.ok(!/new tab opened/.test(snap), 'no note before any click');
+        await page.click(snap.match(/link "Open"[^\n]*\[ref=(\d+)\]/)[1]);
+        await new Promise((r) => setTimeout(r, 800));
+        const after = await page.snapshot({ mode: 'browse' });
+        const tabs = await page.tabs();
+        const idx = tabs.findIndex((t) => t.url === base + '/second');
+        assert.ok(idx > 0, 'the new tab is listed');
+        assert.match(after, new RegExp(`\\[new tab opened by this page: ${base}/second — tabs\\(\\) lists it, switchTab\\(${idx}\\) moves to it\\]`));
+        assert.ok(!/new tab opened/.test(await page.snapshot({ mode: 'browse' })), 'shown once');
+        await page.click(after.match(/button "Pop"[^\n]*\[ref=(\d+)\]/)[1]);
+        await new Promise((r) => setTimeout(r, 800));
+        assert.match(await page.snapshot({ mode: 'browse' }), new RegExp(`new tab opened by this page: ${base}/third`));
+      } finally {
+        await page.close();
+        srv.close();
+      }
+    });
+  }
+
   it('reconstructs the tree under a strict CSP (script.evaluate in an isolated realm)', async () => {
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {
