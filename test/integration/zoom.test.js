@@ -117,7 +117,7 @@ for (const engine of ['chromium', 'firefox']) {
       const map = await page.snapshot({ map: true });
       const ref = refOf(map, /table "Cities" \[ref=(\d+)\]/);
       await page.goto(srvr.url + '/other');
-      await assert.rejects(page.snapshot({ within: Number(ref) }), /not in the last snapshot|no longer on the page/);
+      await assert.rejects(page.snapshot({ within: Number(ref) }), (e) => /not in the last snapshot|no longer on the page/.test(e.message) && !/renumber/.test(e.message), 'error does not claim refs renumber (N42)');
       await page.snapshot(); // refs of the new page
       await assert.rejects(page.snapshot({ within: Number(ref) }), /not in the last snapshot|no longer on the page|nothing matches/);
     }));

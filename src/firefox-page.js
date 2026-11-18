@@ -214,7 +214,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     for (const { ref } of selectors) {
       if (!ref) continue;
       const context = refContexts.get(ref);
-      if (!context) throw new Error(`within: ref ${ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
+      if (!context) throw new Error(`within: ref ${ref} is not in the last snapshot (refs stay the same within a page and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
       const ok = await bidi.evaluate(context, `(() => { ${DEEP_QUERY} if (globalThis.__bbDoc !== ${JSON.stringify(docTokens.get(context))}) return false; const e = bbq(document, '[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false, DOC_SANDBOX).catch(() => false);
       if (!ok) throw new Error(`within: the element behind ref ${ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
       marks.set(ref, context);

@@ -705,3 +705,9 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** Chromium `drag()` called `refEntry()` and `cdpDrag()` directly, bypassing `onRef()`, which owns the gone-node translation. Firefox already threw the clear error (its `resolveRef` re-resolves the node), so only a test was added there.
 **Fix:** `drag()` runs `cdpDrag` inside `onRef(fromRef, ... onRef(toRef, ...))`. The ref named in the message is the inner (target) one when either node is gone, since CDP does not say which.
 **Regression test:** `test/integration/ref-stability.test.js`, "drag with a gone target (or source) throws the clear error" (both engines; Chromium red before).
+
+## [2026-11-18] Docs and an error told agents refs renumber every snapshot (N42)
+
+**Symptom:** after N37 refs persist within a document, but `snapshot({within})` with an unknown ref said "refs renumber on every snapshot and reset on navigation", and README.md and barebrowse.context.md said refs only hold until the next snapshot.
+**Fix:** text only: refs stay the same within a page and reset on navigation or reload (`src/index.js`, `src/firefox-page.js`, README.md, barebrowse.context.md).
+**Regression test:** `test/integration/zoom.test.js`, "a ref from before a navigation is an error" now asserts the error does not say refs renumber (both engines; red before).
