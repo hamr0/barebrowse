@@ -131,6 +131,27 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
   }
 
   for (const engine of ['firefox', 'chromium']) {
+    it(`click on a custom checkbox covered by its own label toggles it (${engine}, N40)`, async () => {
+      const page = await connect({ engine, mode: 'headless' });
+      try {
+        await page.goto(data(`<title>before</title>
+          <div style="position:relative;width:24px;height:24px">
+            <input type="checkbox" id="cb" style="position:absolute;inset:0;width:24px;height:24px;margin:0;opacity:0">
+            <label for="cb" style="position:absolute;inset:0;display:block">box</label>
+          </div>`));
+        const ref = (await page.snapshot({ mode: 'browse' })).match(/checkbox[^\n]*\[ref=(\d+)\]/)[1];
+        await page.click(ref);
+        await new Promise((r) => setTimeout(r, 200));
+        const checked = page.bidi ? await page.bidi.evaluate(page.context, 'document.getElementById("cb").checked', false)
+          : (await page.cdp.send('Runtime.evaluate', { expression: 'document.getElementById("cb").checked', returnByValue: true })).result.value;
+        assert.equal(checked, true, 'the checkbox toggled');
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
+  for (const engine of ['firefox', 'chromium']) {
     it(`a click that opens a new tab is noted once in the next snapshot (${engine}, N38)`, async () => {
       const srv = createServer((q, res) => {
         res.writeHead(200, { 'Content-Type': 'text/html' });
