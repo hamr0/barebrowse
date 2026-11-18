@@ -818,14 +818,14 @@ export async function connect(opts = {}) {
     },
 
     async drag(fromRef, toRef) {
-      const from = await refEntry(fromRef);
-      const to = await refEntry(toRef);
-      // Drag across different frames isn't physically meaningful — bail
-      // rather than mix sessions and produce nonsense coordinates.
-      if (from.session !== to.session) {
-        throw new Error('drag() between elements in different frames is not supported');
-      }
-      await cdpDrag(from.session, from.backendNodeId, to.backendNodeId);
+      await onRef(fromRef, (from) => onRef(toRef, async (to) => {
+        // Drag across different frames isn't physically meaningful — bail
+        // rather than mix sessions and produce nonsense coordinates.
+        if (from.session !== to.session) {
+          throw new Error('drag() between elements in different frames is not supported');
+        }
+        await cdpDrag(from.session, from.backendNodeId, to.backendNodeId);
+      }));
     },
 
     async upload(ref, files) {

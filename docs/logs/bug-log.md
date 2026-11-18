@@ -698,3 +698,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the N36 hit test treated any element that is not the node, inside it or an ancestor as an overlay; the control's own label is none of those, yet clicking it is exactly what a human does.
 **Fix:** `HIT_TEST_FN` also counts the hit as not covered when it is, or sits inside, a `<label>` whose `.control` is the element. A real overlay still throws.
 **Regression test:** `test/integration/firefox.test.js`, "click on a custom checkbox covered by its own label toggles it" (both engines; red before: threw `covered by <label>`).
+
+## [2026-11-18] drag() with a gone element leaked a raw CDP error (N41)
+
+**Symptom:** take refs A and B, remove B from the DOM, `page.drag(A, B)` on Chromium threw `CDP error: Node is detached from document (-32000)`; every other ref method throws `No element found for ref "B" — that element is no longer on the page; take a fresh snapshot`.
+**Root cause:** Chromium `drag()` called `refEntry()` and `cdpDrag()` directly, bypassing `onRef()`, which owns the gone-node translation. Firefox already threw the clear error (its `resolveRef` re-resolves the node), so only a test was added there.
+**Fix:** `drag()` runs `cdpDrag` inside `onRef(fromRef, ... onRef(toRef, ...))`. The ref named in the message is the inner (target) one when either node is gone, since CDP does not say which.
+**Regression test:** `test/integration/ref-stability.test.js`, "drag with a gone target (or source) throws the clear error" (both engines; Chromium red before).
