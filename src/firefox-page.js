@@ -33,6 +33,9 @@ import { navFailed, navBlocked, httpWarning, mitigation } from './navigation.js'
 
 // Isolated BiDi realm holding the per-document stale-ref token (page script cannot reach it).
 const DOC_SANDBOX = 'barebrowse';
+// In-page lookup that, unlike document.querySelector, descends open shadow roots
+// (the AX snapshot walks them, so their elements carry refs). Prepended to expressions.
+const DEEP_QUERY = `const bbq = (root, sel) => { const e = root.querySelector(sel); if (e) return e; for (const h of root.querySelectorAll('*')) { if (h.shadowRoot) { const f = bbq(h.shadowRoot, sel); if (f) return f; } } return null; };`;
 
 /** BiDi/WebDriver normalized key values for named keys (U+E000 block). */
 const BIDI_KEYS = {
@@ -174,7 +177,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     const context = refContexts.get(String(ref));
     if (!context) throw new Error(`Unknown ref: ${ref} (snapshot first, or it's stale)`);
     const res = await bidi.send('script.evaluate', {
-      expression: `globalThis.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? document.querySelector('[${REF_ATTR}="${ref}"]') : 'stale'`,
+      expression: `(() => { ${DEEP_QUERY} return globalThis.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? bbq(document, '[${REF_ATTR}="${ref}"]') : 'stale'; })()`,
       target: { context, sandbox: DOC_SANDBOX }, awaitPromise: false, resultOwnership: 'root',
     });
     if (res.type === 'success' && res.result.type === 'string') {
@@ -201,7 +204,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       if (!ref) continue;
       const context = refContexts.get(ref);
       if (!context) throw new Error(`within: ref ${ref} is not in the last snapshot (refs renumber on every snapshot and reset on navigation) — take a fresh ref from snapshot({ map: true })`);
-      const ok = await bidi.evaluate(context, `(() => { if (globalThis.__bbDoc !== ${JSON.stringify(docTokens.get(context))}) return false; const e = document.querySelector('[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false, DOC_SANDBOX).catch(() => false);
+      const ok = await bidi.evaluate(context, `(() => { ${DEEP_QUERY} if (globalThis.__bbDoc !== ${JSON.stringify(docTokens.get(context))}) return false; const e = bbq(document, '[${REF_ATTR}="${ref}"]'); if (e) e.setAttribute('data-bb-zoom', '${ref}'); return !!e; })()`, false, DOC_SANDBOX).catch(() => false);
       if (!ok) throw new Error(`within: the element behind ref ${ref} is no longer on the page — take a fresh ref from snapshot({ map: true })`);
       marks.set(ref, context);
     }
@@ -212,7 +215,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function readMarks(marks) {
     const refNodes = new Map();
     for (const [ref, context] of marks) {
-      const now = await bidi.evaluate(context, `(() => { const e = document.querySelector('[data-bb-zoom="${ref}"]'); if (!e) return null; e.removeAttribute('data-bb-zoom'); return e.getAttribute('${REF_ATTR}'); })()`, false).catch(() => null);
+      const now = await bidi.evaluate(context, `(() => { ${DEEP_QUERY} const e = bbq(document, '[data-bb-zoom="${ref}"]'); if (!e) return null; e.removeAttribute('data-bb-zoom'); return e.getAttribute('${REF_ATTR}'); })()`, false).catch(() => null);
       refNodes.set(ref, now);
     }
     return refNodes;

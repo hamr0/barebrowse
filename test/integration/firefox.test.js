@@ -93,6 +93,27 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
     }
   });
 
+  for (const engine of ['firefox', 'chromium']) {
+    it(`clicks a button inside an open shadow root by ref (${engine})`, async () => {
+      const page = await connect({ engine, mode: 'headless' });
+      try {
+        await page.goto(data(`<title>before</title><div id="host"></div>
+          <script>const r = document.getElementById('host').attachShadow({mode:'open'});
+          r.innerHTML = '<button id="b">Shadow Click</button>';
+          r.getElementById('b').addEventListener('click', () => { document.title = 'clicked'; });</script>`));
+        await new Promise((r) => setTimeout(r, 200));
+        const snap = await page.snapshot({ mode: 'browse' });
+        const ref = snap.match(/Shadow Click[^\n]*\[ref=(\d+)\]/);
+        assert.ok(ref, `shadow button has a ref:\n${snap}`);
+        await page.click(ref[1]);
+        await new Promise((r) => setTimeout(r, 200));
+        assert.match(await page.snapshot({ mode: 'browse' }), /clicked/, 'the shadow button handler ran');
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
   it('reconstructs the tree under a strict CSP (script.evaluate in an isolated realm)', async () => {
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {
