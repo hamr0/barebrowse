@@ -35,7 +35,16 @@ after(() => new Promise((r) => srv.close(r)));
 let hasFirefox = false;
 try { findFirefox(); hasFirefox = true; } catch { /* skip below */ }
 
-const title = (page) => page.tabs().then((t) => t.find((x) => x.url.startsWith(base)).title);
+// tabs() title lags the DOM (Chromium's target-info update is async): poll for the held title.
+const title = async (page) => {
+  let s;
+  for (let i = 0; i < 40; i++) {
+    s = (await page.tabs()).find((x) => x.url.startsWith(base)).title;
+    if (/^held:/.test(s)) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
+  return s;
+};
 
 for (const engine of ['chromium', 'firefox']) {
   describe(`hold (${engine})`, { skip: engine === 'firefox' && !hasFirefox }, () => {
