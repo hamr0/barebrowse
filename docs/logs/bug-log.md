@@ -711,3 +711,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Symptom:** after N37 refs persist within a document, but `snapshot({within})` with an unknown ref said "refs renumber on every snapshot and reset on navigation", and README.md and barebrowse.context.md said refs only hold until the next snapshot.
 **Fix:** text only: refs stay the same within a page and reset on navigation or reload (`src/index.js`, `src/firefox-page.js`, README.md, barebrowse.context.md).
 **Regression test:** `test/integration/zoom.test.js`, "a ref from before a navigation is an error" now asserts the error does not say refs renumber (both engines; red before).
+
+## [2026-11-18] drag() named the wrong ref when the source was gone (N43)
+
+**Symptom:** refs ad=4, safe=5, `ad` removed from the DOM: Chromium `drag(4, 5)` threw `No element found for ref "5" — that element is no longer on the page`, naming the live target; an agent trusting it could drop the wrong element from its plan.
+**Root cause:** `cdpDrag` touches the source node inside the inner `onRef(toRef, ...)`, whose catch translates a gone-node error first, so any gone node was reported as the target ref.
+**Fix:** `drag()` probes each node on its own, source first, through `onRef` (`DOM.scrollIntoViewIfNeeded`, the first call `cdpDrag` makes per node) before dragging; if both are gone the source is named. Firefox already named the right ref (its `resolveRef` runs per ref), so only the test was tightened.
+**Regression test:** `test/integration/ref-stability.test.js`, "drag with a gone target (or source)" now asserts the gone ref's number (both engines; Chromium red before).
