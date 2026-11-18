@@ -566,6 +566,16 @@ export async function connect(opts = {}) {
   }
   setupDialogHandler(page.session);
 
+  // Tabs the caller can address. A launched browser starts with one stray
+  // about:blank page the library never uses; it is excluded (by targetId,
+  // recorded in createPage) so tabs() and switchTab() share one list. In
+  // attach mode nothing is hidden: every tab is the user's own.
+  const pageTabs = async () => {
+    const { targetInfos } = await cdp.send('Target.getTargets');
+    const stray = attachMode ? null : strayBlanks.get(cdp);
+    return targetInfos.filter((t) => t.type === 'page' && !stray?.has(t.targetId));
+  };
+
   return {
     async goto(url, timeout = 30000) {
       assertNavigable(url, urlGuard);
@@ -799,15 +809,12 @@ export async function connect(opts = {}) {
     },
 
     async tabs() {
-      const { targetInfos } = await cdp.send('Target.getTargets');
-      return targetInfos
-        .filter((t) => t.type === 'page')
+      return (await pageTabs())
         .map((t, i) => ({ index: i, url: t.url, title: t.title, targetId: t.targetId }));
     },
 
     async switchTab(index) {
-      const { targetInfos } = await cdp.send('Target.getTargets');
-      const pages = targetInfos.filter((t) => t.type === 'page');
+      const pages = await pageTabs();
       if (index < 0 || index >= pages.length) throw new Error(`Tab index ${index} out of range (0-${pages.length - 1})`);
       const target = pages[index];
       await cdp.send('Target.activateTarget', { targetId: target.targetId });
@@ -1111,12 +1118,21 @@ async function connectFirefox(opts) {
   return page;
 }
 
+const strayBlanks = new WeakMap(); // cdp client -> page targetIds that predate our first page
+
 /**
  * Create a new page target and return a session-scoped handle.
  * @param {object} cdp - CDP client
  * @param {boolean} [stealth=false] - Apply stealth patches (headless only)
  */
 async function createPage(cdp, stealth = false, pageOpts = {}) {
+  // First page of this browser connection: whatever page targets already
+  // exist (the launch's stray about:blank, or the user's tabs in attach mode,
+  // where the caller ignores this) are not ours.
+  if (!strayBlanks.has(cdp)) {
+    const { targetInfos } = await cdp.send('Target.getTargets');
+    strayBlanks.set(cdp, new Set(targetInfos.filter((t) => t.type === 'page').map((t) => t.targetId)));
+  }
   const { targetId } = await cdp.send('Target.createTarget', { url: 'about:blank' });
   const { sessionId } = await cdp.send('Target.attachToTarget', {
     targetId,

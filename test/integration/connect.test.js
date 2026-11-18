@@ -381,6 +381,21 @@ describe('connect() — page handle contract', () => {
     }
   });
 
+  it('tabs()/switchTab(0) hide the stray launch about:blank (launch mode)', async () => {
+    const page = await connect({ mode: 'headless' });
+    try {
+      await page.goto('data:text/html,<title>ONLY</title><h1>only tab</h1>');
+      const tabs = await page.tabs();
+      assert.equal(tabs.length, 1, `expected one tab, got ${JSON.stringify(tabs)}`);
+      assert.deepEqual(tabs.map((t) => t.index), [0]);
+      await page.switchTab(0);
+      const snap = await page.snapshot();
+      assert.ok(snap.includes('only tab'), `switchTab(0) must stay on the page, got:\n${snap}`);
+    } finally {
+      await page.close();
+    }
+  });
+
   it('snapshots a page whose AX tree exceeds the old ~3MB WebSocket cap (F-ws)', async () => {
     // Regression: Node's built-in WebSocket silently caps decompressed
     // messages at ~3MB and kills the socket when a single getFullAXTree
