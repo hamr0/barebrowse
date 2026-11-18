@@ -114,6 +114,22 @@ describe('connect({ engine: firefox }) — BiDi transport + AX reconstruction', 
     });
   }
 
+  for (const engine of ['firefox', 'chromium']) {
+    it(`click covered by an overlay throws (${engine}, N36)`, async () => {
+      const page = await connect({ engine, mode: 'headless' });
+      try {
+        await page.goto(data(`<title>before</title><button onclick="document.title='clicked'">Target</button>
+          <div class="modal-bg" style="position:fixed;inset:0"></div>`));
+        const ref = (await page.snapshot({ mode: 'browse' })).match(/Target[^\n]*\[ref=(\d+)\]/)[1];
+        await assert.rejects(page.click(ref), /covered by <div class="modal-bg">/);
+        await new Promise((r) => setTimeout(r, 200));
+        assert.match(await page.snapshot({ mode: 'browse' }), /before/, 'handler did not run');
+      } finally {
+        await page.close();
+      }
+    });
+  }
+
   it('reconstructs the tree under a strict CSP (script.evaluate in an isolated realm)', async () => {
     const page = await connect({ engine: 'firefox', mode: 'headless' });
     try {

@@ -141,6 +141,30 @@ describe('interact — data: URL fixture', () => {
     }
   });
 
+  it('click covered by an overlay throws instead of failing silently (N36)', async () => {
+    const mk = (overlay) => 'data:text/html,' + encodeURIComponent(
+      `<button onclick="document.title='clicked'">Target</button>${overlay}`);
+    const run = async (overlay) => {
+      const page = await connect();
+      try {
+        await page.goto(mk(overlay));
+        const ref = findRoleRef(await page.snapshot(), 'button', 'Target');
+        let err = null;
+        await page.click(ref).catch((e) => { err = e; });
+        await new Promise(r => setTimeout(r, 100));
+        return { err, title: await evaluate(page, 'document.title') };
+      } finally {
+        await page.close();
+      }
+    };
+    const cover = '<div class="modal-bg" style="position:fixed;inset:0;background:#0003"></div>';
+    const blocked = await run(cover);
+    assert.ok(blocked.err && /covered by <div class="modal-bg">/.test(blocked.err.message), String(blocked.err));
+    assert.notEqual(blocked.title, 'clicked', 'handler must not run');
+    assert.equal((await run('')).title, 'clicked');
+    assert.equal((await run(cover.replace('position:fixed', 'pointer-events:none;position:fixed'))).title, 'clicked');
+  });
+
   it('click on offscreen element scrolls into view first', async () => {
     const page = await connect();
     try {
