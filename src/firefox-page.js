@@ -104,6 +104,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
   // A document restored from the back/forward cache keeps its old data-bb-ref marks;
   // its token differs from the one remembered here, so its refs are rejected.
   let docTokens = new Map();
+  // Highest ref handed out in the current top document; a ref number is never reused there.
+  let refHigh = 0;
 
   /**
    * Depth-first list of the ACTIVE tab's contexts (main frame + descendant
@@ -131,27 +133,33 @@ export async function createFirefoxPage(bidi, opts = {}) {
    */
   async function buildTree() {
     const contextIds = await allContexts();
+    const prevTokens = docTokens;
     refContexts = new Map();
     docTokens = new Map();
 
-    // Snapshot each context, assigning refs from a shared running counter so
-    // they're globally unique (matching CDP's flat integer refs).
-    let base = 0;
+    // Snapshot each context, assigning refs above a shared running counter so
+    // they're globally unique (matching CDP's flat integer refs). A context still on the
+    // document the last snapshot saw keeps its refs; a new top document starts over.
+    let base = refHigh;
     const treesByContext = new Map();
     for (const ctx of contextIds) {
       let raw;
       try {
+        const same = prevTokens.has(ctx)
+          && await bidi.evaluate(ctx, `globalThis.__bbDoc === ${JSON.stringify(prevTokens.get(ctx))}`, false, DOC_SANDBOX).catch(() => false) === true;
+        if (ctx === contextIds[0] && !same) base = 0;
         const token = Math.random().toString(36).slice(2);
-        raw = await bidi.evaluate(ctx, axSnapshotExpression(base), false);
+        raw = await bidi.evaluate(ctx, axSnapshotExpression(base, same), false);
         // The token lives in a sandbox realm: page script can neither read, delete nor break it.
         await bidi.evaluate(ctx, `globalThis.__bbDoc = ${JSON.stringify(token)}`, false, DOC_SANDBOX);
         docTokens.set(ctx, token);
       } catch { continue; } // frame navigated mid-snapshot — skip it
-      const { tree, count } = JSON.parse(raw);
-      for (let r = base + 1; r <= base + count; r++) refContexts.set(String(r), ctx);
-      base += count;
+      const { tree, top } = JSON.parse(raw);
+      (function walk(n) { refContexts.set(n.nodeId, ctx); n.children.forEach(walk); })(tree);
+      base = top;
       treesByContext.set(ctx, tree);
     }
+    refHigh = base;
 
     // Splice each child frame's tree under an <iframe> (role 'Iframe')
     // placeholder in its parent, matched by document order — BiDi getTree
@@ -178,7 +186,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
   async function resolveRef(rawRef) {
     const ref = normRef(rawRef);
     const context = refContexts.get(ref);
-    if (!context) throw new Error(`Unknown ref: ${rawRef} (snapshot first, or it's stale)`);
+    if (!context) throw new Error(`No element found for ref "${rawRef}" — that element is no longer on the page (or the ref is wrong); take a fresh snapshot`);
     const res = await bidi.send('script.evaluate', {
       expression: `(() => { ${DEEP_QUERY} return globalThis.__bbDoc === ${JSON.stringify(docTokens.get(context))} ? bbq(document, '[${REF_ATTR}="${ref}"]') : 'stale'; })()`,
       target: { context, sandbox: DOC_SANDBOX }, awaitPromise: false, resultOwnership: 'root',
@@ -187,7 +195,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       throw new Error(`No element found for ref "${rawRef}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
     }
     if (res.type === 'exception' || !res.result || res.result.type !== 'node') {
-      throw new Error(`Could not resolve element for ref ${rawRef}`);
+      throw new Error(`No element found for ref "${rawRef}" — that element is no longer on the page; take a fresh snapshot`);
     }
     return { context, sharedId: res.result.sharedId };
   }

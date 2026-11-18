@@ -415,6 +415,9 @@ export async function connect(opts = {}) {
   };
   let page = await createPage(cdp, !currentlyHeaded, pageOpts);
   let refMap = new Map();
+  // Ref numbering for the current document: a DOM node keeps its number across snapshots and a
+  // number is never reused (see ariaTree). Replaced whenever refMap is, i.e. on any navigation.
+  let refState = newRefState();
   // Main-document identity (navKey) when the current refs were handed out; read again
   // fresh at every ref use, so a click/press that navigated to a new document kills them.
   let refDoc = null;
@@ -438,18 +441,31 @@ export async function connect(opts = {}) {
     } catch { return null; }
   }
 
+  function resetRefs() { refMap = new Map(); refState = newRefState(); }
+
   /** Resolve a ref from the last snapshot; throws when the document it belongs to is gone. */
   async function refEntry(ref) {
     const entry = refMap.get(normRef(ref));
-    if (!entry) throw new Error(`No element found for ref "${ref}"`);
+    if (!entry) throw new Error(`No element found for ref "${ref}" — that element is no longer on the page (or the ref is wrong); take a fresh snapshot`);
     if (refDoc) {
       const now = await navKey();
       if (now && now !== refDoc) {
-        refMap = new Map(); refDoc = null;
+        resetRefs(); refDoc = null;
         throw new Error(`No element found for ref "${ref}" — the page navigated since the snapshot that gave it; take a fresh snapshot`);
       }
     }
     return entry;
+  }
+
+  /** Run an action on a ref's node; a node CDP reports as gone becomes the clear "no longer on the page" error. */
+  async function onRef(ref, fn) {
+    const entry = await refEntry(ref);
+    try { return await fn(entry); } catch (err) {
+      if (/detached from document|Could not find node|No node with given id|Node with given id/.test(err?.message)) {
+        throw new Error(`No element found for ref "${ref}" — that element is no longer on the page; take a fresh snapshot`);
+      }
+      throw err;
+    }
   }
 
   // A consent accept that navigates (a form submit, Google's consent.google.com) lands on
@@ -585,7 +601,7 @@ export async function connect(opts = {}) {
       // before navigating so a stale click(ref) errors clearly instead of
       // silently resolving to whatever backendNodeId happens to still be in
       // the map.
-      refMap = new Map();
+      resetRefs();
       consentRecheck = null; // a throwing navigate() must not leave the old page's flag
       lastNavigation = null;
       // Switch back to headless if we fell back to headed previously.
@@ -651,7 +667,7 @@ export async function connect(opts = {}) {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       if (currentIndex <= 0) throw new Error('No previous page in history');
       await traverse(page, entries[currentIndex - 1].id);
-      refMap = new Map(); // refs from the previous page are now invalid
+      resetRefs(); // refs from the previous page are now invalid
       consentRecheck = null;
       lastNavigation = null; // no outcome is known for the history entry we landed on
     },
@@ -660,7 +676,7 @@ export async function connect(opts = {}) {
       const { currentIndex, entries } = await page.session.send('Page.getNavigationHistory');
       if (currentIndex >= entries.length - 1) throw new Error('No next page in history');
       await traverse(page, entries[currentIndex + 1].id);
-      refMap = new Map();
+      resetRefs();
       consentRecheck = null;
       lastNavigation = null;
     },
@@ -672,7 +688,7 @@ export async function connect(opts = {}) {
         ignoreCache: !!reloadOpts.ignoreCache,
       });
       try { await loadPromise; } catch { await new Promise((r) => setTimeout(r, 500)); }
-      refMap = new Map(); // refs from the pre-reload page are invalid
+      resetRefs(); // refs from the pre-reload page are invalid
       consentRecheck = null;
       lastNavigation = null; // the reload's status is not read; don't keep the old one
     },
@@ -698,7 +714,8 @@ export async function connect(opts = {}) {
       // a navigation since the last snapshot leaves nothing for a `within` ref to name
       const prevRefMap = refDoc && (await navKey() ?? refDoc) !== refDoc ? new Map() : refMap;
       const docBefore = await navKey(); // before the tree: a navigation mid-build leaves the refs stale, not live
-      const result = await ariaTree(page);
+      if (refDoc && docBefore !== refDoc) refState = newRefState(); // a new document starts numbering over
+      const result = await ariaTree(page, refState);
       refMap = result.refMap;
       refDoc = docBefore;
       const raw = formatTree(result.tree);
@@ -743,8 +760,7 @@ export async function connect(opts = {}) {
     },
 
     async click(ref) {
-      const entry = await refEntry(ref);
-      await cdpClick(entry.session, entry.backendNodeId);
+      await onRef(ref, (e) => cdpClick(e.session, e.backendNodeId));
     },
 
     /**
@@ -753,14 +769,12 @@ export async function connect(opts = {}) {
      * @param {string|number} ref @param {number} [ms=10000]
      */
     async hold(ref, ms = 10000) {
-      const entry = await refEntry(ref);
-      await cdpHold(entry.session, entry.backendNodeId, ms);
+      await onRef(ref, (e) => cdpHold(e.session, e.backendNodeId, ms));
     },
 
     /** @param {string|number} ref @param {string} text @param {TypeOptions} [typeOpts] */
     async type(ref, text, typeOpts = {}) {
-      const entry = await refEntry(ref);
-      await cdpType(entry.session, entry.backendNodeId, text, typeOpts);
+      await onRef(ref, (e) => cdpType(e.session, e.backendNodeId, text, typeOpts));
     },
 
     async scroll(deltaY) {
@@ -772,13 +786,11 @@ export async function connect(opts = {}) {
     },
 
     async hover(ref) {
-      const entry = await refEntry(ref);
-      await cdpHover(entry.session, entry.backendNodeId);
+      await onRef(ref, (e) => cdpHover(e.session, e.backendNodeId));
     },
 
     async select(ref, value) {
-      const entry = await refEntry(ref);
-      await cdpSelect(entry.session, entry.backendNodeId, value);
+      await onRef(ref, (e) => cdpSelect(e.session, e.backendNodeId, value));
     },
 
     async drag(fromRef, toRef) {
@@ -793,12 +805,13 @@ export async function connect(opts = {}) {
     },
 
     async upload(ref, files) {
-      const entry = await refEntry(ref);
       // Upload sandbox: when uploadDir is set, every path must resolve
       // (symlinks included, via realpath) inside it. Stops a prompt-injected
       // agent from attaching ~/.ssh/id_rsa or other arbitrary local files.
-      assertUploadAllowed(files, uploadDir);
-      await cdpUpload(entry.session, entry.backendNodeId, files);
+      await onRef(ref, (e) => {
+        assertUploadAllowed(files, uploadDir);
+        return cdpUpload(e.session, e.backendNodeId, files);
+      });
     },
 
     async pdf(pdfOpts = {}) {
@@ -825,7 +838,7 @@ export async function connect(opts = {}) {
       // snapshot/click/type/etc. operate on the new tab.
       const oldSessionId = page.sessionId;
       page = await attachToExistingTarget(cdp, target.targetId, pageOpts);
-      refMap = new Map(); // refs from the previous tab are no longer valid
+      resetRefs(); // refs from the previous tab are no longer valid
       lastNavigation = null; // the outcome belonged to the tab we left
       setupDialogHandler(page.session);
       try { await cdp.send('Target.detachFromTarget', { sessionId: oldSessionId }); } catch {}
@@ -1364,7 +1377,7 @@ async function navigate(page, url, timeout = 30000, lock = null) {
  * by a flat global counter so click/type/etc can resolve the right session
  * without the agent having to think about frames at all.
  */
-async function ariaTree(page) {
+async function ariaTree(page, refState = newRefState()) {
   const main = page.session;
   await main.send('Accessibility.enable');
 
@@ -1395,7 +1408,6 @@ async function ariaTree(page) {
   const refMap = new Map();
   const treesByFrameId = new Map();
   const sessionByFrameId = new Map();
-  const refCounter = { value: 1 };
   let totalNodes = 0;
 
   for (let i = 0; i < frames.length; i++) {
@@ -1427,7 +1439,7 @@ async function ariaTree(page) {
     }
 
     totalNodes += nodes.length;
-    const tree = buildTree(nodes, frameSession, refMap, refCounter);
+    const tree = buildTree(nodes, frameSession, refMap, refState);
     if (tree) treesByFrameId.set(frame.id, tree);
   }
 
@@ -1454,22 +1466,39 @@ async function ariaTree(page) {
 }
 
 /**
+ * Ref numbering state for one document: `byNode` (CDP session → key → ref) makes a DOM node
+ * keep its number across snapshots, `next` is the counter, which never goes back, so a number
+ * is never reused for another element. The page replaces it on every new document.
+ */
+function newRefState() { return { next: 1, bySession: new Map() }; }
+
+/**
  * Transform CDP's flat AXNode array into a nested tree. Every tree node gets
- * a globally unique flat ref string from `refCounter` (shared across all
- * frames in one snapshot), and refMap is populated with ref → { session,
+ * a globally unique flat ref string from `refState` (shared across all
+ * frames, stable across snapshots of one document), and refMap is populated with ref → { session,
  * backendNodeId } so click/type can route to the right CDP session even when
  * the element lives in an iframe.
  * CDP nodes have parentId — we use that exclusively to avoid double-linking.
  */
-function buildTree(nodes, session, refMap, refCounter) {
+function buildTree(nodes, session, refMap, refState) {
   if (!nodes || nodes.length === 0) return null;
 
   const nodeMap = new Map();
   const linked = new Set();
 
-  // First pass: create tree nodes + populate refMap with flat global refs
+  // First pass: create tree nodes + populate refMap with flat global refs. A DOM node is
+  // keyed by its backend id (an AX node without one by its AX id; a repeat of the same key
+  // within one snapshot by occurrence), so it gets the same number it had before.
+  let known = refState.bySession.get(session);
+  if (!known) refState.bySession.set(session, known = new Map());
+  const seen = new Map();
   for (const node of nodes) {
-    const ref = String(refCounter.value++);
+    const base = node.backendDOMNodeId ? 'b' + node.backendDOMNodeId : 'a' + node.nodeId;
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    const key = n ? `${base}#${n}` : base;
+    let ref = known.get(key);
+    if (!ref) known.set(key, ref = String(refState.next++));
     nodeMap.set(node.nodeId, {
       nodeId: ref,
       backendDOMNodeId: node.backendDOMNodeId,

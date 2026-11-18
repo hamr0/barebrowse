@@ -26,8 +26,10 @@
  * Each kept element is tagged with a data-bb-ref attribute carrying its ref,
  * so firefox-page.js (resolveRef) can resolve a ref back to its element via
  * querySelector.
- * Refs are assigned from a caller-supplied `base` so they stay globally unique
- * across browsing contexts (iframes), matching CDP's flat integer refs.
+ * Refs are assigned above a caller-supplied `base` so they stay globally unique
+ * across browsing contexts (iframes), matching CDP's flat integer refs. A node
+ * keeps its ref across snapshots of the same document (kept in a WeakMap in the
+ * page), so an old ref never names another element.
  */
 
 /** Attribute used to tag elements for ref → element resolution. */
@@ -35,12 +37,21 @@ export const REF_ATTR = 'data-bb-ref';
 
 /**
  * The in-page reconstruction function, as source text. Evaluated in a browsing
- * context with a `base` ref offset; returns JSON { tree, count }. Written as a
+ * context with a `base` ref offset; returns JSON { tree, top } (top = highest ref in
+ * use). `keep` says the document is the one the last snapshot saw. Written as a
  * single self-contained function (no closures over module scope) because it
  * runs in the page, not in Node.
  */
-const AX_FN = function reconstructAX(base, REF_ATTR) {
+const AX_FN = function reconstructAX(base, REF_ATTR, keep) {
   let ref = base;
+  // node → ref, so a node keeps its number while the document lives. A new document
+  // (keep false) starts a fresh map and sheds the marks a restored page may still carry.
+  if (!keep || !globalThis.__bbRefs) {
+    globalThis.__bbRefs = new WeakMap();
+    for (const old of document.querySelectorAll('[' + REF_ATTR + ']')) old.removeAttribute(REF_ATTR);
+  }
+  const refs = globalThis.__bbRefs;
+  const used = new Set();
 
   // Roles whose accessible name comes from descendant text (so we must NOT
   // also emit child StaticText nodes — CDP folds the text into the name).
@@ -196,8 +207,11 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     return p;
   }
 
-  function makeNode(role, name, properties) {
-    return { nodeId: String(++ref), role, name: name || '', properties: properties || {}, children: [], ignored: false };
+  function makeNode(role, name, properties, key) {
+    let r = refs.get(key);
+    if (!r || used.has(r)) { r = ++ref; if (key && !refs.has(key)) refs.set(key, r); }
+    used.add(r);
+    return { nodeId: String(r), role, name: name || '', properties: properties || {}, children: [], ignored: false };
   }
 
   // Walk a DOM element → AX node (or null if hidden/irrelevant). Text runs
@@ -212,7 +226,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     // CDP — otherwise those nodes come back nameless.
     let name = accName(el);
     if (!name && NAME_FROM_CONTENT.has(role)) name = contentName(el);
-    const node = makeNode(role, name, props(el, role));
+    const node = makeNode(role, name, props(el, role), el);
     el.setAttribute(REF_ATTR, node.nodeId);
 
     // A collapsed native <select> exposes its current value via props/name;
@@ -224,7 +238,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
       for (const child of kidsOf(el)) {
         if (child.nodeType === 3) {
           const t = child.textContent.replace(/\s+/g, ' ').trim();
-          if (t) node.children.push(makeNode('StaticText', t, {}));
+          if (t) node.children.push(makeNode('StaticText', t, {}, child));
         } else if (child.nodeType === 1) {
           const c = walk(child);
           if (c) Array.isArray(c) ? node.children.push(...c) : node.children.push(c);
@@ -260,7 +274,7 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     for (const child of kidsOf(el)) {
       if (child.nodeType === 3) {
         const t = child.textContent.replace(/\s+/g, ' ').trim();
-        if (t) out.push(makeNode('StaticText', t, {}));
+        if (t) out.push(makeNode('StaticText', t, {}, child));
       } else if (child.nodeType === 1 && !isHidden(child)) {
         const c = walk(child);
         if (c) Array.isArray(c) ? out.push(...c) : out.push(c);
@@ -269,39 +283,37 @@ const AX_FN = function reconstructAX(base, REF_ATTR) {
     return out;
   }
 
-  // Clear stale refs from a prior snapshot so resolution never hits a ghost.
-  for (const old of document.querySelectorAll('[' + REF_ATTR + ']')) old.removeAttribute(REF_ATTR);
-
   // Wrap body content in an ignored 'none' node, mirroring the html/body
   // wrappers CDP's getFullAXTree emits. prune.js's region extraction only
   // inspects RootWebArea's DIRECT children for landmarks, so without this
   // wrapper a top-level <form>/<nav> (no <main>) would be treated as a
   // directly-extractable region and dropped in act mode — a divergence from
   // CDP, where the same landmark is buried under body and flows through.
-  const root = makeNode('RootWebArea', document.title || '', {});
-  const body = makeNode('none', '', {});
+  const root = makeNode('RootWebArea', document.title || '', {}, document);
+  const body = makeNode('none', '', {}, document.documentElement);
   body.ignored = true;
   // childNodes (not .children) so bare text directly under <body> is kept as
   // StaticText, matching walk()/CDP; .children would silently drop it.
   for (const child of document.body ? document.body.childNodes : []) {
     if (child.nodeType === 3) {
       const t = child.textContent.replace(/\s+/g, ' ').trim();
-      if (t) body.children.push(makeNode('StaticText', t, {}));
+      if (t) body.children.push(makeNode('StaticText', t, {}, child));
     } else if (child.nodeType === 1) {
       const c = walk(child);
       if (c) Array.isArray(c) ? body.children.push(...c) : body.children.push(c);
     }
   }
   root.children.push(body);
-  return JSON.stringify({ tree: root, count: ref - base });
+  return JSON.stringify({ tree: root, top: Math.max(ref, base) });
 };
 
 /**
  * Build the script.evaluate expression that reconstructs the AX tree in a
  * context, assigning refs from `base`.
- * @param {number} base - Starting ref offset (exclusive; first ref is base+1)
- * @returns {string} JS expression returning JSON { tree, count }
+ * @param {number} base - Highest ref already used (new refs start above it)
+ * @param {boolean} keep - Same document as the previous snapshot: keep its refs
+ * @returns {string} JS expression returning JSON { tree, top }
  */
-export function axSnapshotExpression(base) {
-  return `(${AX_FN.toString()})(${Number(base)}, ${JSON.stringify(REF_ATTR)})`;
+export function axSnapshotExpression(base, keep) {
+  return `(${AX_FN.toString()})(${Number(base)}, ${JSON.stringify(REF_ATTR)}, ${!!keep})`;
 }
