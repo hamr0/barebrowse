@@ -649,3 +649,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** with `flatten:true`, `Target.attachedToTarget` for a child's children arrives on the child session, but `attachFrameTracking()` only listened on the main session. The nested frame never entered `framesByFrameId`, so the N32 code in `ariaTree()` never saw it. Each child already called `Target.setAutoAttach`; nobody heard the result.
 **Fix:** `attachFrameTracking()` registers the attach/detach listeners through a small recursive `track(session)` applied to the main session and every child session, so nested entries are added and removed (no leak). `ariaTree()` needed no change: `sessionByFrameId` resolves the nested frame's parent (the mid OOPIF) and the splice does not depend on order.
 **Regression test:** `test/integration/connect.test.js`, "snapshot reads a nested cross-site iframe + clicks land in it (N33)"; red before.
+
+## [2026-11-18] Target's "Human verification" page was not flagged as a bot challenge (N34)
+
+**Symptom:** Target's HUMAN/PerimeterX block page (outer `Iframe` > `RootWebArea "Human verification"` > "Quick verification" + `Iframe "Human verification challenge"`) read `botBlocked` false, even though the iframe is now visible after N32/N33.
+**Root cause:** `hasChallengeFrame()` accepts a challenge-named iframe outside a dialog only on a small page (`nodeCount < 150`). The raw tree had 418 nodes, nearly all `ignored`; the snapshot it produces is about 30 lines.
+**Fix:** the small-page test counts only visible nodes of the tree (not `ignored`, not `InlineTextBox`/`LineBreak`), via a small `countVisible()` in `src/challenge.js`. Structural and language-free; the phrase lists and the `tinyPage` test are unchanged.
+**Regression test:** `test/unit/challenge.test.js`, "structural frame test counts visible nodes (N34)": the Target shape padded with 380 ignored nodes is flagged (red before), and the same shape with 160 visible nodes is not.

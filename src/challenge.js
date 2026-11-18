@@ -64,7 +64,7 @@ export function isChallengePage(tree, nodeCount, opts = {}) {
   const tinyPage = (nodeCount !== undefined && nodeCount < 30) || text.trim().length < 50;
   if (tinyPage && WEAK_PHRASES.some((p) => lower.includes(p))) return true;
 
-  return hasChallengeFrame(tree, nodeCount ?? countNodes(tree));
+  return hasChallengeFrame(tree);
 }
 
 const FRAME_ROLES = new Set(['Iframe', 'IframePresentational']);
@@ -76,10 +76,11 @@ const SMALL_PAGE = 150;
  * Structural challenge test: an iframe named like a challenge/captcha widget
  * is an interstitial when its surroundings are nothing else, i.e. it sits in a
  * dialog (or, with no dialog, on a small page) that holds no form field of its
- * own outside iframes (on a whole small page, no button either). A sign-in form carrying a reCAPTCHA/hCaptcha widget has
+ * own outside iframes (on a whole small page, no button either). Page size counts
+ * only nodes a snapshot would show: raw trees are mostly ignored nodes (N34). A sign-in form carrying a reCAPTCHA/hCaptcha widget has
  * fields, so it is not flagged.
  */
-function hasChallengeFrame(tree, nodeCount) {
+function hasChallengeFrame(tree) {
   let found = false;
   (function walk(node, scope) {
     if (found) return;
@@ -87,13 +88,20 @@ function hasChallengeFrame(tree, nodeCount) {
     if (FRAME_ROLES.has(node.role) && FRAME_NAME.test(node.name || '')) {
       // A whole small page also counts buttons as form (a "Submit" next to the widget);
       // inside a dialog they don't (a close button is not a form).
-      const area = here || (nodeCount < SMALL_PAGE ? tree : null);
+      const area = here || (countVisible(tree) < SMALL_PAGE ? tree : null);
       if (area && !hasField(area, !here)) found = true;
       return;
     }
     for (const c of node.children || []) walk(c, here);
   })(tree, null);
   return found;
+}
+
+/** Nodes formatTree() would print: not ignored, not InlineTextBox/LineBreak. */
+function countVisible(node) {
+  let n = node.ignored || node.role === 'InlineTextBox' || node.role === 'LineBreak' ? 0 : 1;
+  for (const c of node.children || []) n += countVisible(c);
+  return n;
 }
 
 /** Any form field in this subtree, not looking inside iframes (their content is the widget's). */

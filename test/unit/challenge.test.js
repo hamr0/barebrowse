@@ -159,4 +159,32 @@ describe('isChallengePage (H9)', () => {
       assert.deepEqual(mitigation(undefined), {});
     });
   });
+
+  describe('structural frame test counts visible nodes (N34)', () => {
+    const ignored = () => ({ role: 'generic', name: '', ignored: true, children: [] });
+    // Target "Human verification": outer unnamed Iframe > RootWebArea > text + challenge Iframe
+    const humanPage = (pad) => ({
+      role: 'RootWebArea', name: '', children: [
+        { role: 'Iframe', name: '', children: [
+          { role: 'RootWebArea', name: 'Human verification', children: [
+            { role: 'generic', name: '', children: [
+              leaf('Quick verification'),
+              { role: 'Iframe', name: 'Human verification challenge', children: [
+                { role: 'RootWebArea', name: 'Human verification challenge', children: [] } ] },
+            ] },
+            ...pad,
+          ] },
+        ] },
+      ] });
+
+    it('flags the challenge iframe when almost all nodes are ignored', () => {
+      const tree = humanPage(Array.from({ length: 380 }, ignored));
+      assert.equal(isChallengePage(tree, 418), true);
+    });
+
+    it('does NOT flag the same shape on a page with >150 visible nodes', () => {
+      const tree = humanPage(Array.from({ length: 160 }, (_, i) => leaf('item ' + i)));
+      assert.equal(isChallengePage(tree, 200), false);
+    });
+  });
 });
