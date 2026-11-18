@@ -35,7 +35,7 @@ after(() => new Promise((r) => srv.close(r)));
 let hasFirefox = false;
 try { findFirefox(); hasFirefox = true; } catch { /* skip below */ }
 
-const title = (page) => page.tabs().then((t) => t.find((x) => x.active)?.title ?? t[0].title);
+const title = (page) => page.tabs().then((t) => t.find((x) => x.url.startsWith(base)).title);
 
 for (const engine of ['chromium', 'firefox']) {
   describe(`hold (${engine})`, { skip: engine === 'firefox' && !hasFirefox }, () => {
