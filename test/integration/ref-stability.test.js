@@ -79,8 +79,8 @@ for (const engine of ['chromium', 'firefox']) {
         const ref = (n) => snap.match(new RegExp(`button "${n}"[^\\n]*\\[ref=(\\d+)\\]`))[1];
         const [ad, safe] = [ref('Ad'), ref('Safe')];
         await run(page, `document.getElementById('ad').remove()`);
-        await assert.rejects(() => page.drag(safe, ad), /no longer on the page/, 'gone target');
-        await assert.rejects(() => page.drag(ad, safe), /no longer on the page/, 'gone source');
+        await assert.rejects(() => page.drag(safe, ad), new RegExp('ref "' + ad + '"'), 'gone target names the target');
+        await assert.rejects(() => page.drag(ad, safe), new RegExp('ref "' + ad + '"'), 'gone source names the source');
       } finally { await page.close(); await srvr.close(); }
     });
 

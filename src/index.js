@@ -818,14 +818,16 @@ export async function connect(opts = {}) {
     },
 
     async drag(fromRef, toRef) {
-      await onRef(fromRef, (from) => onRef(toRef, async (to) => {
-        // Drag across different frames isn't physically meaningful — bail
-        // rather than mix sessions and produce nonsense coordinates.
-        if (from.session !== to.session) {
-          throw new Error('drag() between elements in different frames is not supported');
-        }
-        await cdpDrag(from.session, from.backendNodeId, to.backendNodeId);
-      }));
+      // Probe each node on its own so a gone one is named by its own ref.
+      const probe = (e) => e.session.send('DOM.scrollIntoViewIfNeeded', { backendNodeId: e.backendNodeId });
+      const from = await onRef(fromRef, (e) => probe(e).then(() => e));
+      const to = await onRef(toRef, (e) => probe(e).then(() => e));
+      // Drag across different frames isn't physically meaningful — bail
+      // rather than mix sessions and produce nonsense coordinates.
+      if (from.session !== to.session) {
+        throw new Error('drag() between elements in different frames is not supported');
+      }
+      await cdpDrag(from.session, from.backendNodeId, to.backendNodeId);
     },
 
     async upload(ref, files) {
