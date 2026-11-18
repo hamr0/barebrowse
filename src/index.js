@@ -1183,33 +1183,38 @@ async function createPage(cdp, stealth = false, pageOpts = {}) {
 async function attachFrameTracking(cdp, mainSession) {
   const framesByFrameId = new Map();
 
-  mainSession.on('Target.attachedToTarget', async (params) => {
-    if (params.targetInfo?.type !== 'iframe') return;
-    const childSessionId = params.sessionId;
-    const childSession = cdp.session(childSessionId);
-    // For OOPIF, targetId === frameId — see CDP Target domain docs.
-    const frameId = params.targetInfo.targetId;
-    framesByFrameId.set(frameId, { session: childSession, sessionId: childSessionId, targetId: frameId });
-    // Enable domains on the child so we can read its AX tree.
-    // Recursively auto-attach so nested OOPIF iframes also get sessions.
-    try { await childSession.send('Page.enable'); } catch {}
-    try { await childSession.send('DOM.enable'); } catch {}
-    try {
-      await childSession.send('Target.setAutoAttach', {
-        autoAttach: true, flatten: true, waitForDebuggerOnStart: false,
-      });
-    } catch {}
-    try { await childSession.send('Runtime.runIfWaitingForDebugger'); } catch {}
-  });
+  // With flatten:true, a session's attach/detach events arrive on THAT session,
+  // so every child session must be tracked too or nested OOPIFs go unseen.
+  const track = (sess) => {
+    sess.on('Target.attachedToTarget', async (params) => {
+      if (params.targetInfo?.type !== 'iframe') return;
+      const childSessionId = params.sessionId;
+      const childSession = cdp.session(childSessionId);
+      // For OOPIF, targetId === frameId — see CDP Target domain docs.
+      const frameId = params.targetInfo.targetId;
+      framesByFrameId.set(frameId, { session: childSession, sessionId: childSessionId, targetId: frameId });
+      track(childSession);
+      // Enable domains on the child so we can read its AX tree.
+      try { await childSession.send('Page.enable'); } catch {}
+      try { await childSession.send('DOM.enable'); } catch {}
+      try {
+        await childSession.send('Target.setAutoAttach', {
+          autoAttach: true, flatten: true, waitForDebuggerOnStart: false,
+        });
+      } catch {}
+      try { await childSession.send('Runtime.runIfWaitingForDebugger'); } catch {}
+    });
 
-  mainSession.on('Target.detachedFromTarget', (params) => {
-    for (const [frameId, entry] of framesByFrameId) {
-      if (entry.sessionId === params.sessionId) {
-        framesByFrameId.delete(frameId);
-        return;
+    sess.on('Target.detachedFromTarget', (params) => {
+      for (const [frameId, entry] of framesByFrameId) {
+        if (entry.sessionId === params.sessionId) {
+          framesByFrameId.delete(frameId);
+          return;
+        }
       }
-    }
-  });
+    });
+  };
+  track(mainSession);
 
   await mainSession.send('Target.setAutoAttach', {
     autoAttach: true, flatten: true, waitForDebuggerOnStart: false,

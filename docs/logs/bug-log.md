@@ -640,5 +640,12 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Symptom:** a cross-site iframe (outer `localhost`, inner `127.0.0.1`) appeared in `snapshot()` as an empty `Iframe` placeholder; its buttons/fields had no refs, so an agent could not see or click them (payment fields, captcha widgets, embeds). Headless and headed alike.
 **Root cause:** `ariaTree()` built its frame list only from the parent's `Page.getFrameTree`, which omits out-of-process iframes. `framesByFrameId` was populated correctly (the child session was registered), but nothing consulted it for frames the tree did not list. The H2 test used a `data:` iframe, which stays in-process and never hit this.
 **Fix:** `ariaTree()` appends every tracked OOPIF not already in the list, taking its `parentId` from the child session's own `Page.getFrameTree`; the existing splice step then works unchanged (`DOM.getFrameOwner` on the parent session gives the placeholder node; refs stay flat, `refMap` keeps the child session).
-**Known limit:** nested OOPIFs (cross-site inside cross-site) are not registered, since auto-attach events from a child session are not tracked; not verified.
+**Known limit:** nested OOPIFs (cross-site inside cross-site) were still unhandled; fixed in N33.
 **Regression test:** `test/integration/connect.test.js`, "snapshot reads a real cross-site iframe + clicks land in it (N32)"; red before.
+
+## [2026-11-18] Chromium snapshot showed nothing inside a nested cross-site iframe (N33)
+
+**Symptom:** outer `localhost` > iframe on `127.0.0.1` > iframe on `127.0.0.2`: the middle frame's content was visible, but the innermost `Iframe` placeholder stayed empty (no refs under it).
+**Root cause:** with `flatten:true`, `Target.attachedToTarget` for a child's children arrives on the child session, but `attachFrameTracking()` only listened on the main session. The nested frame never entered `framesByFrameId`, so the N32 code in `ariaTree()` never saw it. Each child already called `Target.setAutoAttach`; nobody heard the result.
+**Fix:** `attachFrameTracking()` registers the attach/detach listeners through a small recursive `track(session)` applied to the main session and every child session, so nested entries are added and removed (no leak). `ariaTree()` needed no change: `sessionByFrameId` resolves the nested frame's parent (the mid OOPIF) and the splice does not depend on order.
+**Regression test:** `test/integration/connect.test.js`, "snapshot reads a nested cross-site iframe + clicks land in it (N33)"; red before.
