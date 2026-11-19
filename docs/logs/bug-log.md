@@ -725,3 +725,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `navigateTo()` read the last `network.responseCompleted` after `browsingContext.navigate(wait:'complete')` resolved. On a large streamed page the result arrives before responseCompleted (about 200-400 ms earlier on Amazon), so there was no event; `network.responseStarted` always arrived first.
 **Fix:** when no responseCompleted exists for the navigation id, fall back to the last responseStarted for that id; `mitigation()` applies to whichever was used (`src/firefox-page.js`). reload/goBack/goForward do not report a status, and `consentClick` collects events over a 1 s window, so neither has the pattern.
 **Regression test:** `test/unit/firefox-goto-status.test.js` (fake BiDi with navigate resolving before responseCompleted; red before).
+
+## [2026-11-19] bareagent hold() passed the LLM's ms through unclamped (N45)
+
+**Symptom:** found by /self-review 2026-11-17, kept after the 2026-11-19 ledger pass: the bareagent `hold` tool forwarded `ms` as given while MCP and the daemon cap it at 30000. `ms: 3e9` overflowed Node's setTimeout (2^31), so the press was released after ~1 ms; a value just under the limit would block the tool call for days.
+**Root cause:** the clamp lived only in `mcp-server.js` and `src/daemon.js`; `src/bareagent.js` was never given it.
+**Fix:** same expression inline, `Math.min(Math.max(Number(ms) || 10000, 0), 30000)` (default 10000), and the `ms` parameter description says "max 30000" like the MCP schema.
+**Regression test:** `test/integration/bareagent-hold.test.js` (calls the tool with `ms: 3e9`; the page must see a ~30 s hold, red before with 3 ms; Chromium, takes ~30 s since the page is the only observer of the hold).
