@@ -34,6 +34,7 @@ import { readable as extractReadable } from './readable.js';
 import { navFailed, navBlocked, httpWarning, newTabNote, mitigation } from './navigation.js';
 import { createSiteLock, applySiteLockCDP } from './site-lock.js';
 import { assertNavigable, assertUploadAllowed } from './url-guard.js';
+import { clientSwapped } from './client-swap.js';
 import { join as pathJoin } from 'node:path';
 import { chmodSync } from 'node:fs';
 
@@ -615,7 +616,7 @@ export async function connect(opts = {}) {
     }).join('');
   }
 
-  return {
+  const api = {
     async goto(url, timeout = 30000) {
       assertNavigable(url, urlGuard);
       lock?.assertAllowed(url);
@@ -642,6 +643,7 @@ export async function connect(opts = {}) {
         setupDialogHandler(page.session);
         await suppressPermissions(cdp);
         currentlyHeaded = false;
+        await clientSwapped(api); // listeners (capture) must be on the new session before navigate
       }
 
       lastNavigation = await navigate(page, url, timeout, lock);
@@ -670,6 +672,7 @@ export async function connect(opts = {}) {
           await watchOpenedTabs(); // the new connection has no listener yet
           setupDialogHandler(page.session);
           await suppressPermissions(cdp);
+          await clientSwapped(api);
           lastNavigation = await navigate(page, url, timeout, lock);
           consentRecheck = null;
           if (opts.consent !== false && !(await dismissConsentTracked())) {
@@ -868,6 +871,7 @@ export async function connect(opts = {}) {
       lastNavigation = null; // the outcome belonged to the tab we left
       setupDialogHandler(page.session);
       try { await cdp.send('Target.detachFromTarget', { sessionId: oldSessionId }); } catch {}
+      await clientSwapped(api);
     },
 
     async waitFor(waitOpts = {}) {
@@ -1030,6 +1034,7 @@ export async function connect(opts = {}) {
       }
     },
   };
+  return api;
 }
 
 // --- Internal helpers ---

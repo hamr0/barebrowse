@@ -76,7 +76,10 @@ export async function attachBiDiCapture(bidi, { consoleLogs, networkLogs, pendin
   });
 }
 
-const wired = new WeakSet();
+import { onClientSwap } from './client-swap.js';
+
+const wired = new WeakSet(); // clients already carrying listeners
+const followed = new WeakSet(); // pages already registered for client swaps
 
 /**
  * Wire console + network capture onto a page (CDP or BiDi) and push into the
@@ -90,8 +93,13 @@ const wired = new WeakSet();
  * @returns {Promise<void>}
  */
 export async function attachCapture(page, { consoleLogs, networkLogs, pendingRequests }) {
-  // A hybrid headed relaunch swaps in a new CDP/BiDi client with no listeners.
-  // Callers re-run this after goto(); a client already wired is skipped.
+  // switchTab() and a hybrid headed relaunch swap in a new CDP session / BiDi
+  // client with no listeners. The page announces each swap (client-swap.js),
+  // before it navigates, and this re-runs; a client already wired is skipped.
+  if (!followed.has(page)) {
+    followed.add(page);
+    onClientSwap(page, () => attachCapture(page, { consoleLogs, networkLogs, pendingRequests }));
+  }
   const client = page.cdp || page.bidi;
   if (!client || wired.has(client)) return;
   wired.add(client);

@@ -209,7 +209,6 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   const handlers = {
     async goto({ url, timeout }) {
       const { status } = await page.goto(url, timeout || 30000);
-      await attachCapture(page, { consoleLogs, networkLogs, pendingRequests }); // a hybrid headed relaunch swapped the client
       settlePending = true;
       return isHttpError(status) ? { ok: true, status } : { ok: true };
     },

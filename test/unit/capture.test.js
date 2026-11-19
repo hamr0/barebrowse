@@ -5,6 +5,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { attachCapture, formatLogs } from '../../src/capture.js';
+import { clientSwapped } from '../../src/client-swap.js';
 
 function fakeCdp() {
   const handlers = new Map();
@@ -70,6 +71,29 @@ describe('attachCapture — client swap (hybrid relaunch)', () => {
     await attachCapture(page, s);
     b.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'two' }] });
     assert.deepEqual(s.consoleLogs.map((l) => l.args[0]), ['one', 'two']);
+  });
+});
+
+describe('attachCapture — follows a client swap without a re-attach call', () => {
+  it('rewires the new client when the page announces a swap (before it navigates)', async () => {
+    const a = fakeCdp();
+    const s = sinks();
+    const page = { cdp: a };
+    await attachCapture(page, s);
+    await attachCapture(page, s); // a second attach must not register a second hook
+    const b = fakeCdp();
+    page.cdp = b;
+    await clientSwapped(page);
+    b.emit('Runtime.exceptionThrown', { exceptionDetails: { text: 'x', exception: { description: 'Error: load-time' } } });
+    assert.deepEqual(s.consoleLogs.map((l) => l.args[0]), ['Error: load-time']);
+    assert.equal(b.sent.filter((m) => m === 'Runtime.enable').length, 1, 'wired once, not per attach call');
+  });
+
+  it('a dead new client does not throw out of the swap', async () => {
+    const page = { cdp: fakeCdp() };
+    await attachCapture(page, sinks());
+    page.cdp = { send() { throw new Error('dead'); }, on() {} };
+    await clientSwapped(page);
   });
 });
 
