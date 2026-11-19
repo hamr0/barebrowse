@@ -76,6 +76,8 @@ export async function attachBiDiCapture(bidi, { consoleLogs, networkLogs, pendin
   });
 }
 
+const wired = new WeakSet();
+
 /**
  * Wire console + network capture onto a page (CDP or BiDi) and push into the
  * caller's sinks.
@@ -88,6 +90,11 @@ export async function attachBiDiCapture(bidi, { consoleLogs, networkLogs, pendin
  * @returns {Promise<void>}
  */
 export async function attachCapture(page, { consoleLogs, networkLogs, pendingRequests }) {
+  // A hybrid headed relaunch swaps in a new CDP/BiDi client with no listeners.
+  // Callers re-run this after goto(); a client already wired is skipped.
+  const client = page.cdp || page.bidi;
+  if (!client || wired.has(client)) return;
+  wired.add(client);
   if (page.cdp) {
     await page.cdp.send('Runtime.enable');
     page.cdp.on('Runtime.consoleAPICalled', (params) => {
@@ -140,4 +147,29 @@ export async function attachCapture(page, { consoleLogs, networkLogs, pendingReq
   } else if (page.bidi) {
     await attachBiDiCapture(page.bidi, { consoleLogs, networkLogs, pendingRequests });
   }
+}
+
+/**
+ * One text line per entry, oldest first. Over `maxChars` the NEWEST entries
+ * are kept and the dropped count is stated.
+ *
+ * @param {'console'|'network'} kind
+ * @param {Array} entries
+ * @param {{level?: string, failed?: boolean, maxChars?: number}} [o]
+ * @returns {string}
+ */
+export function formatLogs(kind, entries, { level, failed, maxChars = 30000 } = {}) {
+  let rows = entries;
+  if (kind === 'console' && level) rows = rows.filter((l) => l.type === level);
+  if (kind === 'network' && failed) rows = rows.filter((l) => l.status === 0 || l.status >= 400);
+  if (!rows.length) return `no ${kind} entries`;
+  const lines = rows.map((l) => kind === 'console'
+    ? `[${l.type}] ${l.args.join(' ')}`
+    : `${l.status} ${l.method} ${l.url}${l.error ? ` ${l.error}` : ''}`);
+  let kept = lines.length;
+  let size = 0;
+  while (kept > 0 && size + lines[kept - 1].length + 1 <= maxChars) size += lines[--kept].length + 1;
+  const shown = lines.slice(kept);
+  const dropped = kept;
+  return (dropped ? `[${dropped} older entries dropped, over maxChars ${maxChars}]\n` : '') + shown.join('\n');
 }

@@ -4,7 +4,7 @@
  */
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { attachCapture } from '../../src/capture.js';
+import { attachCapture, formatLogs } from '../../src/capture.js';
 
 function fakeCdp() {
   const handlers = new Map();
@@ -52,5 +52,60 @@ describe('attachCapture — Chromium uncaught errors (N47)', () => {
     await attachCapture({ cdp }, s);
     cdp.emit('Runtime.consoleAPICalled', { type: 'warning', args: [{ value: 'careful' }] });
     assert.deepEqual(s.consoleLogs.map((l) => [l.type, l.args]), [['warning', ['careful']]]);
+  });
+});
+
+describe('attachCapture — client swap (hybrid relaunch)', () => {
+  it('skips a client already wired, wires a new one into the same sinks', async () => {
+    const a = fakeCdp();
+    const s = sinks();
+    const page = { cdp: a };
+    await attachCapture(page, s);
+    await attachCapture(page, s); // same client: no second listener
+    a.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'one' }] });
+    assert.equal(s.consoleLogs.length, 1);
+
+    const b = fakeCdp(); // relaunch: new client, no listeners
+    page.cdp = b;
+    await attachCapture(page, s);
+    b.emit('Runtime.consoleAPICalled', { type: 'log', args: [{ value: 'two' }] });
+    assert.deepEqual(s.consoleLogs.map((l) => l.args[0]), ['one', 'two']);
+  });
+});
+
+describe('formatLogs', () => {
+  const con = [
+    { type: 'error', args: ['Error: boom'] },
+    { type: 'warning', args: ['careful', 2] },
+  ];
+  const net = [
+    { status: 200, method: 'GET', url: 'http://a/ok' },
+    { status: 404, method: 'GET', url: 'http://127.0.0.1:3000/nope' },
+    { status: 0, method: 'GET', url: 'http://x/y', error: 'net::ERR_FAILED' },
+  ];
+
+  it('console: one line per entry, oldest first, level filter', () => {
+    assert.equal(formatLogs('console', con), '[error] Error: boom\n[warning] careful 2');
+    assert.equal(formatLogs('console', con, { level: 'warning' }), '[warning] careful 2');
+  });
+
+  it('network: status line, failed filter, error text', () => {
+    assert.equal(formatLogs('network', net, { failed: true }),
+      '404 GET http://127.0.0.1:3000/nope\n0 GET http://x/y net::ERR_FAILED');
+    assert.equal(formatLogs('network', net).split('\n').length, 3);
+  });
+
+  it('empty says so', () => {
+    assert.equal(formatLogs('console', []), 'no console entries');
+    assert.equal(formatLogs('network', net, { failed: true }).includes('404'), true);
+    assert.equal(formatLogs('console', con, { level: 'info' }), 'no console entries');
+  });
+
+  it('over maxChars keeps the newest and states the dropped count', () => {
+    const many = Array.from({ length: 10 }, (_, i) => ({ type: 'log', args: [`m${i}`] }));
+    const out = formatLogs('console', many, { maxChars: 30 }); // "[log] mN\n" = 9 chars -> 3 fit
+    assert.match(out, /^\[7 older entries dropped/);
+    assert.ok(out.endsWith('[log] m7\n[log] m8\n[log] m9'));
+    assert.ok(!out.includes('m6'));
   });
 });
