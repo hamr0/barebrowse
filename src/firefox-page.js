@@ -353,13 +353,13 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
   /**
    * browsingContext.navigate(wait:'complete') plus the navigation's outcome:
-   * the LAST network.responseCompleted for its navigation id in the top
-   * context (one fires per redirect hop; the final hop is where we landed),
-   * or the last responseStarted when the page is still streaming (N44).
+   * the latest network.responseStarted/responseCompleted for its navigation id
+   * in the top context, so a redirect, or a page still streaming, reports the
+   * final hop (N44/N46).
    * A network failure is rewrapped as a typed NAV_FAILED error. NS_BINDING_ABORTED
    * (a 204, or a download replacing nothing) is not a failure, as with CDP's
-   * ERR_ABORTED: no responseCompleted fires for it, so the status comes from
-   * the last network.responseStarted (a 204 reports 204, as on Chromium).
+   * ERR_ABORTED: the status comes from the latest event (a 204 reports 204,
+   * as on Chromium).
    * @returns {Promise<import('./navigation.js').NavigationOutcome>}
    */
   async function navigateTo(url, timeout) {
