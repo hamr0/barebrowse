@@ -1,5 +1,22 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- **MCP `logs` tool** (tier `r`): read the page's console or network log inline,
+  one line per entry, for debugging a page or your own app. `kind` (console |
+  network), `level` (console), `failed` (network: status 0 or >= 400), `clear`,
+  `maxChars` (newest entries kept). Logs belong to the browser session and
+  start empty after a release or engine switch.
+
+### Fixed
+
+- **Chromium console capture now includes uncaught errors and unhandled promise
+  rejections** (N47), logged as `{type:'error'}` like Firefox already did. This
+  also fixes CLI `console-logs` on Chromium. Capture is re-attached after a
+  hybrid headed relaunch, so logs keep flowing after a bot page.
+
 ## [0.30.2] - 2026-11-19
 
 ### Changed
