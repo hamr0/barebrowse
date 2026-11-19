@@ -16,6 +16,7 @@ import { cleanOld } from './src/output-clean.js';
 import { scopedCookiesForUrl } from './src/auth.js';
 import { isHttpError } from './src/navigation.js';
 import { overNote } from './src/zoom.js';
+import { attachCapture, formatLogs } from './src/capture.js';
 import { parseAllowHosts } from './src/site-lock.js';
 import { mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
@@ -124,6 +125,8 @@ export function saveSnapshot(text, { prefix = 'page', ext = 'yml' } = {}) {
 }
 
 let _page = null;
+// Console + network logs belong to the page: a new page starts empty (resetPage, switch_engine, idle release).
+let _logs = { consoleLogs: [], networkLogs: [], pendingRequests: new Map() };
 // A goto's load event is not the page's last request: the first snapshot after it waits
 // once for the network to go quiet (idle 500ms, capped 3s), like consentRecheck does once
 // per navigation. A goto followed by a click pays nothing. Library timing is unchanged.
@@ -161,6 +164,7 @@ function resetPage() {
   const p = _page;
   _page = null;
   _lastCookies = null;
+  _logs = { consoleLogs: [], networkLogs: [], pendingRequests: new Map() };
   if (p) p.close().catch(() => {});
 }
 
@@ -241,7 +245,7 @@ const TIER_RANK = { r: 0, rw: 1, rwx: 2 };
 export const TOOL_TIER = {
   browse: 'r', goto: 'r', back: 'r', forward: 'r', reload: 'r', scroll: 'r',
   snapshot: 'r', readable: 'r', screenshot: 'r', pdf: 'r', wait_for: 'r', tabs: 'r',
-  capabilities: 'r', assess: 'r',
+  capabilities: 'r', assess: 'r', logs: 'r',
   click: 'rw', type: 'rw', press: 'rw', select: 'rw', drag: 'rw', hover: 'rw', hold: 'rw', switch_engine: 'rw',
   upload: 'rwx', eval: 'rwx',
 };
@@ -302,7 +306,10 @@ async function getPage() {
     : { mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito, allowHosts };
   _pageConnecting = connect(connectOpts);
   try {
-    _page = await _pageConnecting;
+    const page = await _pageConnecting;
+    _logs = { consoleLogs: [], networkLogs: [], pendingRequests: new Map() };
+    await attachCapture(page, _logs);
+    _page = page;
     return _page;
   } catch (err) {
     _page = null;
@@ -562,6 +569,21 @@ export const TOOLS = [
     },
   },
   {
+    name: 'logs',
+    description: 'Read the page\'s console or network log, for debugging a page or your own app: console errors (including uncaught exceptions and unhandled rejections) and failed requests. One line per entry, oldest first. Logs accumulate since the browser opened or the last clear; a released or switched browser starts empty.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['console', 'network'], description: 'Which log to read' },
+        level: { type: 'string', description: 'Console only: keep one type, e.g. "error", "warning", "log"' },
+        failed: { type: 'boolean', description: 'Network only: keep failed requests (status 0 or >= 400)' },
+        clear: { type: 'boolean', description: 'Empty this log after reading it' },
+        maxChars: { type: 'number', description: 'Max chars to return. Over it, the newest entries are kept and the dropped count is stated. Default: 30000.' },
+      },
+      required: ['kind'],
+    },
+  },
+  {
     name: 'capabilities',
     description: 'Report which browser engine this session drives (chromium or firefox) and what it can do — no navigation, no side effects. Use it to answer "can this drive Firefox?" or "is this an authenticated session?". Returns the active engine + mode, that both engines are supported, how to switch (the switch_engine tool), and, if a page is already open, its live capability flags. Also returns `cookies`: the cookie injection of the last goto as { url, injected, cookies: ["name @ domain/path", ...], error? } (names, domains and paths only, never values; { url, injected: 0, incognito: true } under incognito; null before any goto or after the browser is released). Use it to tell "logged out" from "no cookie found" from "the cookie read failed".',
     inputSchema: { type: 'object', properties: {} },
@@ -661,9 +683,17 @@ async function handleToolCall(name, args) {
         _lastCookies = cookieReport(args.url, { cookies, error });
       }
       const { status } = await page.goto(args.url);
+      await attachCapture(page, _logs); // a hybrid headed relaunch inside goto swapped the client
       _settlePending = true;
       return isHttpError(status) ? `ok (HTTP ${status})` : 'ok';
     }, TIMEOUTS.goto);
+    case 'logs': {
+      const sink = args.kind === 'console' ? _logs.consoleLogs : args.kind === 'network' ? _logs.networkLogs : null;
+      if (!sink) throw new Error('kind must be "console" or "network"');
+      const text = formatLogs(args.kind, sink, { level: args.level, failed: args.failed, maxChars: args.maxChars ?? MAX_CHARS_DEFAULT });
+      if (args.clear) sink.length = 0;
+      return text;
+    }
     case 'snapshot': return withRetry(async () => {
       const page = await getPage();
       await settleOnce(page, args.settle);

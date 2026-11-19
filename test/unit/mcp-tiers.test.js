@@ -66,7 +66,7 @@ describe('tool annotations + tier map', () => {
   });
 
   it('the tier table: reads, interactions, upload/eval', () => {
-    for (const n of ['browse', 'goto', 'back', 'forward', 'reload', 'scroll', 'snapshot', 'readable', 'screenshot', 'pdf', 'wait_for', 'tabs', 'capabilities']) assert.equal(TOOL_TIER[n], 'r', n);
+    for (const n of ['browse', 'goto', 'back', 'forward', 'reload', 'scroll', 'snapshot', 'readable', 'screenshot', 'pdf', 'wait_for', 'tabs', 'capabilities', 'logs']) assert.equal(TOOL_TIER[n], 'r', n);
     for (const n of ['click', 'type', 'press', 'select', 'drag', 'hover', 'hold', 'switch_engine']) assert.equal(TOOL_TIER[n], 'rw', n);
     for (const n of ['upload', 'eval']) assert.equal(TOOL_TIER[n], 'rwx', n);
   });
