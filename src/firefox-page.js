@@ -363,13 +363,13 @@ export async function createFirefoxPage(bidi, opts = {}) {
    * @returns {Promise<import('./navigation.js').NavigationOutcome>}
    */
   async function navigateTo(url, timeout) {
-    const events = [];
+    const seen = []; // started and completed events, in arrival order
     const started = [];
     const off = bidi.on('network.responseCompleted', (e) => {
-      if (e.navigation && e.context === topContext) events.push(e);
+      if (e.navigation && e.context === topContext) seen.push(e);
     });
     const offStarted = bidi.on('network.responseStarted', (e) => {
-      if (e.navigation && e.context === topContext) started.push(e);
+      if (e.navigation && e.context === topContext) { seen.push(e); started.push(e); }
     });
     lock?.startGoto(topContext);
     try {
@@ -377,9 +377,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
         timeout, `goto(${url})`);
       // A big streamed page resolves navigate() before responseCompleted fires;
-      // responseStarted always arrives first, so it stands in (N44).
-      const last = events.filter((e) => e.navigation === res.navigation).pop()
-        || started.filter((e) => e.navigation === res.navigation).pop();
+      // responseStarted always arrives first, so it stands in (N44). The latest
+      // event wins, so a redirect to a streaming page reports the final hop (N46).
+      const last = seen.filter((e) => e.navigation === res.navigation).pop();
       return { url: last ? last.response.url : url, status: last ? last.response.status : 0, ...mitigation(last?.response.headers) };
     } catch (err) {
       // A lock-refused document (the URL or a redirect hop) surfaces as
