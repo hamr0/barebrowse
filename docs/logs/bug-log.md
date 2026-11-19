@@ -718,3 +718,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** `cdpDrag` touches the source node inside the inner `onRef(toRef, ...)`, whose catch translates a gone-node error first, so any gone node was reported as the target ref.
 **Fix:** `drag()` probes each node on its own, source first, through `onRef` (`DOM.scrollIntoViewIfNeeded`, the first call `cdpDrag` makes per node) before dragging; if both are gone the source is named. Firefox already named the right ref (its `resolveRef` runs per ref), so only the test was tightened.
 **Regression test:** `test/integration/ref-stability.test.js`, "drag with a gone target (or source)" now asserts the gone ref's number (both engines; Chromium red before).
+
+## [2026-11-19] Firefox goto() returned status 0 on big streamed pages (N44)
+
+**Symptom:** reported by fwd (F216, 2026-11-17), confirmed live 2026-11-19: Firefox `goto()` on Amazon search results returned `status: 0` (and missed a `cf-mitigated` header) though the page loaded fine.
+**Root cause:** `navigateTo()` read the last `network.responseCompleted` after `browsingContext.navigate(wait:'complete')` resolved. On a large streamed page the result arrives before responseCompleted (about 200-400 ms earlier on Amazon), so there was no event; `network.responseStarted` always arrived first.
+**Fix:** when no responseCompleted exists for the navigation id, fall back to the last responseStarted for that id; `mitigation()` applies to whichever was used (`src/firefox-page.js`). reload/goBack/goForward do not report a status, and `consentClick` collects events over a 1 s window, so neither has the pattern.
+**Regression test:** `test/unit/firefox-goto-status.test.js` (fake BiDi with navigate resolving before responseCompleted; red before).

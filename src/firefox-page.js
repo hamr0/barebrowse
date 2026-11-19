@@ -354,7 +354,8 @@ export async function createFirefoxPage(bidi, opts = {}) {
   /**
    * browsingContext.navigate(wait:'complete') plus the navigation's outcome:
    * the LAST network.responseCompleted for its navigation id in the top
-   * context (one fires per redirect hop; the final hop is where we landed).
+   * context (one fires per redirect hop; the final hop is where we landed),
+   * or the last responseStarted when the page is still streaming (N44).
    * A network failure is rewrapped as a typed NAV_FAILED error. NS_BINDING_ABORTED
    * (a 204, or a download replacing nothing) is not a failure, as with CDP's
    * ERR_ABORTED: no responseCompleted fires for it, so the status comes from
@@ -375,7 +376,10 @@ export async function createFirefoxPage(bidi, opts = {}) {
       const res = await withTimeout(
         bidi.send('browsingContext.navigate', { context: topContext, url, wait: 'complete' }),
         timeout, `goto(${url})`);
-      const last = events.filter((e) => e.navigation === res.navigation).pop();
+      // A big streamed page resolves navigate() before responseCompleted fires;
+      // responseStarted always arrives first, so it stands in (N44).
+      const last = events.filter((e) => e.navigation === res.navigation).pop()
+        || started.filter((e) => e.navigation === res.navigation).pop();
       return { url: last ? last.response.url : url, status: last ? last.response.status : 0, ...mitigation(last?.response.headers) };
     } catch (err) {
       // A lock-refused document (the URL or a redirect hop) surfaces as
