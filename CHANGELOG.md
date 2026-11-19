@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.30.1] - 2026-11-19
+
+### Fixed
+
+- **Firefox `goto()` no longer returns `status: 0` on big streamed pages**
+  (for example Amazon search results). The navigation used to resolve before
+  the response finished, so no status was recorded and a `cf-mitigated` header
+  could be missed. `goto()` now reads the status and the header from the
+  response as soon as it starts, and when the URL redirects (for example
+  `amazon.com` to `www.amazon.com`) it reports the final page, not the first
+  redirect hop.
+- **bareagent `hold` tool caps `ms` at 30000** (default 10000), like the MCP
+  server and the daemon. Before, a huge value overflowed Node's timer and the
+  hold released after about 1 ms.
+
 ## [0.30.0] - 2026-11-18
 
 ### Changed
