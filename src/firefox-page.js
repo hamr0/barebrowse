@@ -208,7 +208,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
     });
   }
 
-  /** Mark the elements behind `within` ref selectors (in their frame) before a rebuild renumbers the refs. */
+  /** Mark the elements behind `within` ref selectors (in their frame) before the rebuild, so their refs can be read back after it. */
   async function markRefs(selectors) {
     const marks = new Map(); // old ref → context
     for (const { ref } of selectors) {
@@ -517,8 +517,9 @@ export async function createFirefoxPage(bidi, opts = {}) {
 
     /** @param {import('./index.js').SnapshotOptions|false} [pruneOpts] */
     async snapshot(pruneOpts = {}) {
-      // A `within` ref names an element of the previous snapshot. Refs renumber
-      // on every build, so mark the elements now and read their new refs after it.
+      // A `within` ref names an element of the previous snapshot. Mark the elements
+      // now and read their refs after the build: a kept document reuses its refs, a
+      // new one starts over, and a mark that did not survive means the element is gone.
       const within = (pruneOpts || undefined)?.within;
       const selectors = within != null ? parseWithin(within) : undefined;
       const marks = await markRefs(selectors || []);
