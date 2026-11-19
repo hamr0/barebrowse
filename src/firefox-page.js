@@ -364,12 +364,11 @@ export async function createFirefoxPage(bidi, opts = {}) {
    */
   async function navigateTo(url, timeout) {
     const seen = []; // started and completed events, in arrival order
-    const started = [];
     const off = bidi.on('network.responseCompleted', (e) => {
       if (e.navigation && e.context === topContext) seen.push(e);
     });
     const offStarted = bidi.on('network.responseStarted', (e) => {
-      if (e.navigation && e.context === topContext) { seen.push(e); started.push(e); }
+      if (e.navigation && e.context === topContext) seen.push(e);
     });
     lock?.startGoto(topContext);
     try {
@@ -389,7 +388,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
       const m = /^BiDi error: unknown error — (?:Error: )?(.+)$/.exec(err.message);
       if (!m) throw err;
       if (m[1] === 'NS_BINDING_ABORTED') {
-        const last = started.pop();
+        const last = seen.pop();
         return { url: last ? last.response.url : url, status: last ? last.response.status : 0 };
       }
       throw navFailed(url, m[1]);
