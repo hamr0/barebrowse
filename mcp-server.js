@@ -304,16 +304,22 @@ async function getPage() {
   const connectOpts = _engine === 'firefox'
     ? { engine: 'firefox', mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito, allowHosts }
     : { mode: process.env.BAREBROWSE_MODE || 'hybrid', incognito, allowHosts };
-  _pageConnecting = connect(connectOpts);
-  try {
-    const page = await _pageConnecting;
-    _logs = { consoleLogs: [], networkLogs: [], pendingRequests: new Map() };
-    await attachCapture(page, _logs);
+  // _pageConnecting spans connect AND capture wiring: a switch/reset that awaits it
+  // must see _page already assigned, or it has nothing to close and the browser leaks.
+  _pageConnecting = (async () => {
+    const page = await connect(connectOpts);
+    try {
+      _logs = { consoleLogs: [], networkLogs: [], pendingRequests: new Map() };
+      await attachCapture(page, _logs);
+    } catch (err) {
+      await page.close().catch(() => {});
+      throw err;
+    }
     _page = page;
-    return _page;
-  } catch (err) {
-    _page = null;
-    throw err;
+    return page;
+  })();
+  try {
+    return await _pageConnecting;
   } finally {
     _pageConnecting = null;
   }
