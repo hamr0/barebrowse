@@ -15,6 +15,9 @@ import { overNote } from './zoom.js';
 import { formatReadable } from './readable.js';
 import { cleanOld } from './output-clean.js';
 import { isHttpError } from './navigation.js';
+import { attachCapture, attachBiDiCapture } from './capture.js';
+
+export { attachBiDiCapture };
 
 /** Owner-only file write helper — daemon artifacts can hold authenticated content. */
 function writeFilePrivate(path, data) {
@@ -94,78 +97,6 @@ export function deserializeBiDi(r) {
     // value if BiDi provided one, else the type name (matches CDP's coarseness).
     default: return r.value !== undefined ? r.value : r.type;
   }
-}
-
-/**
- * Wire Firefox/BiDi console + network capture onto the daemon's log arrays.
- * The BiDi analogue of the CDP `Runtime.consoleAPICalled` / `Network.*`
- * capture — measured event shapes: `log.entryAdded` carries {method, level,
- * args:[{type,value}], text}; the network events key in-flight requests by
- * `request.request` and expose `response.{status,statusText,mimeType}` /
- * top-level `errorText`. Pure + exported so the shape mapping (warn→warning
- * normalization, arg extraction, orphan-safe response/error pairing) is
- * unit-testable against a fake bidi without launching Firefox.
- *
- * @param {object} bidi - BiDi client (async .subscribe(), .on(method, cb))
- * @param {object} sinks
- * @param {Array} sinks.consoleLogs - push-target for console entries
- * @param {Array} sinks.networkLogs - push-target for completed/failed requests
- * @param {Map} sinks.pendingRequests - in-flight request bookkeeping
- * @returns {Promise<void>}
- */
-export async function attachBiDiCapture(bidi, { consoleLogs, networkLogs, pendingRequests }) {
-  await bidi.subscribe([
-    'log.entryAdded',
-    'network.beforeRequestSent',
-    'network.responseCompleted',
-    'network.fetchError',
-  ]);
-
-  bidi.on('log.entryAdded', (e) => {
-    consoleLogs.push({
-      // Map BiDi's console method (or level for uncaught JS errors) to CDP's
-      // `type` vocabulary so `console-logs --level warning` matches on both
-      // engines — BiDi says 'warn', CDP says 'warning'.
-      type: e.method === 'warn' ? 'warning' : (e.method || e.level),
-      timestamp: new Date().toISOString(),
-      // Primitive args carry a usable `.value`; objects/arrays/functions carry a
-      // nested {type,value} serialization we must NOT splat into the log (it's
-      // deep junk) — fall back to the type name, mirroring the CDP capture which
-      // logs a RemoteObject's `.description` ("Object") for non-primitives.
-      args: Array.isArray(e.args) && e.args.length
-        ? e.args.map((a) => (a.value !== undefined && typeof a.value !== 'object' ? a.value : a.type))
-        : [e.text],
-    });
-  });
-
-  bidi.on('network.beforeRequestSent', (e) => {
-    pendingRequests.set(e.request.request, {
-      url: e.request.url,
-      method: e.request.method,
-      timestamp: new Date().toISOString(),
-    });
-  });
-
-  bidi.on('network.responseCompleted', (e) => {
-    const req = pendingRequests.get(e.request.request);
-    if (req) {
-      networkLogs.push({
-        ...req,
-        status: e.response.status,
-        statusText: e.response.statusText,
-        mimeType: e.response.mimeType,
-      });
-      pendingRequests.delete(e.request.request);
-    }
-  });
-
-  bidi.on('network.fetchError', (e) => {
-    const req = pendingRequests.get(e.request.request);
-    if (req) {
-      networkLogs.push({ ...req, status: 0, error: e.errorText });
-      pendingRequests.delete(e.request.request);
-    }
-  });
 }
 
 /**
@@ -252,56 +183,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
   const networkLogs = [];
   const pendingRequests = new Map();
 
-  // Wire capture onto a page; called again for the new page after a switch.
-  async function attachCapture(page) {
-    if (page.cdp) {
-      await page.cdp.send('Runtime.enable');
-      page.cdp.on('Runtime.consoleAPICalled', (params) => {
-        consoleLogs.push({
-          type: params.type,
-          timestamp: new Date().toISOString(),
-          args: params.args.map((a) => a.value ?? a.description ?? a.type),
-        });
-      });
-
-      // Network log capture (Network.enable already called by connect)
-      page.cdp.on('Network.requestWillBeSent', (params) => {
-        pendingRequests.set(params.requestId, {
-          url: params.request.url,
-          method: params.request.method,
-          timestamp: new Date().toISOString(),
-        });
-      });
-
-      page.cdp.on('Network.responseReceived', (params) => {
-        const req = pendingRequests.get(params.requestId);
-        if (req) {
-          networkLogs.push({
-            ...req,
-            status: params.response.status,
-            statusText: params.response.statusText,
-            mimeType: params.response.mimeType,
-          });
-          pendingRequests.delete(params.requestId);
-        }
-      });
-
-      page.cdp.on('Network.loadingFailed', (params) => {
-        const req = pendingRequests.get(params.requestId);
-        if (req) {
-          networkLogs.push({
-            ...req,
-            status: 0,
-            error: params.errorText,
-          });
-          pendingRequests.delete(params.requestId);
-        }
-      });
-    } else if (page.bidi) {
-      await attachBiDiCapture(page.bidi, { consoleLogs, networkLogs, pendingRequests });
-    }
-  }
-  await attachCapture(page);
+  await attachCapture(page, { consoleLogs, networkLogs, pendingRequests });
 
   // The first snapshot after a goto waits once for the network to go quiet (idle 500ms,
   // capped 3s): a page's load event is not its last request. Library timing is unchanged.
@@ -552,7 +434,7 @@ export async function runDaemon(opts, outputDir, initialUrl) {
       // keeps serving. Only then retire the old one.
       const next = await connectPage(engine);
       try {
-        await attachCapture(next);
+        await attachCapture(next, { consoleLogs, networkLogs, pendingRequests });
         if (initialUrl && opts.cookies !== false) {
           try { await next.injectCookies(initialUrl, { browser: opts.browser }); } catch { /* no cookies */ }
         }

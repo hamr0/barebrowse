@@ -739,3 +739,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the N44 fallback only used `responseStarted` when no `responseCompleted` existed for the navigation id. With a redirect, hop 1 had completed while the final hop had only started when `navigate()` resolved, so the completed-first lookup picked hop 1.
 **Fix:** `navigateTo()` keeps one arrival-ordered list of started and completed events and takes the latest for the navigation id; url, status and `mitigation()` all come from it (`src/firefox-page.js`). The NS_BINDING_ABORTED branch still uses the started-only list.
 **Regression test:** `test/unit/firefox-goto-status.test.js`, "reports the final redirect hop when it is still streaming" (fake BiDi: started 302, completed 302, started 200; red before with 302).
+
+## [2026-11-19] Chromium console capture missed uncaught errors and unhandled rejections (N47)
+
+**Symptom:** found while planning an MCP `logs` tool: on Chromium, `console-logs` showed `log` and `warning` but never `throw new Error('boom')` in a setTimeout or `Promise.reject(new Error('rejected'))`. Firefox already logged both as `{type:'error', args:['Error: boom']}`.
+**Root cause:** the capture only listened to `Runtime.consoleAPICalled`; uncaught errors and rejections arrive as `Runtime.exceptionThrown` (confirmed by POC: it fires for both).
+**Fix:** capture moved from `src/daemon.js` to `src/capture.js` (shared with the MCP server) and now also handles `Runtime.exceptionThrown`: `{type:'error', timestamp, args:[first line of exception.description, fallback exceptionDetails.text]}`. Affects CLI `console-logs` on Chromium.
+**Regression test:** `test/unit/capture.test.js` (fake CDP emitting `Runtime.exceptionThrown`; red before).
