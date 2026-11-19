@@ -78,7 +78,7 @@ const snapshot = await browse('https://example.com', {
 | `press(key)` | key: string | void | Special key: Enter, Tab, Escape, Backspace, Delete, arrows, Home, End, PageUp, PageDown, Space |
 | `scroll(deltaY)` | deltaY: number | void | Mouse wheel. Positive = down, negative = up. MCP/bareagent also accept `direction: "up"/"down"`. |
 | `hover(ref)` | ref: string | void | Move mouse to element center |
-| `hold(ref, ms?)` | ref: string, ms: number (default 10000) | void | Press, wait `ms`, release: for "Press & Hold" bot challenges. Plain press, no mouse path. MCP/daemon cap it at 30s. |
+| `hold(ref, ms?)` | ref: string, ms: number (default 10000) | void | Press, wait `ms`, release: for "Press & Hold" bot challenges. Plain press, no mouse path. MCP, the daemon and the bareagent adapter cap it at 30s. |
 | `select(ref, value)` | ref: string, value: string | void | Set `<select>` value or click custom dropdown option |
 | `drag(fromRef, toRef)` | fromRef: string, toRef: string | void | Drag from one element to another |
 | `upload(ref, files)` | ref: string, files: string[] | void | Set files on a file input (absolute paths) |
