@@ -143,3 +143,24 @@ describe('formatLogs', () => {
     assert.ok(only.startsWith('[error] xxxx') && !only.includes('dropped'));
   });
 });
+
+describe('attachCapture — failed attach is retryable', () => {
+  it('a throw in Runtime.enable leaves the client unwired; a re-attach wires it', async () => {
+    const cdp = fakeCdp();
+    let calls = 0;
+    cdp.send = async function (m) { this.sent.push(m); if (m === 'Runtime.enable' && calls++ === 0) throw new Error('gone'); };
+    const s = sinks();
+    await assert.rejects(attachCapture({ cdp }, s), /gone/);
+    await attachCapture({ cdp }, s);
+    cdp.emit('Runtime.exceptionThrown', { exceptionDetails: { text: 'x', exception: { description: 'Error: late' } } });
+    assert.deepEqual(s.consoleLogs.map((l) => l.args[0]), ['Error: late']);
+  });
+
+  it('concurrent attaches on one client register listeners once', async () => {
+    const cdp = fakeCdp();
+    const s = sinks();
+    await Promise.all([attachCapture({ cdp }, s), attachCapture({ cdp }, s)]);
+    cdp.emit('Runtime.exceptionThrown', { exceptionDetails: { text: 'x', exception: { description: 'Error: once' } } });
+    assert.equal(s.consoleLogs.length, 1);
+  });
+});
