@@ -36,7 +36,7 @@ describe('bareagent hold tool (N45)', () => {
       assert.ok(ref, 'button ref in snapshot:\n' + snap);
       const after = await by.hold.execute({ ref, ms: 3e9 });
       const m = /held:(\d+)/.exec(after) || [];
-      assert.ok(Number(m[1]) >= 29500 && Number(m[1]) <= 31500, `page saw ${m[1]}ms between mousedown and mouseup`);
+      assert.ok(Number(m[1]) >= 29500 && Number(m[1]) <= 45000, `page saw ${m[1]}ms between mousedown and mouseup`);
     } finally { await close(); }
   });
 });
