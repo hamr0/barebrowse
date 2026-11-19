@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.30.2] - 2026-11-19
+
+### Changed
+
+- **README rewritten.** It now leads with what barebrowse is good at (pruned
+  by default, act/read/data modes, zoom, your own logins, bot handling,
+  Chromium and Firefox), then shows the three ways to use it, the savings, a
+  short comparison, one table of all tools, and how to turn a flow into a
+  script. The long option-by-option text moved out; `barebrowse.context.md`
+  holds the full reference. No code changes.
+
 ## [0.30.1] - 2026-11-19
 
 ### Fixed
