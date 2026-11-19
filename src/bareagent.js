@@ -192,11 +192,11 @@ export function createBrowseTools(opts = {}) {
         type: 'object',
         properties: {
           ref: { type: 'string', description: 'Element ref from snapshot' },
-          ms: { type: 'number', description: 'Hold duration in milliseconds (default 10000)' },
+          ms: { type: 'number', description: 'Hold duration in milliseconds (default 10000, max 30000)' },
         },
         required: ['ref'],
       },
-      execute: async ({ ref, ms }) => actionAndSnapshot((page) => page.hold(ref, ms)),
+      execute: async ({ ref, ms }) => actionAndSnapshot((page) => page.hold(ref, Math.min(Math.max(Number(ms) || 10000, 0), 30000))),
     },
     {
       name: 'back',
