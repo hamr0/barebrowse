@@ -689,7 +689,6 @@ async function handleToolCall(name, args) {
         _lastCookies = cookieReport(args.url, { cookies, error });
       }
       const { status } = await page.goto(args.url);
-      await attachCapture(page, _logs); // a hybrid headed relaunch inside goto swapped the client
       _settlePending = true;
       return isHttpError(status) ? `ok (HTTP ${status})` : 'ok';
     }, TIMEOUTS.goto);

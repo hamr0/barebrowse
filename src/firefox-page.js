@@ -32,6 +32,7 @@ import { normRef } from './ref.js';
 import { HIT_TEST_FN, blockedError } from './interact.js';
 import { withTimeout } from './with-timeout.js';
 import { navFailed, navBlocked, httpWarning, newTabNote, mitigation } from './navigation.js';
+import { clientSwapped } from './client-swap.js';
 
 // Isolated BiDi realm holding the per-document stale-ref token (page script cannot reach it).
 const DOC_SANDBOX = 'barebrowse';
@@ -498,6 +499,7 @@ export async function createFirefoxPage(bidi, opts = {}) {
           currentlyHeaded = true;
           refContexts = new Map();
           await setupSubscriptions();      // re-wire dialogs/downloads/load on the new bidi
+          await clientSwapped(page);       // capture etc. must listen on the new client before navigate
           // Re-inject cookies into the fresh profile BEFORE navigating, so the
           // headed retry is authenticated (the relaunch is a new Firefox profile
           // — the pre-relaunch session's cookies are gone).
