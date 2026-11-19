@@ -15,9 +15,7 @@ import { overNote } from './zoom.js';
 import { formatReadable } from './readable.js';
 import { cleanOld } from './output-clean.js';
 import { isHttpError } from './navigation.js';
-import { attachCapture, attachBiDiCapture } from './capture.js';
-
-export { attachBiDiCapture };
+import { attachCapture } from './capture.js';
 
 /** Owner-only file write helper — daemon artifacts can hold authenticated content. */
 function writeFilePrivate(path, data) {

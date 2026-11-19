@@ -11,7 +11,8 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildDaemonArgs, attachBiDiCapture, deserializeBiDi } from '../../src/daemon.js';
+import { buildDaemonArgs, deserializeBiDi } from '../../src/daemon.js';
+import { attachBiDiCapture } from '../../src/capture.js';
 
 const CLI = '/x/cli.js';
 
