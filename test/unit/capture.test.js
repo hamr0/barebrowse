@@ -108,4 +108,14 @@ describe('formatLogs', () => {
     assert.ok(out.endsWith('[log] m7\n[log] m8\n[log] m9'));
     assert.ok(!out.includes('m6'));
   });
+
+  it('a newest entry longer than maxChars is truncated, not dropped; older ones are counted', () => {
+    const rows = [{ type: 'log', args: ['old'] }, { type: 'error', args: ['x'.repeat(100)] }];
+    const out = formatLogs('console', rows, { maxChars: 50 });
+    assert.match(out, /^\[1 older entries dropped/);
+    assert.ok(out.includes('[error] xxxx'), 'newest entry is shown');
+    assert.match(out, /truncated/);
+    const only = formatLogs('console', [rows[1]], { maxChars: 50 });
+    assert.ok(only.startsWith('[error] xxxx') && !only.includes('dropped'));
+  });
 });

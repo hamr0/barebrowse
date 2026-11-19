@@ -151,7 +151,7 @@ export async function attachCapture(page, { consoleLogs, networkLogs, pendingReq
 
 /**
  * One text line per entry, oldest first. Over `maxChars` the NEWEST entries
- * are kept and the dropped count is stated.
+ * are kept and the dropped count is stated; a newest entry over `maxChars` is truncated.
  *
  * @param {'console'|'network'} kind
  * @param {Array} entries
@@ -170,6 +170,12 @@ export function formatLogs(kind, entries, { level, failed, maxChars = 30000 } = 
   let size = 0;
   while (kept > 0 && size + lines[kept - 1].length + 1 <= maxChars) size += lines[--kept].length + 1;
   const shown = lines.slice(kept);
+  // The newest entry alone exceeds maxChars: show its start rather than nothing.
+  if (!shown.length) {
+    const last = lines[lines.length - 1];
+    shown.push(`${last.slice(0, maxChars)} …[truncated, ${last.length - maxChars} more chars]`);
+    kept--;
+  }
   const dropped = kept;
   return (dropped ? `[${dropped} older entries dropped, over maxChars ${maxChars}]\n` : '') + shown.join('\n');
 }
