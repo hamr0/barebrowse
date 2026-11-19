@@ -14,8 +14,11 @@
 
 - **Chromium console capture now includes uncaught errors and unhandled promise
   rejections** (N47), logged as `{type:'error'}` like Firefox already did. This
-  also fixes CLI `console-logs` on Chromium. Capture is re-attached after a
-  hybrid headed relaunch, so logs keep flowing after a bot page.
+  also fixes CLI `console-logs` on Chromium. Capture follows every browser-session
+  change: Chromium `switchTab` and the hybrid headed relaunch, re-attached
+  before the page loads, so logs keep flowing after a tab switch or a bot page.
+  Pages from `createTab()` are not captured, only the main page and tabs you
+  `switchTab` to.
 
 ## [0.30.2] - 2026-11-19
 
