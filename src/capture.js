@@ -102,7 +102,18 @@ export async function attachCapture(page, { consoleLogs, networkLogs, pendingReq
   }
   const client = page.cdp || page.bidi;
   if (!client || wired.has(client)) return;
+  // Marked before the first await so a concurrent attach cannot double-register;
+  // cleared if the enable throws so a later swap hook can retry this client.
   wired.add(client);
+  try {
+    await enableAndListen(page, { consoleLogs, networkLogs, pendingRequests });
+  } catch (e) {
+    wired.delete(client);
+    throw e;
+  }
+}
+
+async function enableAndListen(page, { consoleLogs, networkLogs, pendingRequests }) {
   if (page.cdp) {
     await page.cdp.send('Runtime.enable');
     page.cdp.on('Runtime.consoleAPICalled', (params) => {
