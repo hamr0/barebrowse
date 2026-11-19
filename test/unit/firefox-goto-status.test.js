@@ -77,4 +77,17 @@ describe('Firefox goto() status while the page is still streaming (N44)', () => 
     }), { consent: false });
     assert.equal((await page.goto('http://test.local/s')).status, 0);
   });
+
+  it('reports the final redirect hop when it is still streaming (N46)', async () => {
+    const hop = (status, url) => ({ ...ev(status), response: { url, status, headers: [] } });
+    const page = await createFirefoxPage(fakeBidi((emit) => {
+      emit('network.responseStarted', hop(302, 'http://t/a'));
+      emit('network.responseCompleted', hop(302, 'http://t/a'));
+      emit('network.responseStarted', hop(200, 'http://t/final')); // no completion yet
+      return { navigation: 'nav1' };
+    }), { consent: false });
+    const r = await page.goto('http://t/a');
+    assert.equal(r.status, 200);
+    assert.equal(r.url, 'http://t/final');
+  });
 });

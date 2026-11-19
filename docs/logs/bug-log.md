@@ -732,3 +732,10 @@ Same pass also cleaned up two unrelated nits flagged by the same review: `mcp-se
 **Root cause:** the clamp lived only in `mcp-server.js` and `src/daemon.js`; `src/bareagent.js` was never given it.
 **Fix:** same expression inline, `Math.min(Math.max(Number(ms) || 10000, 0), 30000)` (default 10000), and the `ms` parameter description says "max 30000" like the MCP schema.
 **Regression test:** `test/integration/bareagent-hold.test.js` (calls the tool with `ms: 3e9`; the page must see a ~30 s hold, red before with 3 ms; Chromium, takes ~30 s since the page is the only observer of the hold).
+
+## [2026-11-19] Firefox goto() reported the first redirect hop when the final page was still streaming (N46)
+
+**Symptom:** found by /self-review 2026-11-19, reproduced live on Firefox: `goto('https://amazon.com/s?k=lamp')` returned `{url: 'https://amazon.com/s?k=lamp', status: 301}`; the real page is `https://www.amazon.com/s?k=lamp`, 200.
+**Root cause:** the N44 fallback only used `responseStarted` when no `responseCompleted` existed for the navigation id. With a redirect, hop 1 had completed while the final hop had only started when `navigate()` resolved, so the completed-first lookup picked hop 1.
+**Fix:** `navigateTo()` keeps one arrival-ordered list of started and completed events and takes the latest for the navigation id; url, status and `mitigation()` all come from it (`src/firefox-page.js`). The NS_BINDING_ABORTED branch still uses the started-only list.
+**Regression test:** `test/unit/firefox-goto-status.test.js`, "reports the final redirect hop when it is still streaming" (fake BiDi: started 302, completed 302, started 200; red before with 302).
