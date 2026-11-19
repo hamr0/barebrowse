@@ -143,7 +143,7 @@ The same flow works as CLI commands in a shell script.
 
 | Group | Tools |
 |------|-------|
-| Read | `browse`, `goto`, `snapshot` (modes, map, zoom, links), `readable`, `screenshot`, `pdf` |
+| Read | `browse`, `goto`, `snapshot` (modes, map, zoom, links), `readable`, `screenshot`, `pdf`, `logs` (console and network, MCP; CLI `console-logs` / `network-log`) |
 | Act | `click`, `type`, `press`, `scroll`, `hover`, `hold`, `select`, `drag`, `upload` |
 | Move | `back`, `forward`, `reload`, `tabs`, `switchTab`, `waitFor`, `waitForNavigation`, `waitForNetworkIdle` |
 | Session | `injectCookies`, `saveState`, `switch_engine`, `capabilities`, `close` |
