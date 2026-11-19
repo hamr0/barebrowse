@@ -15,320 +15,169 @@
   <img src="https://img.shields.io/badge/license-Apache%202.0-2a4f8c" alt="license: Apache 2.0">
 </p>
 
-> Your agent browses like you do -- same browser, same logins, same cookies.
-> Prunes pages down to what matters. 40-90% fewer tokens, zero wasted context.
+> A real browser for AI agents. URL in, pruned page out.
+> Same browser, same logins. 40-90% fewer tokens.
 
----
+## What it's good at
 
-## What this is
-
-barebrowse gives your AI agent a real browser. Navigate, read, interact, move on.
-
-It uses the browser you already have -- your sessions, your cookies. Pages come back stripped to what matters -- 40-90% fewer tokens than raw output.
-
-No Playwright. No bundled browser. No 200MB download. Two tiny dependencies (`ws` + Mozilla Readability).
+- **Pruned by default.** The agent never sees the raw page. It gets a short accessibility tree with `[ref=N]` handles to click and type on.
+- **Pick how to read the page.** `act` for doing, `read` for reading, `data` for clean tables and lists, `readable()` for article text.
+- **Zoom.** On a big page, ask for a map of its boxes, then read only the box you need.
+- **Your logins.** Cookies come from your own Chromium or Firefox. No login scripts.
+- **Gets past bots, reasonably.** Stealth patches, auto fallback to a visible browser, cookie-banner dismissal (29 languages), Press & Hold. A blocked page is flagged, not hidden. Good enough, not unbeatable.
+- **Chromium and Firefox, equally.** CDP for Chromium, WebDriver BiDi for Firefox. Same API, same output.
+- **Light.** No Playwright, no bundled browser, no 200MB download. Two small deps (`ws`, `@mozilla/readability`).
+- **Three ways in.** Library, MCP server, CLI.
 
 ## Install
 
-```
+```bash
 npm install barebrowse
 ```
 
-Requires Node.js >= 22 and any installed Chromium-based browser.
+Needs Node.js >= 22 and any Chromium-based browser (Chrome, Chromium, Brave, Edge, Vivaldi) or Firefox >= 121. Ships TypeScript types.
 
-Ships with TypeScript types (generated from JSDoc) — autocomplete and type-checking work out of the box, no `@types/barebrowse` needed. The library is vanilla JS with no build step.
+## Use it
 
-## Three ways to use it
+**Library**
 
-### 1. CLI session -- for coding agents and quick testing
+```js
+import { browse, connect } from 'barebrowse';
+
+const snap = await browse('https://news.ycombinator.com');   // one shot
+
+const page = await connect();                                 // a session
+await page.goto('https://github.com/nodejs/node/issues');
+console.log(await page.snapshot({ mode: 'data' }));
+await page.click('12');
+await page.close();
+```
+
+**MCP** (Claude Code, Claude Desktop, Cursor, VS Code)
 
 ```bash
-barebrowse open https://example.com    # Start session + navigate
-barebrowse snapshot                    # ARIA snapshot → .barebrowse/page-*.yml
-barebrowse readable                    # Clean article text → .barebrowse/article-*.txt
-barebrowse click 8                     # Click element
-barebrowse close                       # End session
+claude mcp add barebrowse -- npx barebrowse mcp   # Claude Code
+npx barebrowse install                            # Claude Desktop / Cursor
 ```
 
-Outputs go to `.barebrowse/` as files -- agents read them with their file tools, no token waste in tool responses. Output files older than 7 days are auto-removed at session start; saved state files (`state-*.json`) are kept.
-
-**Teach your agent the commands** by installing the skill file (a markdown reference the agent reads as context). The CLI tool itself still needs `npm install barebrowse` -- the skill just teaches the agent how to use it.
-
-**Claude Code:** Copy `commands/barebrowse/SKILL.md` to `.claude/skills/barebrowse/SKILL.md` (project) or run `barebrowse install --skill` (global).
-
-**Other agents:** Copy `commands/barebrowse.md` to your agent's command/skill directory.
-
-For writing your own skill files for other CLI tools: [docs/product/skill-template.md](docs/product/skill-template.md).
-
-### 2. MCP server -- for Claude Desktop, Cursor, and other MCP clients
-
-**Claude Code:**
-```bash
-claude mcp add barebrowse -- npx barebrowse mcp
-```
-
-**Claude Desktop / Cursor:**
-```bash
-npx barebrowse install
-```
-
-Or manually add to your config (`claude_desktop_config.json`, `.cursor/mcp.json`):
-```json
-{
-  "mcpServers": {
-    "barebrowse": {
-      "command": "npx",
-      "args": ["barebrowse", "mcp"]
-    }
-  }
-}
-```
-
-**VS Code (`.vscode/mcp.json`):**
-```json
-{
-  "servers": {
-    "barebrowse": {
-      "command": "npx",
-      "args": ["barebrowse", "mcp"]
-    }
-  }
-}
-```
-
-MCP tools: `browse`, `goto`, `snapshot`, `readable`, `click`, `type`, `press`, `scroll`, `hover`, `hold`, `select`, `back`, `forward`, `reload`, `drag`, `upload`, `pdf`, `screenshot`, `wait_for`, `tabs`, `capabilities` (reports the active engine — chromium or firefox — and what the session can do, plus a `cookies` field naming the cookies injected on the last goto — names only, never values; no side effects), `switch_engine` (swap chromium/firefox without restarting; page, tabs and refs reset, so call `goto` after). Plus `assess` (privacy scan) if [wearehere](https://github.com/hamr0/wearehere) is installed. Plus opt-in `eval` (`BAREBROWSE_MCP_EVAL=1`) — runs JS in the authenticated session, off by default because it can read cookies/localStorage. `BAREBROWSE_TIER` and `BAREBROWSE_ALLOW` restrict the tool set and the reachable hosts (see Site lock and MCP access tiers below). Session runs in hybrid mode with automatic cookie injection. Per-tool timeouts (goto/reload/wait_for 60s, back/forward 30s, interactive ops 15s, pdf/screenshot/upload 45s) with auto-retry on transient failures (idempotent only — mutating tools fail loudly to avoid double-submits).
-
-**Idle release.** An MCP server can outlive its conversation, so it closes its browser after `BAREBROWSE_IDLE_MINUTES` (default `15`, `0` = never, blank/invalid = default, fractional allowed, capped at ~24.8 days) with no tool call in flight. The next call opens a fresh browser (a new job, not a resume — a page left open, e.g. a solved captcha in the headed window, is gone). A transient browser error also closes the broken browser rather than orphaning it; an ordinary `wait_for` timeout does not reset the page.
-
-**Hard-kill safety (Linux).** If the process that launched a browser is `kill -9`'d or crashes, the browser dies with it: Chromium via a `--remote-debugging-pipe` tether, Firefox via `setpriv --pdeathsig` (needs `setpriv` from util-linux; without it, or off Linux, a hard kill still orphans Firefox, as does a Snap Firefox). The dead launcher's leftover `barebrowse-*` temp dirs are cleaned at the next launch. Known limits: a reused pid keeps its dir, and dirs created under a different hostname are never removed.
-
-`browse` and `snapshot` accept `pruneMode: 'act'|'read'|'data'`. `act` (default) keeps interactive elements — best for clicking/filling. `read` keeps paragraphs, headings, and long text — best for articles, docs, and content extraction. If act-mode collapses a content-heavy page near-totally, the snapshot includes a `hint: …` line suggesting `pruneMode='read'` so the agent doesn't bail to a separate HTTP fetch. `data` is one line per record — tables with headers, repeated items grouped; for data pages, not articles. Output starts with a one-line legend (`# data mode: …`): table rows read `row "<label>": <column>: <value> · …`, groups read `<label>: a, b, c`, and a title line followed by detail lines is one block, up to the next title line. It covers the main landmark only (nav, header and pagination outside `<main>` are dropped): use `act` for menus and page controls.
-
-`links: true` (opt-in, `snapshot({ links: true })`, `browse(url, { links: true })`, or the `connect({ links: true })` default; MCP/bareagent `links` param, CLI `snapshot --links` / `browse <url> --links`) adds each link's absolute URL right after its quoted name: `- link "Fix login bug" <https://github.com/o/r/issues/42> [ref=12]`. Works in every mode; a heading that wraps a link keeps the URL on its own line (`heading "title" <url> [level=3] [ref=N]`); data mode also puts it after link cells in table rows and each item of a collapsed group (`Labels: bug <url> [ref=1], docs <url> [ref=2]`) and its legend gains ` Links: "name" <url>.`. `javascript:` and same-page `#fragment` links get no URL, every link line, row cell and group item carries its own URL (nothing is deduped across them, even when two links share a URL), and URLs never contain a raw space, `<` or `>`. Off by default: output is unchanged and costs nothing (about +23% chars on a GitHub issue list in data mode).
-
-**Map + zoom** (big or cluttered pages). `snapshot({ map: true })` returns an outline of the page's big boxes instead of content, one line each, nested, with a ref and the size of its text in data mode: `- main [ref=5] (21.3k chars)`, `  - list "Issues" [ref=40] (14.9k chars)`, `  - list after "Other flights" [ref=88] (3.1k chars)` (an unnamed box shows the heading before it). Boxes: banner, navigation, main, complementary, contentinfo, region, form, search, list, table, grid, treegrid, feed, tablist, tabpanel, dialog; only those of at least 800 chars are listed. Card groups are listed too: a parent whose substantial children are mostly alike (a grid of product, listing or video cards that no role marks; found by structure only: 4 or more cards of one role and similar shape, each with real text) shows as `- group ×18 (6.3k chars) [ref=N]` where it sits (size = the cards' text; ref = their parent's, so `within: N` zooms the cards and anything beside them in that parent; when the cards sit straight in `main` that is main's ref). Not looked for inside banner, navigation or contentinfo, and not for a list or table (already boxes). A bare `within: 'group'` selects the card groups (two or more: the map with `<- match`; with none on the page, it matches real `group` nodes as before). No name or position selector: use the ref. `snapshot({ within })` then returns just one box, as if it were the whole page (prune's landmark step and data mode's main-only scope are off inside it; every mode and `links` work): `within: 40` (a ref from the map), `'table'` (role), `'list "Issues"'` (role + exact accessible name), `'list after "Other flights"'` (an unnamed box by the heading right before it, which survives a reload), or an array of those for several boxes, output in page order. Two or more matches return the map with the matches marked `<- match` (never picks one); none match, or a ref whose element is gone, throws. A ref in `within` is a ref from your previous snapshot (refs stay the same within a page and reset on navigation), found again by its element; refs printed in a zoom are clickable. Refs hold until the page navigates or reloads (including one a click or key press caused: Chromium checks the page's document identity at every ref use, so a hash link or `pushState` keeps refs, a new page kills them), and a ref from an older map can point at a different box; for anything you store or hardcode, use names (`list "Issues"`, `list after "Top flights"`), which are stable across reloads. `within` wins over `map`. The library default is unchanged: no `map`/`within` gives today's output byte for byte (so a consumer that freezes the whole page text is unaffected). MCP `snapshot` takes `map`, `within` (string, number or array) and `full`, and a snapshot over `maxChars` returns the map inline while still saving the full snapshot to `.barebrowse/` (`full: true` keeps the path-only answer); MCP and the CLI daemon wait once for the network to go quiet (idle 500ms, up to 3s) before the first snapshot after a `goto`, so late-loading content is in it (`settle: false` / `--no-settle` skip it; the library is unchanged). CLI `snapshot --map`, `--within=<box>` (repeat the flag for several boxes; quote a name: `--within='list "Issues"'`), `--full`, `--max-chars=N` (default 30000: over it, the map is printed after the file path). `browse()` and the bareagent adapter are unchanged. A table keeps its cell text in act/read mode on both engines.
-
-`npx barebrowse doctor` reports the runtime environment first — default engine/mode, installed Chromium/Firefox binaries, cookie sources, and any live session's engine + capabilities — then scans every known MCP config location and flags scope conflicts. `npx barebrowse install --force` overwrites an existing entry pointing at a different endpoint.
-
-### 3. Library -- for agentic automation
-
-Import barebrowse in your agent code. One-shot reads, interactive sessions, full observe-think-act loops. Works with any LLM orchestration library. Ships with a ready-made adapter for [bareagent](https://www.npmjs.com/package/bare-agent) (auto-snapshot after every action).
-
-For code examples, API reference, and wiring instructions, see **[barebrowse.context.md](barebrowse.context.md)** -- the full integration guide.
-
-## Three modes
-
-| Mode | What happens | Best for |
-|------|-------------|----------|
-| **Headless** (default) | Launches a fresh browser, no UI | Fast automation, scraping, reading pages |
-| **Headed** | Auto-launches a visible browser window | Bot-detected sites, visual debugging, CAPTCHAs |
-| **Hybrid** | Tries headless first, auto-launches headed if blocked | General-purpose agent browsing |
-
-All three work on both engines (Chromium/CDP and Firefox/BiDi).
-
-### Attach to your already-running browser
-
-Start Chromium yourself with a debug port, then drive your real logged-in session:
+**CLI** (coding agents, quick checks). Output goes to `.barebrowse/` as files.
 
 ```bash
-chromium --remote-debugging-port=9222
+barebrowse open https://example.com
+barebrowse snapshot
+barebrowse click 8
+barebrowse close
 ```
+
+`barebrowse install --skill` teaches Claude Code the CLI. `npx barebrowse doctor` shows what it found on your machine.
+
+## Reading modes
+
+| Mode | Keeps | Use for |
+|------|-------|---------|
+| `act` (default) | Buttons, links, inputs, labels | Clicking, typing, moving around |
+| `read` | All text: headings, paragraphs | Docs, content pages |
+| `data` | One line per record: table rows with headers, repeated items grouped | Listings, timetables, search results, issue lists |
+| `readable()` | Clean article text (Firefox Reader View engine) | Long articles |
+
+Add `links: true` to any mode to get each link's URL.
+
+**Zoom** works on top of any mode:
+
+```js
+await page.snapshot({ map: true });                           // outline of the page's boxes, with sizes
+await page.snapshot({ within: 'list "Issues"' });             // just that box
+await page.snapshot({ within: 'list after "Top flights"', mode: 'data' });
+```
+
+Pick a box by ref, role, role + name, or the heading before it. Card grids (products, listings) show up as groups even when the page doesn't mark them. If more than one box matches, you get the map back. barebrowse never guesses.
+
+## What it saves
+
+| Page | Raw | Pruned (act) | Saved |
+|------|-----|--------|-------|
+| example.com | 377 chars | 45 | 88% |
+| DuckDuckGo | 42,254 | 5,407 | 87% |
+| Wikipedia article | 109,479 | 40,566 | 63% |
+| Hacker News | 51,726 | 27,197 | 47% |
+
+Zoom on a big page: Amazon search, 134,740 chars full → 2,227 for the map → 38,042 for the results box.
+
+## How it compares
+
+| | barebrowse | Playwright MCP | Cloudflare Kitesurf |
+|---|---|---|---|
+| Browser | The one you have | Downloads its own | Cloud, stateless |
+| Your logins | Yes, read from your browser | Its own profile; you log in there | No |
+| What the agent gets | Pruned tree, act/read/data, zoom by box | Accessibility tree | Filtered JSON tree, CSS root picker |
+| Clickable refs | Yes, stable on the page | Yes | No |
+| Extra deps | `ws` + Readability | Playwright + its browser | Cloud service |
+
+## Good for / not for
+
+**Good for:** agents that browse, read and act on real sites. Logged-in reading. Checking your own app on `localhost` while you build it. Re-running a flow your agent found, as a short script.
+
+**Not for:** large test suites (use Playwright), or scraping at scale (use Crawlee or Scrapy).
+
+### Turn a flow into a script
+
+Once an agent has found a flow, save it as a script and run it again with no agent and no tokens. Find elements by name, not by ref number, since ref numbers can change between runs.
 
 ```js
 import { connect } from 'barebrowse';
-const page = await connect({ port: 9222 });
-await page.goto('https://your-logged-in-app.example.com');
+
+const ref = (snap, name) => snap.match(new RegExp(`"${name}"[^\\n]*\\[ref=(\\d+)\\]`))[1];
+
+const page = await connect();
+await page.goto('http://localhost:3000/login');
 const snap = await page.snapshot();
-await page.close(); // closes only the tab barebrowse opened — your browser keeps running
+await page.type(ref(snap, 'Email'), 'me@test.dev');
+await page.click(ref(snap, 'Sign in'));
+await page.waitFor({ text: 'Welcome' });
+await page.close();
 ```
 
-### Did the navigation work?
+The same flow works as CLI commands in a shell script.
 
-`goto()` resolves to `{ url, status }` — the final URL after redirects and the
-main document's HTTP status (`0` when no HTTP response was observed, e.g. an aborted navigation).
-`page.lastNavigation` returns the same object (`null` before any goto, and reset
-to `null` by `goBack`/`goForward`/`reload`/`switchTab` — status is reported for
-`goto()` only, so those never leave a stale warning). A
-non-2xx page still loads, and its snapshot (and `browse()` output) carries a
-`[HTTP 404 — the page may be an error page]` line. If the browser cannot
-reach a document at all (DNS failure, connection refused, TLS error) `goto()`
-and `browse()` reject with an Error whose `code` is `'NAV_FAILED'` and `reason`
-the browser's raw string (`net::ERR_NAME_NOT_RESOLVED`, `NS_ERROR_UNKNOWN_HOST`).
-A download or a 204 is not a failure. Through MCP and the CLI, `goto` prints
-`ok` for 2xx and `ok (HTTP 404)` otherwise.
+## All tools
 
-```js
-const { url, status } = await page.goto('https://example.com/gone');
-```
+| Group | Tools |
+|------|-------|
+| Read | `browse`, `goto`, `snapshot` (modes, map, zoom, links), `readable`, `screenshot`, `pdf` |
+| Act | `click`, `type`, `press`, `scroll`, `hover`, `hold`, `select`, `drag`, `upload` |
+| Move | `back`, `forward`, `reload`, `tabs`, `switchTab`, `waitFor`, `waitForNavigation`, `waitForNetworkIdle` |
+| Session | `injectCookies`, `saveState`, `switch_engine`, `capabilities`, `close` |
+| Escape hatch | `page.cdp` (Chromium), `page.bidi` (Firefox), `eval` (opt-in on MCP) |
 
-### Firefox (WebDriver BiDi)
-
-CDP is deprecated in Firefox, so barebrowse drives it over the W3C WebDriver
-BiDi protocol — a second transport over the same `ws` dependency, no extra
-download. Same `page.*` API (the ARIA snapshot is reconstructed in-page since
-BiDi has no `getFullAXTree`):
-
-```js
-const page = await connect({ engine: 'firefox' });
-```
-
-CLI: `barebrowse open <url> --engine firefox`. MCP: `BAREBROWSE_ENGINE=firefox`.
-Firefox cookies (plaintext) reuse into the same engine.
-
-Firefox is at practical parity with Chromium: stealth, consent auto-dismiss,
-ad/tracker blocking, JS dialogs, console/network capture, hybrid fallback,
-`saveState`, `waitForNavigation`, and download tracking all work the same way.
-Chromium (CDP) stays the default; the only remaining gap is
-`reload({ignoreCache})` (upstream BiDi limitation). With no explicit `engine`,
-`connect()` falls back to Firefox (warning once to stderr) if no Chromium
-browser is installed, and throws naming both if neither is; an explicit
-`engine` is always honored and errors on a missing binary instead of silently
-switching.
-
-### Incognito (clean session)
-
-Pass `incognito: true` for a clean, **unauthenticated** session — barebrowse
-skips *all* auth injection (cookies + storage state), so the agent browses
-logged out. It is not Chrome's `--incognito` flag: the session already runs in
-a throwaway profile, so this gates the *other* auth source — your real browser
-cookies. Works on both engines:
-
-```js
-const page = await connect({ incognito: true });
-```
-
-From the CLI: `barebrowse open <url> --incognito`. From MCP: set
-`BAREBROWSE_INCOGNITO=1`.
-
-## What it handles automatically
-
-Cookie consent walls (29 languages, with real mouse click fallback for stubborn CMPs), login walls (cookie extraction from your browsers), bot detection (challenge-phrase + node-count heuristic + stealth patches + automatic headed fallback — a flagged page sets `page.botBlocked` (set at `goto()`, refreshed by every `snapshot()`) and the snapshot starts with `[BOT CHALLENGE DETECTED — page content may be incomplete or blocked]`; check the boolean, not the text. Press & Hold challenges can be passed with `hold(ref, ms)`), permission prompts, SPA navigation, JS dialogs, off-screen elements, pre-filled inputs, ARIA noise, and profile locking. The agent doesn't think about any of it.
+Browser modes: `headless` (default), `headed` (visible window), `hybrid` (headless, switches to headed when blocked). Or attach to your own running Chrome with `connect({ port: 9222 })`.
 
 ## Safe by default
 
-barebrowse hands an autonomous — and therefore prompt-injectable — agent an *authenticated* browser, so the defaults are calibrated for that threat:
+An agent with your logins can be tricked by a page. So:
 
-- **Local-resource schemes blocked.** `file:`, `view-source:`, `chrome:`, etc. are rejected by default (a confirmed local-file-read vector); `http`/`https`/`data` stay allowed. Override with `allowLocalUrls: true`.
-- **Cookie injection scoped** to a precise RFC-6265 domain match — browsing one site can't pull look-alike or unrelated cookies into the session.
-- **CLI daemon authenticated** with a per-session token (loopback alone isn't an authorization boundary); snapshots and saved state are written owner-only (`0600`).
-- **Opt-in hardening** for stricter deployments: `blockPrivateNetwork` (SSRF guard for loopback/RFC-1918/cloud-metadata) and `uploadDir` (confine `upload()` to one directory). Both available on the library, MCP, bareagent, and CLI (`--block-private-network`, `--upload-dir`).
+- `file:`, `chrome:` and similar URLs are blocked.
+- Cookies go only to the site they belong to.
+- Output files are owner-only. The CLI daemon needs a per-session token.
+- Opt-in: site lock (`allowHosts`), private-network block, upload folder sandbox.
+- MCP: `BAREBROWSE_TIER=r|rw|rwx` hides tools above the tier. `eval` is off unless you turn it on.
+- Browsers close when their parent dies or sits idle (MCP: 15 min).
 
-- **Site lock** (`allowHosts`): confine top-level navigation to a list of hosts. See below.
+## Learn more
 
-See `barebrowse.context.md` and the PRD's "Security Model & Safe Defaults" for the full rationale.
-
-### Site lock and MCP access tiers
-
-`allowHosts: ['example.com', '*.docs.example.org']` on `connect()` and `browse()` (CLI `--allow-hosts=a.com,*.b.org` on `open` and `browse`; MCP `BAREBROWSE_ALLOW=a.com,*.b.org`) locks the top frame to those hosts, on both engines. An entry is `host` (exactly that host) or `*.host` (its subdomains, not `host` itself); a scheme, port or path in an entry is an error. A `goto()` to another host, or one that redirects there, rejects with `err.code === 'NAV_BLOCKED'` (`err.host`) and the page stays where it was. A clicked link, a JS jump or a `window.open` popup to another host never loads; the next `snapshot()` carries `[blocked navigation to <host>]`. New tabs are locked too. `connect({ port, allowHosts })` (attach mode) throws: the lock is browser-wide and would reach your own tabs.
-
-Not locked, by design: subresources (images, scripts, CSS, XHR/fetch), iframes and WebSocket. The lock stops an agent being steered to another site, not a page from loading its own assets. The MCP `eval` tool (tier `rwx`) can still `fetch()` anywhere.
-
-MCP only: `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier. `r` reads (`browse`, `goto`, `back`, `forward`, `reload`, `scroll`, `snapshot`, `readable`, `screenshot`, `pdf`, `wait_for`, `tabs`, `capabilities`, `assess`); `rw` adds `click`, `type`, `press`, `select`, `drag`, `hover`, `hold`, `switch_engine`; `rwx` adds `upload` and `eval`. A hidden tool answers `Unknown tool`. Every tool also carries MCP `annotations` (`readOnlyHint`, `destructiveHint`, `openWorldHint`, `idempotentHint`). An invalid `BAREBROWSE_TIER` or `BAREBROWSE_ALLOW` stops the server at start; it never falls back to `rwx` or to no lock. `capabilities` and the server instructions report the tier and the allowed hosts.
-
-## What the agent sees
-
-Raw ARIA output from a page is noisy -- decorative wrappers, hidden elements, structural junk. The pruning pipeline (ported from [mcprune](https://github.com/hamr0/mcprune)) strips it down to what matters.
-
-| Page | Raw | Pruned | Reduction |
-|------|-----|--------|-----------|
-| example.com | 377 chars | 45 chars | 88% |
-| Hacker News | 51,726 chars | 27,197 chars | 47% |
-| Wikipedia (article) | 109,479 chars | 40,566 chars | 63% |
-| DuckDuckGo | 42,254 chars | 5,407 chars | 87% |
-
-Three snapshot modes: **act** (default) keeps interactive elements and visible labels -- for clicking, typing, navigating. **read** keeps all text content -- for reading articles and extracting information. **data** (opt-in) emits one line per record -- tables become `row "Label": Header: value · ...`, repeated items are grouped (`Lines: Red, Green, Blue`) -- for data pages (timetables, listings, results). `[ref=N]` stays on interactive nodes, so click/type work as in act. Every data snapshot starts with a one-line legend explaining the format. It is larger than act on prose pages; use `read` or `readable()` for articles.
-
-## Actions
-
-Everything the agent can do through barebrowse:
-
-| Action | What it does |
-|--------|-------------|
-| **Navigate** | Load a URL, wait for page load, auto-dismiss consent |
-| **Back / Forward** | Browser history navigation |
-| **Snapshot** | Pruned ARIA tree with `[ref=N]` markers. Modes: `act` (buttons, links, inputs), `read` (full text), `data` (one line per record, for tables/listings). 40-90% token reduction. |
-| **Readable** | Clean article text (title + body, chrome stripped — Reader-View engine). For *reading* article-like pages, not interacting. Advisory `confidence`; falls back to snapshot on non-articles. |
-| **Click** | Scroll into view + mouse click at element center, JS fallback for hidden elements |
-| **Type** | Focus + insert text, with option to clear existing content first |
-| **Press** | Special keys: Enter, Tab, Escape, Backspace, Delete, arrows, Space |
-| **Scroll** | Mouse wheel up or down (accepts direction or pixels) |
-| **Hover** | Move mouse to element center (triggers tooltips, hover states) |
-| **Hold** | `hold(ref, ms)`: press, wait, release; for "Press & Hold" bot challenges |
-| **Select** | Set dropdown value (native select or custom dropdown) |
-| **Drag** | Drag one element to another (Kanban boards, sliders) |
-| **Upload** | Set files on a file input element |
-| **Screenshot** | Page capture as base64 PNG/JPEG/WebP |
-| **PDF** | Export page as PDF |
-| **Assess** | Privacy scan: score (0-100), risk level, 10-category breakdown. Tries headless first, falls back to headed if bot-blocked. Consent auto-dismissed before scan. Max 3 concurrent, 30s timeout, tabs cleaned up. Requires `npm install wearehere`. |
-| **Tabs** | List open tabs, switch between them |
-| **Wait for content** | Poll for text or CSS selector to appear on page |
-| **Wait for navigation** | SPA-aware: works for full page loads and pushState |
-| **Wait for network idle** | Resolve when no pending requests for 500ms |
-| **Dialog handling** | Auto-dismiss JS alert/confirm/prompt dialogs |
-| **Save state** | Export cookies + localStorage to JSON |
-| **Inject cookies** | Extract from Firefox/Chromium and inject into the session (CDP or BiDi) |
-| **Raw CDP / BiDi** | Escape hatch: `page.cdp` (Chromium) or `page.bidi` (Firefox) for any low-level command |
-
-## Tested against
-
-16+ sites across 8 countries, all consent dialogs dismissed, all interactions working:
-
-Google, YouTube, BBC, Wikipedia, GitHub, DuckDuckGo, Hacker News, Amazon DE, The Guardian, Spiegel, Le Monde, El Pais, Corriere, NOS, Bild, Nu.nl, Booking, NYT, Stack Overflow, CNN, Reddit
-
-## How it works
-
-```
-URL -> find/launch browser (chromium.js)
-    -> WebSocket CDP connection (cdp.js)
-    -> stealth patches before page scripts (stealth.js, headless only)
-    -> suppress all permission prompts (Browser.setPermission)
-    -> extract + inject cookies from your browser (auth.js)
-    -> navigate to URL, wait for load
-    -> detect + dismiss cookie consent dialogs (consent.js)
-    -> get full ARIA accessibility tree (aria.js)
-    -> pruning pipeline from mcprune (prune.js)
-    -> dispatch real input events: click/type/scroll (interact.js)
-    -> agent-ready snapshot with [ref=N] markers
-```
-
-Firefox follows the same flow over WebDriver BiDi (`bidi.js`), with the AX tree
-reconstructed in-page (`ax-snapshot.js`) and pruning/formatting shared verbatim.
-
-A small set of focused modules, two small dependencies (`ws`, `@mozilla/readability`).
-
-## Requirements
-
-- Node.js >= 22 (built-in WebSocket, built-in SQLite)
-- Any Chromium-based browser installed (Chrome, Chromium, Brave, Edge, Vivaldi) — or Firefox (>= 121) for the `engine: 'firefox'` BiDi path
-- Linux tested (Fedora/KDE). macOS/Windows cookie paths exist but untested.
+- **[barebrowse.context.md](barebrowse.context.md)**: the full guide. Every option, the MCP and CLI details, gotchas.
+- **[docs/README.md](docs/README.md)**: design notes, decisions, logs.
 
 ## The bare ecosystem
 
-Local-first, composable agent infrastructure. Same API patterns throughout —
-mix and match, each module works standalone.
+Small, local-first pieces for agents. Each works on its own.
 
-**Core** — the brain, the gate, the memory.
-
-- **[bareagent](https://npmjs.com/package/bare-agent)** — the think→act→observe loop. *Goal in → coordinated actions out.* Replaces LangChain, CrewAI, AutoGen.
-- **[bareguard](https://npmjs.com/package/bareguard)** — the single gate every action passes through. *Action in → allow / deny / ask-a-human out.* Replaces hand-rolled allowlists and scattered policy code.
-- **[litectx](https://npmjs.com/package/litectx)** — tree-sitter code + memory graph with activation decay, plus lightweight context engineering (write · select · compress · isolate). *Query in → ranked context out.*
-
-**Optional reach** — give the agent hands.
-
-- **[barebrowse](https://npmjs.com/package/barebrowse)** — a real browser for agents. *URL in → pruned snapshot out.* Replaces Playwright, Selenium, Puppeteer.
-- **[baremobile](https://npmjs.com/package/baremobile)** — Android + iOS device control. *Screen in → pruned snapshot out.* Replaces Appium, Espresso, XCUITest.
-- **[beeperbox](https://github.com/hamr0/beeperbox)** — 50+ messaging networks via one MCP server (headless Beeper Desktop in Docker). *Chat in → unified message stream out.* Replaces Twilio, per-platform bot APIs.
-
-**What you can build:**
-
-- **Headless automation** — scrape sites, fill forms, extract data, monitor pages on a schedule
-- **QA & testing** — automated test suites for web and Android apps without heavyweight frameworks
-- **Personal AI assistants** — chatbots that browse the web or control your phone on your behalf
-- **Remote device control** — manage Android devices over WiFi, including on-device via Termux
-- **Agentic workflows** — multi-step tasks where an AI plans, browses, and acts across web and mobile
-
-**Why this exists:** Most automation stacks ship 200MB of opinions before you write a line of code. These don't. Install, import, go.
+- **[bareagent](https://npmjs.com/package/bare-agent)**: the think → act → observe loop.
+- **[bareguard](https://npmjs.com/package/bareguard)**: one gate every action passes through.
+- **[litectx](https://npmjs.com/package/litectx)**: code and memory context for agents.
+- **[barebrowse](https://npmjs.com/package/barebrowse)**: a real browser for agents.
+- **[baremobile](https://npmjs.com/package/baremobile)**: Android and iOS control.
+- **[beeperbox](https://github.com/hamr0/beeperbox)**: 50+ chat networks through one MCP server.
 
 ## License
 
-Apache-2.0 — see [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).
