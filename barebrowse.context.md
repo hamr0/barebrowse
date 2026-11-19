@@ -367,6 +367,7 @@ URL -> chromium.js (find/launch browser, permission flags)
 | `src/stealth.js` | ~110 | UA override + JS patches (webdriver, WebGL, hardware, Notification, chrome.runtime) |
 | `src/network-idle.js` | ~50 | Set-based network-idle wait (extracted in v0.8.0, F9) |
 | `src/bareagent.js` | ~330 | Tool adapter for bareagent Loop (22 tools) |
+| `src/capture.js` | ~170 | Console + network log capture (CDP and BiDi), shared by the CLI daemon and the MCP `logs` tool |
 | `mcp-server.js` | ~660 | MCP server (JSON-RPC over stdio, `runStdio()`, `TIMEOUTS`/`TOOLS` exports, opt-in eval, assess session reuse + concurrency) |
 
 ## Privacy assessment (optional)

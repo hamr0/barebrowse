@@ -189,6 +189,7 @@ Thirteen modules, zero required dependencies.
 | `src/stealth.js` | 51 | Navigator patches for headless anti-detection |
 | `src/bareagent.js` | 161 | Tool adapter for bareagent Loop |
 | `src/daemon.js` | ~230 | Background HTTP server holding connect() session for CLI mode |
+| `src/capture.js` | ~170 | Console + network log capture (CDP and BiDi) shared by the daemon and the MCP `logs` tool; follows client swaps via `src/client-swap.js` |
 | `src/session-client.js` | ~60 | HTTP client to daemon (sendCommand, readSession, isAlive) |
 | `mcp-server.js` | ~340 | MCP server (JSON-RPC 2.0 over stdio, assess session reuse + concurrency) |
 
@@ -316,7 +317,7 @@ Raw JSON-RPC 2.0 over stdio. Zero SDK dependencies. `npm install barebrowse` the
 }
 ```
 
-22 tools: browse (one-shot), goto, snapshot (`map`, `within`, `full`; an over-`maxChars` snapshot returns the map), readable, click, type, press, scroll, hover, hold, select, back, forward, reload, drag, upload, pdf, screenshot, wait_for, tabs, capabilities, switch_engine (plus opt-in `eval` and `assess`). `switch_engine` swaps chromium/firefox in place (page, tabs and refs reset); CLI equivalent is `barebrowse switch-engine`. `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier (`r` reads, `rw` adds click/type/press/select/drag/hover/hold/switch_engine, `rwx` adds upload/eval); `BAREBROWSE_ALLOW=a.com,*.b.org` sets the site lock; bad values refuse to start. Every tool carries MCP annotations (`readOnlyHint`/`destructiveHint`/`openWorldHint`/`idempotentHint`).
+23 tools: browse (one-shot), goto, snapshot (`map`, `within`, `full`; an over-`maxChars` snapshot returns the map), readable, click, type, press, scroll, hover, hold, select, back, forward, reload, drag, upload, pdf, screenshot, wait_for, tabs, logs (console or network log inline, tier `r`; uncaught errors included; empty after a release or engine switch), capabilities, switch_engine (plus opt-in `eval` and `assess`). `switch_engine` swaps chromium/firefox in place (page, tabs and refs reset); CLI equivalent is `barebrowse switch-engine`. `BAREBROWSE_TIER=r|rw|rwx` (default `rwx`) hides tools above the tier (`r` reads, `rw` adds click/type/press/select/drag/hover/hold/switch_engine, `rwx` adds upload/eval); `BAREBROWSE_ALLOW=a.com,*.b.org` sets the site lock; bad values refuse to start. Every tool carries MCP annotations (`readOnlyHint`/`destructiveHint`/`openWorldHint`/`idempotentHint`).
 Action tools return `'ok'` -- agent calls `snapshot` explicitly (MCP tool calls are cheap to chain).
 `browse` and `snapshot` accept `maxChars` (default 30000) — large snapshots are saved to `.barebrowse/` and a file path is returned.
 Session runs in hybrid mode (headless + automatic headed fallback on bot detection). `goto` injects cookies from the user's browser before navigation.
