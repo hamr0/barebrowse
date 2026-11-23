@@ -167,16 +167,13 @@ An agent with your logins can be tricked by a page. So:
 - **[barebrowse.context.md](barebrowse.context.md)**: the full guide. Every option, the MCP and CLI details, gotchas.
 - **[docs/README.md](docs/README.md)**: design notes, decisions, logs.
 
-## The bare ecosystem
+## bare suite
 
-Small, local-first pieces for agents. Each works on its own.
+- **Hands** · **barebrowse** · [baremobile](https://github.com/hamr0/baremobile) · [beeperbox](https://github.com/hamr0/beeperbox)
+- **Rails** · [bareagent](https://github.com/hamr0/bareagent) · [bareguard](https://github.com/hamr0/bareguard) · [barebox](https://github.com/hamr0/barebox) · [litectx](https://github.com/hamr0/litectx)
+- **Apps** · [fwdloop](https://github.com/hamr0/fwdloop) · [bareloop](https://github.com/hamr0/bareloop)
 
-- **[bareagent](https://npmjs.com/package/bare-agent)**: the think → act → observe loop.
-- **[bareguard](https://npmjs.com/package/bareguard)**: one gate every action passes through.
-- **[litectx](https://npmjs.com/package/litectx)**: code and memory context for agents.
-- **[barebrowse](https://npmjs.com/package/barebrowse)**: a real browser for agents.
-- **[baremobile](https://npmjs.com/package/baremobile)**: Android and iOS control.
-- **[beeperbox](https://github.com/hamr0/beeperbox)**: 50+ chat networks through one MCP server.
+Pairs well with [bareguard](https://github.com/hamr0/bareguard) (approve every click) and [fwdloop](https://github.com/hamr0/fwdloop) (an app built on it). → [The whole suite](https://github.com/hamr0)
 
 ## License
 
